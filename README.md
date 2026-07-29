@@ -590,60 +590,171 @@ prompt="固定字符串"
 # 11. 项目代码结构
 
 ```
-government-agent-platform/
-
-
-├── agents/
-
+gov_AP/
 │
-├── orchestration/
-
+├── README.md                         # 项目说明（本文件）
+├── CLAUDE.md                         # AI编码规范（Cursor/Claude Code/Copilot）
+├── STRUCTURE.md                      # 详细文件清单和开发指引
+├── .env.example                      # 环境变量模板
+├── .gitignore                        # Git忽略规则
+├── example.py                        # 文件头模板
+│
+├── agents/                           # Agent层 — 6个专业Agent
+│   ├── __init__.py                   # Agent注册中心
+│   ├── supervisor/                   # 全局任务规划
+│   │   ├── agent.py                  # Supervisor核心
+│   │   ├── planner.py                # 任务拆解
+│   │   ├── router.py                 # Agent路由
+│   │   └── prompts.py                # Prompt模板
+│   ├── intent/                       # 意图识别
+│   │   ├── agent.py                  # Intent核心
+│   │   ├── classifier.py             # BERT分类器
+│   │   ├── schema.py                 # 数据模型
+│   │   └── prompts.py                # Prompt模板
+│   ├── policy/                       # 政策检索
+│   │   ├── agent.py                  # Policy核心
+│   │   ├── schema.py                 # 数据模型
+│   │   └── prompts.py                # Prompt模板
+│   ├── material/                     # 材料审核
+│   │   ├── agent.py                  # Material核心
+│   │   ├── ocr.py                    # OCR识别
+│   │   ├── extractor.py              # 实体抽取
+│   │   ├── validator.py              # 规则校验
+│   │   └── prompts.py                # Prompt模板
+│   ├── workflow/                     # 流程执行
+│   │   ├── agent.py                  # Workflow核心
+│   │   └── prompts.py                # Prompt模板
+│   └── governance/                   # 安全治理(旁路)
+│       ├── agent.py                  # Governance核心
+│       ├── security.py               # 安全检测
+│       ├── behavior.py               # 行为分析
+│       ├── optimizer.py              # 自动优化
+│       └── prompts.py                # Prompt模板
+│
+├── orchestration/                    # 编排层 — LangGraph工作流
 │   └── langgraph/
-
-
-├── tools/
-
-│   ├── mcp/
-
-│   └── a2a/
-
-
-├── rag/
-
-
-├── governance/
-
-
-├── database/
-
-
-├── backend/
-
-
-├── frontend/
-
-
-└── deploy/
-
-```
-
-详细设计：
-
-见：
-
-```
-docs/
-
-ARCHITECTURE.md
-
-AGENT_DESIGN.md
-
-MCP_DESIGN.md
-
-A2A_DESIGN.md
-
-EVALUATION.md
-
+│       ├── __init__.py               # 包初始化
+│       ├── state.py                  # AgentState共享状态
+│       ├── graph.py                  # StateGraph构建
+│       ├── nodes.py                  # 节点函数
+│       ├── edges.py                  # 条件路由
+│       ├── checkpointer.py           # 状态持久化
+│       └── runtime.py                # 运行时安全控制
+│
+├── tools/                            # 工具层 — MCP + A2A
+│   ├── mcp/                          # MCP协议(Agent→Tool)
+│   │   ├── __init__.py               # 包初始化
+│   │   ├── client.py                 # MCP客户端
+│   │   ├── gateway.py                # MCP网关(鉴权/审计)
+│   │   ├── schema.py                 # Tool Schema定义
+│   │   └── servers/                  # MCP Server
+│   │       ├── policy_server/        # 政策查询服务
+│   │       │   ├── server.py         # Server入口
+│   │       │   └── tools.py          # search_policy/get_policy_detail
+│   │       ├── material_server/      # 材料审核服务
+│   │       │   ├── server.py         # Server入口
+│   │       │   └── tools.py          # extract_entity/check_material
+│   │       └── workflow_server/      # 流程执行服务
+│   │           ├── server.py         # Server入口
+│   │           └── tools.py          # create_case/query_status
+│   └── a2a/                          # A2A协议(Agent→Agent)
+│       ├── __init__.py               # 包初始化
+│       ├── connector.py              # A2A连接器
+│       ├── protocol.py               # 通信协议
+│       ├── task.py                   # 任务生命周期
+│       ├── registry.py               # Agent注册中心
+│       ├── callback.py               # 回调处理
+│       └── mock_agents/              # 模拟外部Agent
+│           ├── housing_agent.py      # 不动产Agent
+│           └── fund_agent.py         # 公积金Agent
+│
+├── rag/                              # 知识层 — RAG检索增强
+│   ├── __init__.py                   # 包初始化
+│   ├── embedding.py                  # BGE向量化
+│   ├── retriever.py                  # 混合检索(Milvus+BM25)
+│   ├── reranker.py                   # BGE重排序
+│   ├── generator.py                  # LLM答案生成
+│   └── knowledge_base.py             # 知识库管理
+│
+├── governance/                       # 治理层 — AgentOps
+│   ├── __init__.py                   # 包初始化
+│   ├── trace.py                      # 全链路追踪
+│   ├── guardrail.py                  # 安全护栏(输入/输出)
+│   ├── pii.py                        # PII脱敏
+│   ├── monitor.py                    # Agent监控
+│   ├── dashboard.py                  # 运维看板
+│   └── evaluation/                   # 自动评测
+│       ├── __init__.py               # 包初始化
+│       ├── evaluator.py              # 评测引擎
+│       ├── metrics.py                # 指标计算
+│       ├── benchmark.py              # 基准测试
+│       └── runner.py                 # 评测流水线
+│
+├── database/                         # 数据层 — PostgreSQL
+│   ├── __init__.py                   # 包初始化
+│   ├── connection.py                 # 数据库连接
+│   ├── models.py                     # ORM模型
+│   ├── schemas.py                    # Pydantic序列化
+│   └── migrations/                   # Alembic迁移
+│
+├── backend/                          # 接入层 — FastAPI
+│   ├── __init__.py                   # 包初始化
+│   ├── main.py                       # 应用入口
+│   ├── config.py                     # 配置管理
+│   ├── api/                          # API路由
+│   │   ├── __init__.py               # 包初始化
+│   │   ├── routes.py                 # 端点定义
+│   │   ├── dependencies.py           # 依赖注入
+│   │   └── schemas.py                # 请求/响应模型
+│   ├── middleware/                   # 中间件
+│   │   ├── __init__.py               # 包初始化
+│   │   ├── auth.py                   # JWT认证
+│   │   ├── rbac.py                   # 角色权限
+│   │   ├── logging.py                # 日志记录
+│   │   └── tracing.py                # 链路追踪
+│   └── services/                     # 业务服务
+│       ├── __init__.py               # 包初始化
+│       └── agent_service.py          # Agent编排服务
+│
+├── prompts/                          # Prompt管理
+│   ├── __init__.py                   # 包初始化
+│   └── registry.py                   # Prompt注册中心(版本化)
+│
+├── cases/                            # 评测用例
+│   ├── __init__.py                   # 包初始化
+│   ├── intent_cases.json             # 意图分类用例
+│   ├── rag_cases.json                # RAG评测用例
+│   ├── agent_cases.json              # Agent评测用例
+│   ├── security_cases.json           # 安全评测用例
+│   ├── business_license.json         # 营业执照场景
+│   ├── policy_query.json             # 政策查询场景
+│   └── workflow.json                 # 流程执行场景
+│
+├── deploy/                           # 部署配置
+│   ├── Dockerfile                    # Docker镜像
+│   ├── docker-compose.yml            # Docker编排
+│   └── k8s/                          # Kubernetes
+│       ├── backend.yaml              # 后端Deployment
+│       ├── agent.yaml                # Agent Runtime
+│       ├── model.yaml                # 模型服务(GPU)
+│       ├── mcp.yaml                  # MCP Server
+│       ├── postgres.yaml             # 数据库
+│       └── ingress.yaml              # 入口配置
+│
+├── requirements/                     # 依赖管理
+│   ├── requirements.txt              # 核心依赖
+│   ├── requirements-dev.txt          # 开发工具
+│   ├── requirements-gpu.txt          # GPU推理
+│   └── requirements-ocr.txt          # OCR能力
+│
+└── docs/                             # 设计文档
+    ├── ARCHITECTURE.md               # 系统架构
+    ├── AGENT_DESIGN.md               # Agent设计
+    ├── MCP_DESIGN.md                 # MCP协议设计
+    ├── A2A_DESIGN.md                 # A2A通信设计
+    ├── EVALUATION.md                 # 评测体系设计
+    ├── DEPLOYMENT.md                 # 部署方案
+    └── PROJECT_ROADMAP.md            # 演进路线
 ```
 
 ---
@@ -859,46 +970,175 @@ Evaluation
 
 ---
 
-# 16. Roadmap
+# 16. 开发指南
 
-## Phase 1
+## Phase 1 — LangGraph Runtime + Supervisor + RAG
 
-完成：
+### 第一步：核心状态和编排 (orchestration/langgraph/)
 
-* LangGraph Runtime
-* Supervisor Agent
-* RAG
+```
+orchestration/langgraph/state.py       → AgentState TypedDict（trace_id, user_query, intent, task_plan, messages...）
+orchestration/langgraph/graph.py       → StateGraph构建（add_node, add_edge, add_conditional_edges）
+orchestration/langgraph/nodes.py       → 6个Agent节点函数（supervisor_node, intent_node, policy_node...）
+orchestration/langgraph/edges.py       → 条件路由函数（route_after_supervisor, route_after_intent...）
+orchestration/langgraph/checkpointer.py → PostgreSQL Checkpointer实现
+orchestration/langgraph/runtime.py     → 运行时安全（max_steps=10, loop_detection, timeout=30s）
+```
+
+### 第二步：数据库和配置 (database/ + backend/)
+
+```
+database/connection.py    → async SQLAlchemy engine + session factory
+database/models.py        → ORM模型（Trace, Agent, Prompt, Evaluation, Checkpoint）
+database/schemas.py       → Pydantic v2序列化模型
+backend/config.py          → pydantic-settings配置类（读.env）
+backend/main.py            → FastAPI app factory（CORS, middleware, router注册）
+```
+
+### 第三步：接入层 (backend/)
+
+```
+backend/middleware/auth.py     → JWT验证中间件
+backend/middleware/rbac.py     → RBAC权限检查
+backend/middleware/logging.py  → trace_id注入 + 结构化日志
+backend/middleware/tracing.py  → OpenTelemetry span创建
+backend/api/routes.py          → /chat, /agent, /evaluation, /a2a/callback 端点
+backend/api/dependencies.py    → get_db, get_current_user, get_agent_runtime
+backend/api/schemas.py         → ChatRequest, AgentResponse, EvaluationReport
+backend/services/agent_service.py → Agent生命周期管理（创建、执行、恢复）
+```
+
+### 第四步：Agent实现 (agents/)
+
+```
+agents/__init__.py              → AgentRegistry（register, get, list）
+agents/supervisor/planner.py    → 任务拆解逻辑（LLM-based task decomposition）
+agents/supervisor/router.py     → Agent路由（intent → agent mapping）
+agents/supervisor/agent.py      → Supervisor主逻辑（plan → route → execute）
+agents/intent/classifier.py     → BERT分类器（fine-tune + inference）
+agents/intent/schema.py         → IntentLabel, IntentResult Pydantic模型
+agents/intent/agent.py          → Intent Agent主逻辑（classify + fallback to LLM）
+agents/policy/schema.py         → PolicyResult（answer + evidence[]）
+agents/policy/agent.py          → Policy Agent主逻辑（call RAG pipeline → format answer）
+agents/material/ocr.py          → OCR文档识别
+agents/material/extractor.py    → 实体/字段抽取
+agents/material/validator.py    → 规则校验（required fields vs submitted）
+agents/material/agent.py        → Material Agent主逻辑（OCR → extract → validate）
+agents/workflow/agent.py        → Workflow Agent（通过MCP调用create_case/query_status）
+agents/governance/security.py   → 安全检测（PII, prompt injection, sensitive words）
+agents/governance/behavior.py   → 行为分析（loop detection, anomaly detection）
+agents/governance/optimizer.py  → 自动优化（trace分析 → 优化建议）
+agents/governance/agent.py      → Governance Agent主逻辑
+```
+
+### 第五步：RAG管线 (rag/)
+
+```
+rag/embedding.py        → BGE embedding模型加载 + encode_query/encode_documents
+rag/retriever.py        → 混合检索（Milvus dense + BM25 sparse → 融合排序）
+rag/reranker.py         → BGE Reranker重排序
+rag/generator.py        → LLM生成（带evidence标注的答案）
+rag/knowledge_base.py   → 知识库索引（文档加载 → 切分 → embedding → 写入Milvus）
+```
 
 ---
 
-## Phase 2
+## Phase 2 — MCP Server + Tool Calling
 
-完成：
+### 第一步：MCP基础设施 (tools/mcp/)
 
-* MCP Server
-* Tool Calling
-
----
-
-## Phase 3
-
-完成：
-
-* A2A Connector
-* Async Callback
-
----
-
-## Phase 4
-
-完成：
-
-* Evaluation Platform
-* Dashboard
+```
+tools/mcp/schema.py                                 → Tool JSON Schema（search_policy, get_policy_detail, extract_entity...）
+tools/mcp/gateway.py                                → MCP Gateway（鉴权/限流/审计/路由）
+tools/mcp/client.py                                  → MCP Client（tools/list → tools/call）
+tools/mcp/servers/policy_server/tools.py              → search_policy + get_policy_detail实现
+tools/mcp/servers/policy_server/server.py             → Policy MCP Server启动
+tools/mcp/servers/material_server/tools.py            → extract_entity + check_material实现
+tools/mcp/servers/material_server/server.py           → Material MCP Server启动
+tools/mcp/servers/workflow_server/tools.py            → create_case + query_status实现
+tools/mcp/servers/workflow_server/server.py           → Workflow MCP Server启动
+```
 
 ---
 
-# 17. License
+## Phase 3 — A2A + Async Callback
+
+### 第一步：A2A基础设施 (tools/a2a/)
+
+```
+tools/a2a/protocol.py                              → Agent Card, Task定义, 消息格式
+tools/a2a/task.py                                   → Task状态机（created→submitted→working→completed/failed）
+tools/a2a/registry.py                               → Agent注册中心（register, discover, health_check）
+tools/a2a/connector.py                              → A2A Connector（send_task, check_status）
+tools/a2a/callback.py                               → Callback API（接收外部Agent结果, 恢复LangGraph）
+tools/a2a/mock_agents/housing_agent.py              → 模拟不动产Agent
+tools/a2a/mock_agents/fund_agent.py                 → 模拟公积金Agent
+```
+
+---
+
+## Phase 4 — Evaluation + Dashboard
+
+### 第一步：评测体系 (governance/evaluation/)
+
+```
+governance/evaluation/metrics.py   → RAG指标（Faithfulness, Answer Relevance, Context Recall）
+                                      + Agent指标（Task Success Rate, Tool Accuracy, Latency, Step Count）
+governance/evaluation/evaluator.py → 评测引擎（加载trace → 计算指标 → 生成报告）
+governance/evaluation/benchmark.py  → 加载Golden Dataset（cases/*.json）→ 运行Agent → 对比预期
+governance/evaluation/runner.py     → CI/CD评测流水线（push触发 → 跑benchmark → 生成报告）
+```
+
+### 第二步：治理基础设施 (governance/)
+
+```
+governance/trace.py      → OpenTelemetry集成（trace_id, span_id, agent, tool, latency, token）
+governance/guardrail.py  → 输入检测（PII/Injection/Sensitive）+ 输出过滤（Error/Secret/Prompt leak）
+governance/pii.py        → PII脱敏（手机138****1234, 身份证110***********1234, 邮箱u***@domain.com）
+governance/monitor.py    → Prometheus指标暴露（agent_success_rate, agent_latency, tool_success_rate）
+governance/dashboard.py  → 运维看板数据API（Agent运行统计, 评测趋势, 版本对比）
+```
+
+### 第三步：Prompt管理 (prompts/)
+
+```
+prompts/registry.py → Prompt注册中心（版本化: Role/Goal/Constraints/Tools/Output Schema/Examples）
+```
+
+---
+
+## 18. 实现优先级总结
+
+```
+第一优先级（让系统跑起来）:
+  orchestration/langgraph/state.py → graph.py → nodes.py → edges.py
+  agents/supervisor/agent.py → planner.py → router.py
+  backend/main.py → config.py → api/routes.py
+
+第二优先级（让Agent有知识）:
+  rag/embedding.py → retriever.py → reranker.py → generator.py
+  agents/policy/agent.py
+  agents/intent/classifier.py → agent.py
+
+第三优先级（让Agent能调工具）:
+  tools/mcp/client.py → gateway.py
+  tools/mcp/servers/policy_server/server.py → tools.py
+
+第四优先级（让系统可治理）:
+  governance/trace.py → guardrail.py → pii.py
+  governance/evaluation/metrics.py → evaluator.py → benchmark.py
+
+第五优先级（跨域协同）:
+  tools/a2a/protocol.py → task.py → connector.py → callback.py
+
+第六优先级（生产化）:
+  deploy/Dockerfile → docker-compose.yml
+  governance/dashboard.py → monitor.py
+```
+
+---
+
+# 19. License
 
 MIT License
 
