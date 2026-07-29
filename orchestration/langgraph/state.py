@@ -609,40 +609,48 @@ def set_intent(state: AgentState, result: IntentResult) -> AgentState:
 
 
 def add_task(state: AgentState, task: Task) -> AgentState:
-    """向task_plan追加一个子任务"""
+    """向task_plan追加一个子任务（调用内部reducer确保合并而非覆盖）"""
+    task_dict = task.model_dump()
+    current: list[dict] = state.get("task_plan", [])  # type: ignore[assignment]
     return {
         **state,
-        "task_plan": [task.model_dump()],
+        "task_plan": _task_plan_reducer(current, [task_dict]),
     }
 
 
 def add_evidence(state: AgentState, evidence_list: list[Evidence]) -> AgentState:
-    """追加政策证据"""
+    """追加政策证据（调用内部reducer确保合并而非覆盖）"""
+    ev_dicts = [e.model_dump() for e in evidence_list]
+    current: list[dict] = state.get("evidence", [])  # type: ignore[assignment]
     return {
         **state,
-        "evidence": [e.model_dump() for e in evidence_list],
+        "evidence": _append_reducer(current, ev_dicts),
     }
 
 
 def record_mcp_call(state: AgentState, record: MCPCallRecord) -> AgentState:
-    """记录一次MCP调用"""
+    """记录一次MCP调用（调用内部reducer确保合并而非覆盖）"""
+    record_dict = record.model_dump()
+    current: list[dict] = state.get("mcp_history", [])  # type: ignore[assignment]
     return {
         **state,
-        "mcp_history": [record.model_dump()],
+        "mcp_history": _append_reducer(current, [record_dict]),
     }
 
 
 def set_error(state: AgentState, error_message: str) -> AgentState:
-    """设置当前错误"""
+    """设置当前错误，并将错误追加到error_history（调用内部reducer确保合并）"""
+    error_entry = {
+        "message": error_message,
+        "agent": state.get("current_agent", ""),
+        "node": state.get("current_node", ""),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    current_history: list[dict] = state.get("error_history", [])  # type: ignore[assignment]
     return {
         **state,
         "error": error_message,
-        "error_history": [{
-            "message": error_message,
-            "agent": state.get("current_agent", ""),
-            "node": state.get("current_node", ""),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }],
+        "error_history": _append_reducer(current_history, [error_entry]),
     }
 
 
@@ -677,3 +685,440 @@ NodeFunction = Any  # Callable[[AgentState], AgentState] — 实际类型由Lang
 
 # Router函数签名: 根据当前state返回下一个节点名
 RouterFunction = Any  # Callable[[AgentState], str]
+
+
+# ============================================================
+# Smoke Test — python -m orchestration.langgraph.state
+# ============================================================
+
+if __name__ == "__main__":
+    import json
+    import traceback
+    from typing import get_type_hints
+
+    passed = 0
+    failed = 0
+
+    def check(description: str, condition: bool, detail: str = ""):
+        """断言并计数"""
+        global passed, failed
+        if condition:
+            passed += 1
+            print(f"  [PASS] {description}")
+        else:
+            failed += 1
+            print(f"  [FAIL] {description}")
+            if detail:
+                print(f"         {detail}")
+
+    def section(title: str):
+        print(f"\n{'─'*60}")
+        print(f"  {title}")
+        print(f"{'─'*60}")
+
+    # ────────────────────────────────────────────────
+    # 1. Enums
+    # ────────────────────────────────────────────────
+    section("1. Enums")
+
+    check("RiskLevel has 4 members", len(RiskLevel) == 4)
+    check("RiskLevel.LOW == 'low'", RiskLevel.LOW.value == "low")
+    check("RiskLevel.CRITICAL == 'critical'", RiskLevel.CRITICAL.value == "critical")
+
+    check("TaskStatus has 5 members", len(TaskStatus) == 5)
+    check("TaskStatus.PENDING is first state", TaskStatus.PENDING.value == "pending")
+
+    check("MCPCallStatus has 4 members", len(MCPCallStatus) == 4)
+    check("MCPCallStatus.BLOCKED exists", MCPCallStatus.BLOCKED.value == "blocked")
+
+    check("A2ATaskStatus has 6 members", len(A2ATaskStatus) == 6)
+    check("A2ATaskStatus lifecycle order",
+          list(A2ATaskStatus)[:3] == [A2ATaskStatus.CREATED, A2ATaskStatus.SUBMITTED, A2ATaskStatus.WORKING])
+
+    check("AgentName has 6 members", len(AgentName) == 6)
+    check("AgentName.SUPERVISOR == 'supervisor'", AgentName.SUPERVISOR.value == "supervisor")
+
+    check("NodeName has 8 members", len(NodeName) == 8)
+    check("NodeName.SUPERVISOR == 'supervisor_node'", NodeName.SUPERVISOR.value == "supervisor_node")
+
+    # ────────────────────────────────────────────────
+    # 2. Pydantic Models — 基本实例化
+    # ────────────────────────────────────────────────
+    section("2. Pydantic Models — 实例化")
+
+    # Task
+    task = Task(type="search_policy", agent=AgentName.POLICY, description="查询餐饮许可政策")
+    check("Task.id auto-generated", task.id.startswith("task_"))
+    check("Task.type == 'search_policy'", task.type == "search_policy")
+    check("Task.status default == PENDING", task.status == TaskStatus.PENDING)
+    check("Task.created_at is ISO 8601", "T" in task.created_at and task.completed_at is None)
+
+    task2 = Task(type="check_material", agent=AgentName.MATERIAL, priority=5,
+                 dependencies=[task.id])
+    check("Task.dependencies linked correctly", task2.dependencies == [task.id])
+
+    # Evidence
+    evidence = Evidence(source="食品经营许可条例", excerpt="第十条：申请食品经营许可，应当提交...", page=10, relevance_score=0.92)
+    check("Evidence.source", evidence.source == "食品经营许可条例")
+    check("Evidence.relevance_score in [0,1]", 0.0 <= evidence.relevance_score <= 1.0)
+
+    # PolicyResult
+    pr = PolicyResult(answer="需要营业执照和食品经营许可证", evidence=[evidence], confidence=0.89)
+    check("PolicyResult.answer", "营业执照" in pr.answer)
+    check("PolicyResult.evidence count == 1", len(pr.evidence) == 1)
+
+    # IntentResult
+    ir = IntentResult(label="business_license", label_name="营业执照办理", confidence=0.95, source="bert")
+    check("IntentResult.label", ir.label == "business_license")
+    check("IntentResult.source == 'bert'", ir.source == "bert")
+
+    # MaterialCheckResult
+    mr = MaterialCheckResult(passed=False, missing=["营业场所证明"], warnings=["身份证照片模糊"])
+    check("MaterialCheckResult.passed == False", mr.passed is False)
+    check("MaterialCheckResult.missing[0]", mr.missing[0] == "营业场所证明")
+
+    # MCPCallRecord
+    mcp = MCPCallRecord(
+        trace_id="trace_abc123",
+        server_name="policy_server",
+        tool_name="search_policy",
+        input_args={"query": "开餐馆需要什么", "top_k": 5},
+        latency_ms=234.5,
+    )
+    check("MCPCallRecord.tool_name", mcp.tool_name == "search_policy")
+    check("MCPCallRecord.status default == SUCCESS", mcp.status == MCPCallStatus.SUCCESS)
+    check("MCPCallRecord.error_message is None", mcp.error_message is None)
+
+    mcp_fail = MCPCallRecord(
+        trace_id="trace_fail", server_name="material_server", tool_name="check_material",
+        status=MCPCallStatus.FAILED, error_message="OCR service unavailable",
+    )
+    check("MCPCallRecord failed status", mcp_fail.status == MCPCallStatus.FAILED)
+
+    # ToolCall
+    tc = ToolCall(tool_name="search_policy", arguments={"query": "test"},
+                  result="找到3条相关法规", timestamp="2026-07-29T10:00:00Z")
+    check("ToolCall.tool_call_id auto-generated", tc.tool_call_id.startswith("call_"))
+    check("ToolCall.result is not None", tc.result is not None)
+
+    # A2ATaskRecord
+    a2a = A2ATaskRecord(
+        source_agent="supervisor", target_agent="housing_agent",
+        skill="query_property", input={"user_id": "001"},
+    )
+    check("A2ATaskRecord.task_id starts with a2a_", a2a.task_id.startswith("a2a_"))
+    check("A2ATaskRecord.status default == CREATED", a2a.status == A2ATaskStatus.CREATED)
+    check("A2ATaskRecord.artifact is None", a2a.artifact is None)
+
+    # ExecutionMetrics
+    metrics = ExecutionMetrics(trace_id="trace_abc", agent_name="policy_agent",
+                               input_tokens=150, output_tokens=300, latency_ms=520.0,
+                               tool_calls_count=2, step_count=3)
+    check("ExecutionMetrics.input_tokens", metrics.input_tokens == 150)
+    check("ExecutionMetrics.success default == True", metrics.success is True)
+
+    # GuardrailResult
+    guard_ok = GuardrailResult()
+    check("GuardrailResult default passed == True", guard_ok.passed is True)
+    check("GuardrailResult default blocked == False", guard_ok.blocked is False)
+
+    guard_block = GuardrailResult(
+        passed=False, pii_detected=["phone", "id_card"], injection_detected=False,
+        blocked=True, reason="检测到未脱敏的个人敏感信息",
+    )
+    check("GuardrailResult blocked", guard_block.blocked is True)
+    check("GuardrailResult.reason", guard_block.reason is not None)
+
+    # ────────────────────────────────────────────────
+    # 3. Pydantic Models — 序列化/反序列化
+    # ────────────────────────────────────────────────
+    section("3. Pydantic Models — model_dump / model_validate")
+
+    # 序列化
+    task_dict = task.model_dump()
+    check("Task.model_dump() produces dict", isinstance(task_dict, dict))
+    check("Task dict has all keys", set(task_dict.keys()) >= {"id", "type", "agent", "description", "status"})
+
+    # JSON 序列化
+    task_json = task.model_dump_json()
+    check("Task.model_dump_json() produces valid JSON", isinstance(task_json, str))
+    parsed = json.loads(task_json)
+    check("Task JSON parses back", parsed["type"] == "search_policy")
+
+    # 反序列化
+    task_roundtrip = Task.model_validate(task_dict)
+    check("Task round-trip: type matches", task_roundtrip.type == task.type)
+    check("Task round-trip: status matches", task_roundtrip.status == task.status)
+
+    # Evidence 序列化
+    ev_dict = evidence.model_dump()
+    check("Evidence.model_dump() round-trip", Evidence.model_validate(ev_dict).source == evidence.source)
+
+    # A2ATaskRecord 序列化（含Optional字段）
+    a2a_dict = a2a.model_dump()
+    check("A2ATaskRecord JSON serializable", json.dumps(a2a_dict) is not None)
+
+    # MCPCallRecord with Optional None
+    mcp_dict = mcp.model_dump()
+    check("MCPCallRecord.error_message is None in dict", mcp_dict["error_message"] is None)
+
+    # ────────────────────────────────────────────────
+    # 4. Pydantic Models — 字段约束校验
+    # ────────────────────────────────────────────────
+    section("4. Pydantic Models — 字段约束")
+
+    # Evidence.relevance_score 边界
+    try:
+        Evidence(source="test", excerpt="test", relevance_score=1.5)
+        check("Evidence.relevance_score > 1.0 should be rejected", False, "Expected ValidationError")
+    except Exception:
+        check("Evidence.relevance_score <= 1.0 constraint works", True)
+
+    try:
+        Evidence(source="test", excerpt="test", relevance_score=-0.1)
+        check("Evidence.relevance_score < 0.0 should be rejected", False, "Expected ValidationError")
+    except Exception:
+        check("Evidence.relevance_score >= 0.0 constraint works", True)
+
+    # IntentResult.confidence 边界
+    try:
+        IntentResult(label="test", confidence=2.0)
+        check("IntentResult.confidence > 1.0 should be rejected", False, "Expected ValidationError")
+    except Exception:
+        check("IntentResult.confidence <= 1.0 constraint works", True)
+
+    # MCPCallRecord 必填字段
+    try:
+        MCPCallRecord()
+        check("MCPCallRecord missing trace_id should be rejected", False, "Expected ValidationError")
+    except Exception:
+        check("MCPCallRecord.trace_id is required", True)
+
+    # ────────────────────────────────────────────────
+    # 5. create_initial_state()
+    # ────────────────────────────────────────────────
+    section("5. create_initial_state()")
+
+    state = create_initial_state(user_query="我要开一家餐馆")
+    check("Return type is dict", isinstance(state, dict))
+    check("trace_id starts with trace_", state["trace_id"].startswith("trace_"))
+    check("user_query preserved", state["user_query"] == "我要开一家餐馆")
+    check("intent is empty string", state["intent"] == "")
+    check("task_plan is empty list", state["task_plan"] == [])
+    check("current_agent == 'supervisor'", state["current_agent"] == "supervisor")
+    check("current_node is empty string", state["current_node"] == "")
+    check("messages is empty list", state["messages"] == [])
+    check("tool_calls is empty list", state["tool_calls"] == [])
+    check("mcp_history is empty list", state["mcp_history"] == [])
+    check("a2a_tasks is empty list", state["a2a_tasks"] == [])
+    check("waiting_task_id is empty string", state["waiting_task_id"] == "")
+    check("external_result is empty dict", state["external_result"] == {})
+    check("evidence is empty list", state["evidence"] == [])
+    check("policy_result is empty dict", state["policy_result"] == {})
+    check("material_result is empty dict", state["material_result"] == {})
+    check("final_answer is empty string", state["final_answer"] == "")
+    check("risk_level == 'low'", state["risk_level"] == "low")
+    check("safety_check is empty dict", state["safety_check"] == {})
+    check("execution_metrics is empty dict", state["execution_metrics"] == {})
+    check("error is empty string", state["error"] == "")
+    check("error_history is empty list", state["error_history"] == [])
+    check("retry_count == 0", state["retry_count"] == 0)
+
+    # 自定义 trace_id
+    state_custom = create_initial_state(user_query="test", trace_id="my_trace_001")
+    check("custom trace_id preserved", state_custom["trace_id"] == "my_trace_001")
+
+    # ────────────────────────────────────────────────
+    # 6. Reducer Functions
+    # ────────────────────────────────────────────────
+    section("6. Reducer Functions")
+
+    # _task_plan_reducer: merge by id
+    t1 = Task(type="search_policy", agent=AgentName.POLICY).model_dump()
+    t2 = Task(type="check_material", agent=AgentName.MATERIAL).model_dump()
+    merged = _task_plan_reducer([t1], [t2])
+    check("task_plan_reducer appends new task", len(merged) == 2)
+    # 更新已存在的task
+    t1_updated = {**t1, "status": TaskStatus.COMPLETED.value}
+    merged2 = _task_plan_reducer([t1], [t1_updated])
+    check("task_plan_reducer updates by id", merged2[0]["status"] == "completed")
+
+    # _tool_calls_reducer: merge by tool_call_id
+    c1 = ToolCall(tool_name="search_policy").model_dump()
+    c2 = ToolCall(tool_name="check_material").model_dump()
+    merged_tc = _tool_calls_reducer([c1], [c2])
+    check("tool_calls_reducer appends new call", len(merged_tc) == 2)
+    # 更新已存在的
+    c1_updated = {**c1, "result": "found 5 docs"}
+    merged_tc2 = _tool_calls_reducer([c1], [c1_updated])
+    check("tool_calls_reducer updates by tool_call_id", merged_tc2[0]["result"] == "found 5 docs")
+
+    # _append_reducer: simple append
+    r1 = _append_reducer(None, [1, 2])
+    check("_append_reducer handles None current", r1 == [1, 2])
+    r2 = _append_reducer([1, 2], [3, 4])
+    check("_append_reducer appends correctly", r2 == [1, 2, 3, 4])
+    r3 = _append_reducer([1], [])
+    check("_append_reducer handles empty update", r3 == [1])
+
+    # ────────────────────────────────────────────────
+    # 7. Helper Functions — State 操作
+    # ────────────────────────────────────────────────
+    section("7. Helper Functions")
+
+    # set_intent
+    intent_result = IntentResult(label="restaurant_license", label_name="餐饮许可",
+                                 confidence=0.93, source="bert")
+    state2 = set_intent(state, intent_result)
+    check("set_intent: intent label", state2["intent"] == "restaurant_license")
+    check("set_intent: intent_result dict", state2["intent_result"]["confidence"] == 0.93)
+
+    # add_task
+    new_task = Task(type="search_policy", agent=AgentName.POLICY, description="查询政策")
+    state3 = add_task(state2, new_task)
+    check("add_task: task added", len(state3["task_plan"]) == 1)
+    check("add_task: task type", state3["task_plan"][0]["type"] == "search_policy")
+
+    # add_evidence
+    ev_list = [
+        Evidence(source="条例A", excerpt="规定X", relevance_score=0.9),
+        Evidence(source="条例B", excerpt="规定Y", relevance_score=0.8),
+    ]
+    state4 = add_evidence(state3, ev_list)
+    check("add_evidence: 2 items", len(state4["evidence"]) == 2)
+    check("add_evidence: source matches", state4["evidence"][0]["source"] == "条例A")
+
+    # record_mcp_call
+    mcp_record = MCPCallRecord(
+        trace_id=state4["trace_id"], server_name="policy_server",
+        tool_name="search_policy", input_args={"query": "开餐馆"},
+        latency_ms=180.0,
+    )
+    state5 = record_mcp_call(state4, mcp_record)
+    check("record_mcp_call: 1 record", len(state5["mcp_history"]) == 1)
+    check("record_mcp_call: tool_name", state5["mcp_history"][0]["tool_name"] == "search_policy")
+
+    # update_current_agent
+    state6 = update_current_agent(state5, AgentName.POLICY)
+    check("update_current_agent: policy", state6["current_agent"] == "policy")
+
+    # transition_to
+    state7 = transition_to(state6, NodeName.POLICY)
+    check("transition_to: policy_node", state7["current_node"] == "policy_node")
+
+    # set_final_answer
+    state8 = set_final_answer(state7, "您需要先办理营业执照，再申请食品经营许可证。")
+    check("set_final_answer", "营业执照" in state8["final_answer"])
+
+    # set_error
+    state9 = set_error(state8, "MCP policy_server connection timeout")
+    check("set_error: message set", state9["error"] == "MCP policy_server connection timeout")
+    check("set_error: history added", len(state9["error_history"]) == 1)
+    check("set_error: agent in history", state9["error_history"][0]["agent"] == "policy")
+
+    # clear_error
+    state10 = clear_error(state9)
+    check("clear_error: error cleared", state10["error"] == "")
+    check("clear_error: retry_count == 1", state10["retry_count"] == 1)
+
+    # ────────────────────────────────────────────────
+    # 8. Type Hints 一致性
+    # ────────────────────────────────────────────────
+    section("8. Type Hints")
+
+    hints = get_type_hints(AgentState)
+    expected_fields = {
+        "trace_id", "user_query", "intent", "intent_result",
+        "task_plan", "current_agent", "current_node",
+        "messages", "tool_calls", "mcp_history",
+        "a2a_tasks", "waiting_task_id", "external_result",
+        "evidence", "policy_result", "material_result",
+        "final_answer", "risk_level", "safety_check",
+        "execution_metrics", "error", "error_history", "retry_count",
+    }
+    check("AgentState has all 24 fields", set(hints.keys()) == expected_fields,
+          f"missing: {expected_fields - set(hints.keys())}, extra: {set(hints.keys()) - expected_fields}")
+
+    # Annotated 字段应保留在hints中
+    check("task_plan in type hints", "task_plan" in hints)
+    check("messages in type hints", "messages" in hints)
+    check("tool_calls in type hints", "tool_calls" in hints)
+    check("mcp_history in type hints", "mcp_history" in hints)
+    check("a2a_tasks in type hints", "a2a_tasks" in hints)
+    check("evidence in type hints", "evidence" in hints)
+    check("error_history in type hints", "error_history" in hints)
+
+    # ────────────────────────────────────────────────
+    # 9. 综合场景 — 模拟完整执行流程
+    # ────────────────────────────────────────────────
+    section("9. End-to-End Scenario")
+
+    # 用户发起请求
+    s = create_initial_state(user_query="我在成都想开一家餐馆，需要哪些手续？")
+
+    # Supervisor 规划
+    task_a = Task(type="search_policy", agent=AgentName.POLICY,
+                  description="查询餐饮许可政策")
+    task_b = Task(type="check_material", agent=AgentName.MATERIAL,
+                  description="检查所需材料清单",
+                  dependencies=[task_a.id])
+    task_c = Task(type="create_case", agent=AgentName.WORKFLOW,
+                  description="创建营业执照办理件",
+                  dependencies=[task_b.id])
+    s = add_task(s, task_a)
+    s = add_task(s, task_b)
+    s = add_task(s, task_c)
+    check("E2E: 3 tasks planned", len(s["task_plan"]) == 3)
+    check("E2E: task_c depends on task_b",
+          task_b.id in s["task_plan"][2].get("dependencies", s["task_plan"][2]["dependencies"]))
+
+    # Policy Agent 执行
+    s = update_current_agent(s, AgentName.POLICY)
+    s = transition_to(s, NodeName.POLICY)
+    s = record_mcp_call(s, MCPCallRecord(
+        trace_id=s["trace_id"], server_name="policy_server",
+        tool_name="search_policy",
+        input_args={"query": "成都 开办餐馆 手续", "top_k": 5},
+        latency_ms=230.0,
+    ))
+    ev = [Evidence(source="成都市餐饮服务许可管理办法", excerpt="第六条：申请餐饮服务许可证应当提交...",
+                   relevance_score=0.94)]
+    s = add_evidence(s, ev)
+    check("E2E: policy agent evidence added", len(s["evidence"]) == 1)
+
+    # Material Agent 执行
+    s = update_current_agent(s, AgentName.MATERIAL)
+    s = transition_to(s, NodeName.MATERIAL)
+    s = record_mcp_call(s, MCPCallRecord(
+        trace_id=s["trace_id"], server_name="material_server",
+        tool_name="check_material",
+        input_args={"business_type": "restaurant", "materials": ["身份证", "场地证明"]},
+        output_result={"passed": True, "missing": []},
+        latency_ms=150.0,
+    ))
+    check("E2E: material agent MCP call recorded", len(s["mcp_history"]) == 2)
+
+    # Governance 检查
+    guard = GuardrailResult(passed=True)
+    s["safety_check"] = guard.model_dump()
+    check("E2E: safety check passed", s["safety_check"]["passed"] is True)
+
+    # 最终答案
+    s = set_final_answer(s, "开办餐馆需要：1.营业执照 2.食品经营许可证 3.消防安全检查。请准备好身份证和经营场所证明。")
+    check("E2E: final answer set", len(s["final_answer"]) > 0)
+    check("E2E: trace_id intact throughout", s["trace_id"].startswith("trace_"))
+    check("E2E: risk_level still low", s["risk_level"] == "low")
+
+    # ────────────────────────────────────────────────
+    # Summary
+    # ────────────────────────────────────────────────
+    section("SUMMARY")
+    total = passed + failed
+    print(f"\n  {passed}/{total} passed", end="")
+    if failed > 0:
+        print(f", {failed} FAILED")
+        print(f"\n  Run with: python -m orchestration.langgraph.state")
+        exit(1)
+    else:
+        print(f" — all good")
+        print(f"\n  Run with: python -m orchestration.langgraph.state")
