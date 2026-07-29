@@ -8,7 +8,6 @@ Task: Implement FastAPI app factory with CORS, middleware, and route registratio
 """
 from __future__ import annotations
 
-import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -21,9 +20,8 @@ from tools.logger import (
     setup_logging,
     get_logger,
     get_current_trace_id,
-    get_current_user_id,
-    get_current_agent_name,
 )
+
 
 # ============================================================
 # Lifespan — 应用启动/关闭事件
@@ -36,13 +34,13 @@ async def lifespan(app: FastAPI):
     FastAPI lifespan事件处理器。
 
     Startup:
-        - 初始化 loguru 日志系统
-        - 初始化数据库连接池（TODO）
-        - 预热Agent Graph（TODO）
+        1. 初始化日志系统
+        2. 初始化数据库连接池 + 建表
+        3. 预热 Agent Graph（TODO）
 
     Shutdown:
-        - 关闭数据库连接池（TODO）
-        - 关闭Redis连接（TODO）
+        1. 关闭数据库连接池
+        2. 关闭 Redis 连接（TODO）
     """
     settings = get_settings()
 
@@ -50,24 +48,30 @@ async def lifespan(app: FastAPI):
     setup_logging(settings)
 
     logger = get_logger(__name__)
-    logger.info(
-        f"启动 {settings.app_name} v{settings.app_version} (debug={settings.debug})"
-    )
-    logger.info(f"LLM: {settings.llm_api_url} model={settings.llm_model}")
-    logger.info(
-        f"PostgreSQL: {settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
-    )
-    logger.info(f"Redis: {settings.redis_host}:{settings.redis_port}")
-    logger.info(f"MCP Gateway: {settings.mcp_gateway_url}")
+    logger.info("启动 {} v{} (debug={})", settings.app_name, settings.app_version, settings.debug)
+    logger.info("LLM: {} model={}", settings.llm_api_url, settings.llm_model)
+    logger.info("PostgreSQL: {}:{}/{}", settings.postgres_host, settings.postgres_port, settings.postgres_db)
+    logger.info("Redis: {}:{}", settings.redis_host, settings.redis_port)
+    logger.info("MCP Gateway: {}", settings.mcp_gateway_url)
 
-    # 创建日志目录
-    import os
-    os.makedirs("logs", exist_ok=True)
+    # 初始化数据库
+    try:
+        from database.connection import init_db
+        await init_db()
+        logger.info("数据库初始化完成")
+    except Exception as e:
+        logger.warning("数据库初始化失败（将以无DB模式运行）: {}", e)
 
     yield  # App运行中
 
     # ── Shutdown ──
     logger.info("正在关闭应用...")
+    try:
+        from database.connection import close_db
+        await close_db()
+        logger.info("数据库连接池已关闭")
+    except Exception:
+        pass
 
 
 # ============================================================
