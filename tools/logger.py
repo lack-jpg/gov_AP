@@ -1,19 +1,21 @@
 """
-backend.middleware.logging - Request logging middleware: trace_id injection, request/response logging
+tools.logger - 项目统一日志模块
 
 基于 loguru，实现：
 - 结构化控制台输出（带颜色，从 ContextVar 实时读取 trace_id）
 - 文件日志轮转（按天，30天保留，gzip压缩）
-- 错误日志单独文件
+- 错误日志单独文件（90天保留）
 - stdlib logging → loguru 桥接（第三方库如 langchain/uvicorn 也走 loguru）
 - FastAPI 请求日志中间件（自动注入 trace_id）
 - Agent 执行日志装饰器
 - MCP 调用日志工具
 
+运行时日志写入: gov_AP/logger/ 目录
+
 Author: le
 Date: 2026/7/29
-Version: 0.1
-Task: Implement structured logging middleware with trace_id propagation
+Version: 0.2
+Task: Unified logging module — relocated from backend/middleware/logging.py to tools/logger.py
 """
 from __future__ import annotations
 
@@ -29,6 +31,13 @@ from fastapi import Request, Response
 from loguru import logger as _loguru_logger
 
 from backend.config import Settings
+
+
+# ============================================================
+# 日志输出目录
+# ============================================================
+
+LOG_DIR = "logger"
 
 
 # ============================================================
@@ -101,6 +110,8 @@ def _console_format(record: dict[str, Any]) -> str:
         message=record["message"],
         exception=_format_exception(record.get("exception"), escape_angles=True),
     )
+
+
 def _file_format(record: dict[str, Any]) -> str:
     """
     文件格式 — 无颜色，纯文本，适合 grep / ELK 采集。
@@ -172,14 +183,17 @@ def setup_logging(settings: Settings) -> None:
     """
     初始化日志系统。
 
-    1. 创建 logs/ 目录
+    1. 创建 logger/ 目录
     2. 移除所有已有 handler
     3. 添加控制台输出（debug模式带颜色和diagnose）
     4. 添加文件输出（按天轮转，保留30天，gzip压缩）
     5. 错误日志单独文件（90天保留）
     6. 桥接 stdlib logging → loguru
+
+    Args:
+        settings: 应用配置（包含 log_level 等）
     """
-    os.makedirs("logs", exist_ok=True)
+    os.makedirs(LOG_DIR, exist_ok=True)
 
     level = settings.log_level.upper()
 
@@ -196,9 +210,9 @@ def setup_logging(settings: Settings) -> None:
         diagnose=settings.debug,
     )
 
-    # ── 文件输出 ──
+    # ── 运行日志 ──
     _loguru_logger.add(
-        "logs/app_{time:YYYY-MM-DD}.log",
+        os.path.join(LOG_DIR, "app_{time:YYYY-MM-DD}.log"),
         format=_file_format,
         level="INFO",
         rotation="00:00",
@@ -209,7 +223,7 @@ def setup_logging(settings: Settings) -> None:
 
     # ── 错误日志 ──
     _loguru_logger.add(
-        "logs/error_{time:YYYY-MM-DD}.log",
+        os.path.join(LOG_DIR, "error_{time:YYYY-MM-DD}.log"),
         format=_error_file_format,
         level="ERROR",
         rotation="00:00",
@@ -221,7 +235,8 @@ def setup_logging(settings: Settings) -> None:
     _bridge_stdlib_logging()
 
     _loguru_logger.info(
-        "日志系统初始化完成 level={} debug={}", level, settings.debug
+        "日志系统初始化完成 level={} debug={} dir={}",
+        level, settings.debug, LOG_DIR,
     )
 
 
@@ -292,6 +307,7 @@ class RequestLoggingMiddleware:
     5. 请求结束后清理 ContextVar
 
     使用方式:
+        from tools.logger import RequestLoggingMiddleware
         app.add_middleware(RequestLoggingMiddleware)
     """
 

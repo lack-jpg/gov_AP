@@ -29,7 +29,7 @@ from backend.api.schemas import (
     EvidenceItem,
 )
 from backend.config import Settings
-from backend.middleware.logging import get_logger
+from tools.logger import get_logger
 
 logger = get_logger(__name__)
 

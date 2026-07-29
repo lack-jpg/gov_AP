@@ -34,7 +34,8 @@ env/
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs (runtime output in logger/ directory)
+logger/
 logs/
 *.log
 

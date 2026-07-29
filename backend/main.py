@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.config import get_settings
-from backend.middleware.logging import (
+from tools.logger import (
     RequestLoggingMiddleware,
     setup_logging,
     get_logger,

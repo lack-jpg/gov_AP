@@ -13,7 +13,7 @@ from typing import Optional
 from langchain_core.language_models import BaseChatModel
 
 from agents.supervisor.agent import SupervisorAgent
-from backend.middleware.logging import get_logger, log_agent_call, log_mcp_call
+from tools.logger import get_logger, log_agent_call, log_mcp_call
 from orchestration.langgraph.state import (
     AgentName,
     AgentState,

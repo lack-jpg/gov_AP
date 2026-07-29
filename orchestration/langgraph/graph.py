@@ -16,7 +16,7 @@ from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 
 from agents.supervisor.agent import SupervisorAgent
-from backend.middleware.logging import get_logger
+from tools.logger import get_logger
 from orchestration.langgraph.edges import (
     route_after_supervisor,
     route_after_intent,
