@@ -54,32 +54,36 @@
 
 ### agents/supervisor/agent.py
 - **用途**：Supervisor核心逻辑 —— 接收用户请求 → 规划 → 路由 → 汇总结果
-- **下一步**：实现 `SupervisorAgent` 类：
-  - `plan(user_query: str, state: AgentState) -> List[Task]` — 调用planner拆解任务
-  - `route(task: Task) -> str` — 调用router选择Agent
-  - `execute(state: AgentState) -> AgentState` — 主执行循环
-  - `handle_error(error, state) -> AgentState` — 异常处理和恢复
+- **状态**：✅ 已完成（~200行）
+  - `SupervisorAgent` 类：`orchestrate()` 主循环（4场景：初始/错误/完成/继续）
+  - `handle_intent_result()` 基于意图重新规划
+  - `handle_error_and_replan()` 错误恢复（最多3次重试，跳过失败任务）
+  - `_synthesize()` 汇总 policy + material 结果生成最终回答
+  - 构造函数接收 `llm: Optional[BaseChatModel]`，无LLM时用规则模式
 
 ### agents/supervisor/planner.py
 - **用途**：任务规划器 —— LLM-based将用户自然语言需求拆解为子任务序列
-- **下一步**：实现 `Planner` 类：
-  - `decompose(user_query: str, intent: str) -> List[Task]` — LLM拆解任务
-  - Task结构：`{id, type, agent, input, dependencies, priority}`
-  - 例如："开餐馆" → `[{search_policy}, {check_material}, {create_case}]`
+- **状态**：✅ 已完成（~230行）
+  - `Planner` 类：LLM+规则混合策略（`_llm_plan` + `_rule_plan` 兜底）
+  - `plan(state)` → `list[Task]`，`replan_on_error(state, error)` 跳过失败任务
+  - 5种intent预置标准任务模板（business_license, restaurant_license, fund_query...）
+  - LLM输出JSON容错解析（正则提取 + `model_validate`）
 
 ### agents/supervisor/router.py
 - **用途**：Agent路由器 —— 根据任务类型和意图选择合适的Agent
-- **下一步**：实现 `Router` 类：
-  - `route(task: Task) -> str` — 返回agent_name
-  - 路由表：`{"policy_query": "policy_agent", "material_check": "material_agent", ...}`
-  - 支持LLM动态路由fallback
+- **状态**：✅ 已完成（~170行）
+  - `Router` 类：4层路由策略（精确匹配 → 模糊匹配 → LLM → 关键词推断）
+  - `ROUTING_TABLE`：16条 task_type→AgentName 映射
+  - `route(task)` → `AgentName`，`route_batch(tasks)` 批量路由
+  - `_infer_by_keyword()` 中文关键词兜底推断
 
 ### agents/supervisor/prompts.py
 - **用途**：Supervisor Agent的Prompt模板（版本化管理）
-- **下一步**：定义 `SUPERVISOR_SYSTEM_PROMPT`、`PLANNER_PROMPT`、`ROUTER_PROMPT`：
-  - Role: "你是一个政务办事系统的任务协调者"
-  - Constraints: "只做任务规划，不直接回答业务问题"
-  - Output Schema: 定义JSON格式输出
+- **状态**：✅ 已完成（~140行）
+  - `SUPERVISOR_SYSTEM_PROMPT`：角色+职责+可调度Agent表+输出格式
+  - `PLANNER_SYSTEM_PROMPT` + `PLANNER_USER_PROMPT`：任务拆解模板（含{intent}和{context}占位符）
+  - `ROUTER_SYSTEM_PROMPT` + `ROUTER_USER_PROMPT`：路由判断模板
+  - `SUPERVISOR_SYNTHESIS_PROMPT`：结果汇总模板（含{policy_result}/{material_result}占位符）
 
 ---
 
@@ -256,48 +260,41 @@
 ---
 
 ### orchestration/langgraph/state.py
-- **用途**：定义所有Agent节点共享的AgentState（TypedDict）
-- **下一步**：实现 `AgentState(TypedDict)`:
-  ```python
-  class AgentState(TypedDict):
-      trace_id: str          # 全链路追踪ID
-      user_query: str        # 用户原始输入
-      intent: str            # 识别出的意图标签
-      task_plan: list        # 拆解后的子任务列表
-      current_agent: str     # 当前执行的Agent名称
-      messages: list         # 对话消息历史
-      tool_calls: list       # MCP工具调用历史
-      mcp_history: list      # MCP调用详细记录
-      a2a_tasks: list        # A2A跨域任务列表
-      evidence: list         # 政策证据引用
-      final_answer: str      # 最终回答
-      risk_level: str        # 风险等级 (low/medium/high)
-  ```
+- **用途**：定义所有Agent节点共享的AgentState（TypedDict）+ 10个Pydantic子模型
+- **状态**：✅ 已完成（~680行，117条冒烟测试通过）
+  - **7个枚举**：RiskLevel, TaskStatus, MCPCallStatus, A2ATaskStatus, AgentName, NodeName
+  - **10个Pydantic模型**：Task, Evidence, PolicyResult, IntentResult, MaterialCheckResult, MCPCallRecord, ToolCall, A2ATaskRecord, ExecutionMetrics, GuardrailResult — 65个字段全部带 `Field(description=...)`
+  - **AgentState TypedDict**：24个字段，7个Annotated累加字段（task_plan/tool_calls/mcp_history/a2a_tasks/evidence/messages/error_history），3个自定义reducer
+  - **14个Helper函数**：create_initial_state, set_intent, add_task, record_mcp_call, set_error, update_current_agent...
+  - 运行 `python -m orchestration.langgraph.state` 执行117条冒烟测试
 
 ### orchestration/langgraph/graph.py
 - **用途**：构建完整的LangGraph StateGraph
-- **下一步**：实现 `build_graph() -> StateGraph`:
-  - 添加节点：supervisor → intent → policy/material(并行) → workflow → governance
-  - 添加条件边：router决定下一个Agent
-  - 注入Checkpointer用于状态持久化
-  - 编译并返回 compiled graph
+- **状态**：✅ 已完成（~170行）
+  - `build_graph()` 工厂函数：注册6个节点，5组条件边，支持checkpointer注入
+  - Graph结构: START → supervisor → {intent → supervisor} → {policy/material/workflow} → governance → END
+  - `create_default_graph()` 便捷函数：无LLM纯stub模式，用于开发调试和CI
+  - 节点通过 lambda 闭包注入 llm/supervisor 实例
 
 ### orchestration/langgraph/nodes.py
 - **用途**：LangGraph节点函数 —— 每个节点包装一个Agent调用
-- **下一步**：实现各节点函数：
-  - `supervisor_node(state: AgentState) -> AgentState` — 调用Supervisor Agent
-  - `intent_node(state: AgentState) -> AgentState` — 调用Intent Agent
-  - `policy_node(state: AgentState) -> AgentState` — 调用Policy Agent
-  - `material_node(state: AgentState) -> AgentState` — 调用Material Agent
-  - `workflow_node(state: AgentState) -> AgentState` — 调用Workflow Agent
-  - `governance_node(state: AgentState) -> AgentState` — 调用Governance Agent
+- **状态**：✅ 已完成（~320行）
+  - `supervisor_node()`：调用SupervisorAgent.orchestrate()
+  - `intent_node()`：关键词stub分类（餐馆→restaurant_license, 公司→business_register...），TODO: 替换为BERT
+  - `policy_node()`：3场景模板stub回答（餐饮/企业注册/公积金），TODO: 替换为RAG管线
+  - `material_node()`：stub空审核（默认passed），TODO: 替换为OCR+实体抽取
+  - `workflow_node()`：stub模拟办件（生成CASE_XXXXXXXX），TODO: 替换为MCP调用
+  - `governance_node()`：stub安全检查（默认通过），TODO: 替换为真实Guardrail
+  - 全部节点记录MCP调用日志 + error处理
 
 ### orchestration/langgraph/edges.py
 - **用途**：条件路由函数 —— 根据state决定下一个节点
-- **下一步**：实现条件路由：
-  - `route_after_supervisor(state) -> str` — 根据task_plan返回下一个Agent节点名
-  - `route_after_intent(state) -> str` — 返回"supervisor"做二次规划
-  - `route_after_policy_or_material(state) -> str` — 判断是否需要继续
+- **状态**：✅ 已完成（~190行）
+  - `route_after_supervisor()`：4阶段遍历（无intent→intent, 无plan→supervisor, pending task→对应agent, 完成→governance）
+  - `route_after_intent()`：回supervisor做二次规划
+  - `route_after_specialist()`：错误→supervisor, 高风险→governance, 否则继续route_after_supervisor
+  - `route_after_governance()`：blocked→END, waiting_a2a→END(挂起), error+retry<3→supervisor, 正常→END
+  - `route_on_start()`：起始路由
 
 ### orchestration/langgraph/checkpointer.py
 - **用途**：PostgreSQL Checkpointer —— LangGraph状态持久化
@@ -647,21 +644,18 @@
 
 ### backend/main.py
 - **用途**：FastAPI应用入口 —— app创建、中间件注册、路由挂载
-- **下一步**：实现 `create_app() -> FastAPI`:
-  - CORS配置
-  - 注册中间件（auth → rbac → logging → tracing）
-  - 挂载路由（/api/chat, /api/agent, /api/evaluation, /api/a2a/callback）
-  - 启动/关闭事件（数据库连接池初始化/释放）
+- **状态**：✅ 已完成（~150行）
+  - `create_app()` 工厂函数：CORS + RequestLoggingMiddleware + 全局异常处理 + /api路由 + /health
+  - `lifespan()` async context manager：startup调用setup_logging + 打印配置摘要，shutdown清理
+  - 模块级 `app` 实例（uvicorn入口: `backend.main:app`）
 
 ### backend/config.py
 - **用途**：应用配置管理 —— 基于pydantic-settings读.env
-- **下一步**：实现 `Settings` 类：
-  - 数据库URL、Redis URL、Milvus URL
-  - LLM API URL/Key/Model
-  - JWT Secret/Algorithm
-  - Agent Runtime参数（max_steps, timeout）
-  - OpenTelemetry端点
-  - 每个字段从环境变量读取，有默认值
+- **状态**：✅ 已完成（~240行）
+  - `Settings(BaseSettings)` 类：30+字段，覆盖 App / LLM / Embedding / PostgreSQL / Redis / Milvus / Agent Runtime / MCP / A2A / JWT / OpenTelemetry / LangSmith / CORS
+  - 计算属性：`postgres_url`（asyncpg）、`postgres_sync_url`（psycopg）、`redis_url`
+  - `get_settings()` lru_cache单例 + 模块级 `settings` 便捷引用
+  - 全部字段支持 `.env` 文件和环境变量，带 `env_prefix` alias
 
 ---
 
@@ -673,28 +667,29 @@
 
 ### backend/api/routes.py
 - **用途**：API端点定义
-- **下一步**：实现以下端点：
-  - `POST /api/chat` — 用户对话（调用LangGraph Agent流程）
-  - `GET /api/agent/status/{trace_id}` — 查询Agent执行状态
-  - `POST /api/a2a/callback` — A2A外部Agent回调
-  - `GET /api/evaluation/report/{version}` — 获取评测报告
-  - `GET /api/dashboard/overview` — 运维看板概览
+- **状态**：✅ 已完成（~230行）
+  - `POST /api/chat`：核心端点，接收ChatRequest → execute_agent → 提取evidence/elapsed/risk_level → 返回ChatResponse
+  - `GET /api/agent/status/{trace_id}`：stub（TODO: 从DB/Redis查询真实状态）
+  - `POST /api/a2a/callback`：stub（TODO: 按task_id恢复LangGraph checkpoint）
+  - `GET /api/dashboard/overview`：stub（TODO: 从Trace统计真实数据）
+  - `GET /api/evaluation/report/{version}`：stub（TODO: 从evaluation表读取）
 
 ### backend/api/dependencies.py
 - **用途**：FastAPI依赖注入 —— DB session, current user, agent runtime
-- **下一步**：实现：
-  - `get_db() -> AsyncSession` — 数据库会话
-  - `get_current_user(token) -> User` — JWT用户解析
-  - `get_agent_runtime() -> AgentRuntime` — Agent运行时实例
+- **状态**：✅ 已完成（~140行）
+  - `get_user_id()`：从X-User-Id Header提取，无则401
+  - `get_trace_id()`：从X-Trace-Id Header提取，无则自动生成
+  - `get_config()`：Settings单例注入
+  - `get_agent_graph()`：惰性单例StateGraph（首次调用时根据settings.llm_api_key决定LLM/stub模式）
+  - `execute_agent()`：create_initial_state → graph.ainvoke，封装递归限制和config
 
 ### backend/api/schemas.py
 - **用途**：API请求/响应的Pydantic模型
-- **下一步**：定义：
-  - `ChatRequest` — {user_query: str, user_id: str}
-  - `ChatResponse` — {trace_id: str, answer: str, evidence: List}
-  - `AgentStatusResponse` — {trace_id, status, current_agent, steps}
-  - `A2ACallbackRequest` — {task_id, status, artifact}
-  - `EvaluationReportResponse` — {version, metrics, created_at}
+- **状态**：✅ 已完成（~230行）
+  - **Request**：ChatRequest, AgentStatusRequest, A2ACallbackRequest, EvaluationRequest
+  - **Response**：ChatResponse(trace_id/answer/evidence/risk_level/elapsed_ms), AgentStatusResponse, A2ACallbackResponse, DashboardOverview, EvaluationMetricsResponse
+  - **通用**：EvidenceItem, ErrorResponse（统一错误格式）
+  - 全部字段带 `Field(description=...)` 和 `ge/le` 约束
 
 ---
 
@@ -719,11 +714,14 @@
   - 在请求处理前检查权限
 
 ### backend/middleware/logging.py
-- **用途**：请求日志中间件
-- **下一步**：实现：
-  - 为每个请求生成/提取trace_id
-  - 使用loguru记录请求信息（method, path, user_id, trace_id, latency）
-  - 将trace_id注入到响应头
+- **用途**：结构化日志系统（基于loguru）— trace_id 跨协程传递、请求/响应日志、Agent/MCP执行日志
+- **状态**：✅ 已完成（~420行）
+  - **3个ContextVar**：trace_id, user_id, agent_name — asyncio安全的跨协程上下文传递
+  - **3个Format函数**：_console_format（带颜色+尖括号转义）、_file_format（纯文本）、_error_file_format
+  - **setup_logging()**：初始化控制台（按debug模式决定颜色）+ 文件（按天轮转30天+gzip）+ 错误文件（90天）+ stdlib桥接
+  - **RequestLoggingMiddleware**：自动trace_id生成/提取、请求开始/结束日志（method/path/status/latency）、响应头注入
+  - **log_agent_call()** 装饰器、**log_mcp_call()** 函数
+  - **get_logger(name)** 便捷工厂
 
 ### backend/middleware/tracing.py
 - **用途**：OpenTelemetry链路追踪中间件

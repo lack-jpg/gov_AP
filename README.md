@@ -972,73 +972,75 @@ Evaluation
 
 # 16. 开发指南
 
+> **Phase 1 进度**：核心编排层 ✅ | Supervisor Agent ✅ | 日志系统 ✅ | 意图/政策/材料/流程Agent ⏳（stub已就绪，待接入真实模型）| RAG管线 ⏳
+
 ## Phase 1 — LangGraph Runtime + Supervisor + RAG
 
-### 第一步：核心状态和编排 (orchestration/langgraph/)
+### 第一步：核心状态和编排 (orchestration/langgraph/) ✅ 已完成
 
 ```
-orchestration/langgraph/state.py       → AgentState TypedDict（trace_id, user_query, intent, task_plan, messages...）
-orchestration/langgraph/graph.py       → StateGraph构建（add_node, add_edge, add_conditional_edges）
-orchestration/langgraph/nodes.py       → 6个Agent节点函数（supervisor_node, intent_node, policy_node...）
-orchestration/langgraph/edges.py       → 条件路由函数（route_after_supervisor, route_after_intent...）
-orchestration/langgraph/checkpointer.py → PostgreSQL Checkpointer实现
-orchestration/langgraph/runtime.py     → 运行时安全（max_steps=10, loop_detection, timeout=30s）
+✅ orchestration/langgraph/state.py       → 24字段AgentState + 10个Pydantic模型（7枚举，65字段全带description）
+✅ orchestration/langgraph/graph.py       → StateGraph构建（6节点 + 5组条件边 + checkpointer注入）
+✅ orchestration/langgraph/nodes.py       → 6个Agent节点函数（含stub实现，TODO标注清晰）
+✅ orchestration/langgraph/edges.py       → 5个条件路由函数（错误/风险/A2A感知）
+⏳ orchestration/langgraph/checkpointer.py → PostgreSQL Checkpointer（TODO）
+⏳ orchestration/langgraph/runtime.py     → 运行时安全（TODO）
 ```
 
-### 第二步：数据库和配置 (database/ + backend/)
+### 第二步：数据库和配置 (database/ + backend/) ✅ 核心已完成
 
 ```
-database/connection.py    → async SQLAlchemy engine + session factory
-database/models.py        → ORM模型（Trace, Agent, Prompt, Evaluation, Checkpoint）
-database/schemas.py       → Pydantic v2序列化模型
-backend/config.py          → pydantic-settings配置类（读.env）
-backend/main.py            → FastAPI app factory（CORS, middleware, router注册）
+✅ backend/config.py          → Settings类30+字段（LLM/DB/Redis/Milvus/MCP/A2A/JWT/OTel），lru_cache单例
+✅ backend/main.py            → FastAPI app factory（lifespan + CORS + RequestLoggingMiddleware + /health）
+✅ backend/middleware/logging.py → 完整日志系统（loguru + ContextVar + 3格式函数 + 桥接stdlib + Agent/MCP日志装饰器）
+⏳ database/connection.py    → async SQLAlchemy（TODO）
+⏳ database/models.py        → ORM模型（TODO）
+⏳ database/schemas.py       → Pydantic序列化（TODO）
 ```
 
-### 第三步：接入层 (backend/)
+### 第三步：接入层 (backend/) ✅ API层已完成
 
 ```
-backend/middleware/auth.py     → JWT验证中间件
-backend/middleware/rbac.py     → RBAC权限检查
-backend/middleware/logging.py  → trace_id注入 + 结构化日志
-backend/middleware/tracing.py  → OpenTelemetry span创建
-backend/api/routes.py          → /chat, /agent, /evaluation, /a2a/callback 端点
-backend/api/dependencies.py    → get_db, get_current_user, get_agent_runtime
-backend/api/schemas.py         → ChatRequest, AgentResponse, EvaluationReport
-backend/services/agent_service.py → Agent生命周期管理（创建、执行、恢复）
+✅ backend/api/schemas.py         → 10个Pydantic模型（ChatRequest/Response, AgentStatus, A2ACallback...）
+✅ backend/api/dependencies.py    → 5个依赖注入（user_id, trace_id, config, agent_graph惰性单例, execute_agent）
+✅ backend/api/routes.py          → 5个端点（POST /api/chat核心, GET status, POST a2a, GET dashboard, GET evaluation）
+⏳ backend/middleware/auth.py     → JWT验证（TODO）
+⏳ backend/middleware/rbac.py     → RBAC权限（TODO）
+⏳ backend/middleware/tracing.py  → OpenTelemetry span（TODO）
+⏳ backend/services/agent_service.py → Agent生命周期管理（TODO）
 ```
 
-### 第四步：Agent实现 (agents/)
+### 第四步：Agent实现 (agents/) ✅ Supervisor完成，其余stub就绪
 
 ```
-agents/__init__.py              → AgentRegistry（register, get, list）
-agents/supervisor/planner.py    → 任务拆解逻辑（LLM-based task decomposition）
-agents/supervisor/router.py     → Agent路由（intent → agent mapping）
-agents/supervisor/agent.py      → Supervisor主逻辑（plan → route → execute）
-agents/intent/classifier.py     → BERT分类器（fine-tune + inference）
-agents/intent/schema.py         → IntentLabel, IntentResult Pydantic模型
-agents/intent/agent.py          → Intent Agent主逻辑（classify + fallback to LLM）
-agents/policy/schema.py         → PolicyResult（answer + evidence[]）
-agents/policy/agent.py          → Policy Agent主逻辑（call RAG pipeline → format answer）
-agents/material/ocr.py          → OCR文档识别
-agents/material/extractor.py    → 实体/字段抽取
-agents/material/validator.py    → 规则校验（required fields vs submitted）
-agents/material/agent.py        → Material Agent主逻辑（OCR → extract → validate）
-agents/workflow/agent.py        → Workflow Agent（通过MCP调用create_case/query_status）
-agents/governance/security.py   → 安全检测（PII, prompt injection, sensitive words）
-agents/governance/behavior.py   → 行为分析（loop detection, anomaly detection）
-agents/governance/optimizer.py  → 自动优化（trace分析 → 优化建议）
-agents/governance/agent.py      → Governance Agent主逻辑
+✅ agents/supervisor/prompts.py    → 5套Prompt模板（System/Planner/Router/Synthesis）
+✅ agents/supervisor/planner.py    → Planner类（LLM+规则混合，5种intent模板，JSON容错解析，replan_on_error）
+✅ agents/supervisor/router.py     → Router类（4层策略，16条目路由表，LLM+关键词兜底）
+✅ agents/supervisor/agent.py      → SupervisorAgent类（orchestrate 4场景，error recover 3次重试，_synthesize汇总）
+⏳ agents/intent/classifier.py     → BERT分类器（TODO，当前intent_node使用关键词stub）
+⏳ agents/intent/schema.py         → IntentLabel, IntentResult（TODO，已定义在state.py的IntentResult中）
+⏳ agents/intent/agent.py          → Intent Agent主逻辑（TODO）
+⏳ agents/policy/schema.py         → PolicyResult（TODO，已定义在state.py）
+⏳ agents/policy/agent.py          → Policy Agent主逻辑（TODO，当前policy_node使用模板stub）
+⏳ agents/material/ocr.py          → OCR文档识别（TODO）
+⏳ agents/material/extractor.py    → 实体抽取（TODO）
+⏳ agents/material/validator.py    → 规则校验（TODO）
+⏳ agents/material/agent.py        → Material Agent主逻辑（TODO，当前material_node使用stub）
+⏳ agents/workflow/agent.py        → Workflow Agent（TODO，当前workflow_node使用stub模拟办件号）
+⏳ agents/governance/security.py   → 安全检测（TODO）
+⏳ agents/governance/behavior.py   → 行为分析（TODO）
+⏳ agents/governance/optimizer.py  → 自动优化（TODO）
+⏳ agents/governance/agent.py      → Governance Agent主逻辑（TODO）
 ```
 
-### 第五步：RAG管线 (rag/)
+### 第五步：RAG管线 (rag/) ⏳ 待开始
 
 ```
-rag/embedding.py        → BGE embedding模型加载 + encode_query/encode_documents
-rag/retriever.py        → 混合检索（Milvus dense + BM25 sparse → 融合排序）
-rag/reranker.py         → BGE Reranker重排序
-rag/generator.py        → LLM生成（带evidence标注的答案）
-rag/knowledge_base.py   → 知识库索引（文档加载 → 切分 → embedding → 写入Milvus）
+⏳ rag/embedding.py        → BGE embedding模型加载 + encode_query/encode_documents
+⏳ rag/retriever.py        → 混合检索（Milvus dense + BM25 sparse → 融合排序）
+⏳ rag/reranker.py         → BGE Reranker重排序
+⏳ rag/generator.py        → LLM生成（带evidence标注的答案）
+⏳ rag/knowledge_base.py   → 知识库索引（文档加载 → 切分 → embedding → 写入Milvus）
 ```
 
 ---
