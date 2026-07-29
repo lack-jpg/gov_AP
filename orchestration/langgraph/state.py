@@ -93,25 +93,65 @@ class NodeName(str, Enum):
 class Task(BaseModel):
     """Supervisor拆解出的子任务"""
 
-    id: str = Field(default_factory=lambda: f"task_{uuid.uuid4().hex[:8]}")
-    type: str = Field(description="任务类型: search_policy | check_material | create_case | ...")
-    agent: AgentName = Field(description="负责执行的Agent")
-    description: str = Field(default="", description="任务描述")
-    input: dict[str, Any] = Field(default_factory=dict, description="任务输入参数")
-    dependencies: list[str] = Field(default_factory=list, description="依赖的前置任务ID列表")
-    priority: int = Field(default=0, description="优先级，数字越大越优先")
-    status: TaskStatus = Field(default=TaskStatus.PENDING)
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    completed_at: Optional[str] = Field(default=None)
+    id: str = Field(
+        default_factory=lambda: f"task_{uuid.uuid4().hex[:8]}",
+        description="子任务唯一标识，自动生成 (task_xxxxxxxx)",
+    )
+    type: str = Field(
+        description="任务类型: search_policy | check_material | create_case | query_status | ..."
+    )
+    agent: AgentName = Field(
+        description="负责执行该子任务的Agent名称 (supervisor | intent | policy | material | workflow)"
+    )
+    description: str = Field(
+        default="",
+        description="子任务的人类可读描述，便于trace和debug时理解任务内容",
+    )
+    input: dict[str, Any] = Field(
+        default_factory=dict,
+        description="子任务的输入参数，传递给目标Agent的具体数据",
+    )
+    dependencies: list[str] = Field(
+        default_factory=list,
+        description="依赖的前置任务ID列表，只有依赖任务全部COMPLETED后本任务才能开始执行",
+    )
+    priority: int = Field(
+        default=0,
+        description="任务优先级，数字越大越优先执行，默认为0",
+    )
+    status: TaskStatus = Field(
+        default=TaskStatus.PENDING,
+        description="任务当前状态: pending | running | completed | failed | skipped",
+    )
+    created_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
+        description="任务创建时间 (ISO 8601 UTC格式)",
+    )
+    completed_at: Optional[str] = Field(
+        default=None,
+        description="任务完成时间 (ISO 8601 UTC格式)，未完成时为None",
+    )
 
 
 class Evidence(BaseModel):
-    """政策证据引用（Policy Agent必须返回）"""
+    """政策证据引用（Policy Agent必须返回，保证回答可追溯、可审核）"""
 
-    source: str = Field(description="来源文件名或法规名称")
-    excerpt: str = Field(description="引用的原文片段")
-    page: Optional[int] = Field(default=None, description="页码")
-    relevance_score: float = Field(default=0.0, ge=0.0, le=1.0, description="相关性分数")
+    source: str = Field(
+        description="来源文件名或法规名称，如 '食品经营许可条例'、'城市管理法第X条'",
+    )
+    excerpt: str = Field(
+        description="引用的政策原文片段，用于支撑回答的可靠性",
+    )
+    page: Optional[int] = Field(
+        default=None,
+        description="政策文件中的页码，方便人工复核时定位",
+    )
+    relevance_score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="该证据与查询的相关性分数，0.0~1.0，由Reranker输出",
+    )
 
 
 class PolicyResult(BaseModel):
@@ -123,86 +163,222 @@ class PolicyResult(BaseModel):
 
 
 class IntentResult(BaseModel):
-    """Intent Agent识别结果"""
+    """Intent Agent意图识别结果"""
 
-    label: str = Field(description="意图标签: business_license | fund_query | ...")
-    label_name: str = Field(default="", description="标签中文名")
-    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
-    source: str = Field(default="bert", description="识别来源: bert | llm")
+    label: str = Field(
+        description="意图标签ID: business_license | business_register | fund_query | property_service | restaurant_license | ..."
+    )
+    label_name: str = Field(
+        default="",
+        description="意图标签的中文名称，如 '营业执照办理'、'公积金查询'",
+    )
+    confidence: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="分类置信度，0.0~1.0。低于阈值时触发LLM fallback",
+    )
+    source: str = Field(
+        default="bert",
+        description="识别来源: bert (BERT模型分类) | llm (大模型fallback)",
+    )
 
 
 class MaterialCheckResult(BaseModel):
-    """Material Agent审核结果"""
+    """Material Agent材料审核结果"""
 
-    passed: bool = Field(default=False)
-    missing: list[str] = Field(default_factory=list, description="缺失的材料列表")
-    warnings: list[str] = Field(default_factory=list, description="警告信息")
-    extracted_fields: dict[str, Any] = Field(default_factory=dict, description="抽取到的字段")
+    passed: bool = Field(
+        default=False,
+        description="材料审核是否通过，True表示所有必需材料已提交且格式正确",
+    )
+    missing: list[str] = Field(
+        default_factory=list,
+        description="缺失的材料名称列表，如 ['营业场所证明', '食品经营许可证']",
+    )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="审核警告信息列表，材料虽全但有瑕疵时产生，如 '身份证照片模糊'",
+    )
+    extracted_fields: dict[str, Any] = Field(
+        default_factory=dict,
+        description="从材料中抽取到的结构化字段，如 {name: '张三', id_card: '110***********1234'}",
+    )
 
 
 class MCPCallRecord(BaseModel):
-    """单次MCP工具调用记录"""
+    """单次MCP工具调用记录（所有MCP调用必须记录，用于审计和评测）"""
 
-    trace_id: str
-    server_name: str = Field(description="MCP Server名称: policy | material | workflow")
-    tool_name: str = Field(description="工具名: search_policy | create_case | ...")
-    input_args: dict[str, Any] = Field(default_factory=dict)
-    output_result: Optional[dict[str, Any]] = Field(default=None)
-    latency_ms: float = Field(default=0.0)
-    status: MCPCallStatus = Field(default=MCPCallStatus.SUCCESS)
-    error_message: Optional[str] = Field(default=None)
-    called_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    trace_id: str = Field(
+        description="关联的链路追踪ID，与AgentState.trace_id一致",
+    )
+    server_name: str = Field(
+        description="目标MCP Server名称: policy_server | material_server | workflow_server",
+    )
+    tool_name: str = Field(
+        description="调用的工具名: search_policy | get_policy_detail | extract_entity | check_material | create_case | query_status",
+    )
+    input_args: dict[str, Any] = Field(
+        default_factory=dict,
+        description="工具调用的输入参数，如 {query: '开餐馆需要什么', top_k: 5}",
+    )
+    output_result: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="工具调用的返回结果，调用失败时为None",
+    )
+    latency_ms: float = Field(
+        default=0.0,
+        description="工具调用耗时，单位毫秒（ms）",
+    )
+    status: MCPCallStatus = Field(
+        default=MCPCallStatus.SUCCESS,
+        description="调用状态: success | failed | timeout | blocked(被Gateway/RBAC拦截)",
+    )
+    error_message: Optional[str] = Field(
+        default=None,
+        description="调用失败时的错误信息，成功时为None",
+    )
+    called_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
+        description="工具调用发起时间 (ISO 8601 UTC格式)",
+    )
 
 
 class ToolCall(BaseModel):
-    """Agent端的工具调用记录（LangGraph tool_calls追踪）"""
+    """Agent端的单次工具调用记录（LangGraph内tool_calls追踪）"""
 
-    tool_name: str
-    tool_call_id: str = Field(default_factory=lambda: f"call_{uuid.uuid4().hex[:8]}")
-    arguments: dict[str, Any] = Field(default_factory=dict)
-    result: Optional[str] = Field(default=None)
-    error: Optional[str] = Field(default=None)
-    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    tool_name: str = Field(
+        description="被调用的工具名称，如 search_policy、create_case",
+    )
+    tool_call_id: str = Field(
+        default_factory=lambda: f"call_{uuid.uuid4().hex[:8]}",
+        description="工具调用的唯一标识，自动生成 (call_xxxxxxxx)，用于去重和关联",
+    )
+    arguments: dict[str, Any] = Field(
+        default_factory=dict,
+        description="工具调用的实际参数，LLM填写的键值对",
+    )
+    result: Optional[str] = Field(
+        default=None,
+        description="工具调用的返回结果字符串，调用失败时为None",
+    )
+    error: Optional[str] = Field(
+        default=None,
+        description="工具调用失败时的错误信息字符串，成功时为None",
+    )
+    timestamp: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
+        description="工具调用发生时间 (ISO 8601 UTC格式)",
+    )
 
 
 class A2ATaskRecord(BaseModel):
-    """A2A跨域任务记录"""
+    """A2A跨域任务记录（一次完整的跨系统Agent调用）"""
 
-    task_id: str = Field(default_factory=lambda: f"a2a_{uuid.uuid4().hex[:8]}")
-    source_agent: str = Field(description="发起Agent")
-    target_agent: str = Field(description="目标外部Agent: housing_agent | fund_agent | ...")
-    skill: str = Field(description="调用的技能: query_property | query_fund | ...")
-    input: dict[str, Any] = Field(default_factory=dict)
-    artifact: Optional[dict[str, Any]] = Field(default=None, description="外部Agent返回结果")
-    status: A2ATaskStatus = Field(default=A2ATaskStatus.CREATED)
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    completed_at: Optional[str] = Field(default=None)
-    error_message: Optional[str] = Field(default=None)
+    task_id: str = Field(
+        default_factory=lambda: f"a2a_{uuid.uuid4().hex[:8]}",
+        description="A2A任务唯一标识，自动生成 (a2a_xxxxxxxx)，用于Callback关联",
+    )
+    source_agent: str = Field(
+        description="发起任务的本系统Agent名称，如 supervisor | workflow",
+    )
+    target_agent: str = Field(
+        description="目标外部Agent名称: housing_agent (不动产) | fund_agent (公积金) | ...",
+    )
+    skill: str = Field(
+        description="调用的外部Agent技能: query_property | query_fund | query_medical | ...",
+    )
+    input: dict[str, Any] = Field(
+        default_factory=dict,
+        description="发送给外部Agent的请求参数，只包含必要字段（数据最小化原则）",
+    )
+    artifact: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="外部Agent返回的结果数据（artifact），任务完成前为None",
+    )
+    status: A2ATaskStatus = Field(
+        default=A2ATaskStatus.CREATED,
+        description="任务生命周期状态: created | submitted | working | completed | failed | timeout",
+    )
+    created_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
+        description="任务创建时间 (ISO 8601 UTC格式)",
+    )
+    completed_at: Optional[str] = Field(
+        default=None,
+        description="任务完成时间 (ISO 8601 UTC格式)，未完成时为None",
+    )
+    error_message: Optional[str] = Field(
+        default=None,
+        description="任务失败或超时时的错误信息，正常完成时为None",
+    )
 
 
 class ExecutionMetrics(BaseModel):
-    """单次Agent执行指标（用于Trace和Evaluation）"""
+    """单次Agent执行的性能指标（用于Trace持久化和Evaluation评测）"""
 
-    trace_id: str
-    agent_name: str
-    input_tokens: int = Field(default=0)
-    output_tokens: int = Field(default=0)
-    latency_ms: float = Field(default=0.0)
-    tool_calls_count: int = Field(default=0)
-    tool_errors_count: int = Field(default=0)
-    step_count: int = Field(default=0)
-    success: bool = Field(default=True)
+    trace_id: str = Field(
+        description="关联的链路追踪ID，与AgentState.trace_id一致",
+    )
+    agent_name: str = Field(
+        description="被统计的Agent名称 (supervisor | intent | policy | material | workflow | governance)",
+    )
+    input_tokens: int = Field(
+        default=0,
+        description="LLM输入Token数量",
+    )
+    output_tokens: int = Field(
+        default=0,
+        description="LLM输出Token数量",
+    )
+    latency_ms: float = Field(
+        default=0.0,
+        description="Agent执行总耗时，单位毫秒（ms）",
+    )
+    tool_calls_count: int = Field(
+        default=0,
+        description="该Agent发起的MCP工具调用总次数",
+    )
+    tool_errors_count: int = Field(
+        default=0,
+        description="该Agent发起的MCP工具调用失败次数，用于计算Tool Accuracy",
+    )
+    step_count: int = Field(
+        default=0,
+        description="Agent执行的步骤数（LangGraph节点跳转次数），用于检测是否存在不必要的循环",
+    )
+    success: bool = Field(
+        default=True,
+        description="本次Agent执行是否成功完成",
+    )
 
 
 class GuardrailResult(BaseModel):
-    """安全护栏检测结果"""
+    """安全护栏检测结果（Governance Agent输入/输出安全检查）"""
 
-    passed: bool = Field(default=True)
-    pii_detected: list[str] = Field(default_factory=list)
-    injection_detected: bool = Field(default=False)
-    sensitive_words: list[str] = Field(default_factory=list)
-    blocked: bool = Field(default=False)
-    reason: Optional[str] = Field(default=None)
+    passed: bool = Field(
+        default=True,
+        description="安全检查是否通过，True表示未检测到任何安全问题",
+    )
+    pii_detected: list[str] = Field(
+        default_factory=list,
+        description="检测到的PII类型列表: ['phone', 'id_card', 'email']",
+    )
+    injection_detected: bool = Field(
+        default=False,
+        description="是否检测到Prompt Injection攻击尝试",
+    )
+    sensitive_words: list[str] = Field(
+        default_factory=list,
+        description="检测到的敏感词列表（政务场景特定敏感词库）",
+    )
+    blocked: bool = Field(
+        default=False,
+        description="是否拦截本次请求，True时不应继续执行",
+    )
+    reason: Optional[str] = Field(
+        default=None,
+        description="拦截原因说明，如 '检测到身份证号未脱敏'，未拦截时为None",
+    )
 
 
 # ============================================================
