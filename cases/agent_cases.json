@@ -1,0 +1,10 @@
+[
+  {
+    "_description": "agent_cases.json - Agent evaluation test cases",
+    "_author": "le",
+    "_date": "2026/7/29",
+    "_version": "0.1",
+    "_task": "Golden dataset for Multi-Agent task success and tool accuracy evaluation",
+    "cases": []
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "_description": "business_license.json - Business license scenario test case",
+  "_author": "le",
+  "_date": "2026/7/29",
+  "_version": "0.1",
+  "_task": "Test case: restaurant business license application workflow",
+  "id": "case_001",
+  "query": "我要开一家餐馆，需要什么",
+  "expected_intent": "business_license",
+  "expected_tools": ["search_policy"],
+  "expected_answer": ["营业执照", "食品经营许可证"]
+}

@@ -1,0 +1,9 @@
+torch>=2.5
+
+torchvision
+
+torchaudio
+
+vllm>=0.6
+
+flash-attn

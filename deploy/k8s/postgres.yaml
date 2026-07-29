@@ -1,0 +1,7 @@
+# =====================================================
+# postgres.yaml - PostgreSQL StatefulSet
+# Author: le
+# Date: 2026/7/29
+# Version: 0.1
+# Task: Kubernetes StatefulSet + Service for PostgreSQL 16
+# =====================================================

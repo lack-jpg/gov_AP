@@ -1,0 +1,66 @@
+# =====================================================
+# .gitignore - Government Agent Platform
+# Author: le
+# Date: 2026/7/29
+# Version: 0.1
+# Task: Git ignore rules
+# =====================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+*.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+*.sqlite3
+
+# Docker
+docker-data/
+
+# Model files
+models/
+*.bin
+*.safetensors
+
+# Upload
+uploads/
+temp/
+
+# Coverage
+htmlcov/
+.coverage
+.coverage.*
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Milvus
+milvus_data/

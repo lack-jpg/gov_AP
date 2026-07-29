@@ -1,0 +1,8 @@
+{
+  "_description": "workflow.json - Workflow scenario test case",
+  "_author": "le",
+  "_date": "2026/7/29",
+  "_version": "0.1",
+  "_task": "Test case: end-to-end business workflow execution",
+  "cases": []
+}
