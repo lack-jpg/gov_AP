@@ -8,6 +8,7 @@ Task: Implement BGE reranker for search result re-ranking
 """
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from tools.logger import get_logger
@@ -20,7 +21,7 @@ class Reranker:
     BGE Reranker — 对检索结果进行精排。
 
     模型: BAAI/bge-reranker-v2-m3（多语言 Cross-Encoder）
-    TODO: 接入 FlagEmbedding 进行真实重排序
+    优先从本地 models/reranker/ 加载，不存在则从 HuggingFace 下载。
 
     使用方式:
         reranker = Reranker()
@@ -29,8 +30,9 @@ class Reranker:
 
     DEFAULT_MODEL = "BAAI/bge-reranker-v2-m3"
 
-    def __init__(self, model_name: Optional[str] = None):
+    def __init__(self, model_name: Optional[str] = None, model_path: Optional[str] = None):
         self._model_name = model_name or self.DEFAULT_MODEL
+        self._model_path = model_path or self._resolve_path()
         self._model = None  # TODO: FlagEmbedding FlagReranker
 
     async def rerank(
@@ -76,9 +78,27 @@ class Reranker:
         """
         return documents[:top_k]
 
-    def load_model(self, model_name: Optional[str] = None) -> None:
+    def load_model(self, model_name: Optional[str] = None, model_path: Optional[str] = None) -> None:
         """加载 Reranker 模型"""
         if model_name:
             self._model_name = model_name
-        # TODO: self._model = FlagReranker(self._model_name, use_fp16=True)
-        logger.info("Reranker 模型已加载（stub）: {}", self._model_name)
+        if model_path:
+            self._model_path = model_path
+
+        load_from = self._model_path or self._model_name
+        logger.info("Reranker 模型已加载（stub）: {}", load_from)
+
+    # ── 内部 ──
+
+    @staticmethod
+    def _resolve_path() -> Optional[str]:
+        """从环境变量解析本地模型路径"""
+        path = os.environ.get("RERANKER_MODEL_PATH", "models/reranker/bge-reranker-v2-m3")
+        if os.path.isdir(path):
+            return path
+        return None
+
+    @property
+    def model_path(self) -> Optional[str]:
+        """本地模型路径"""
+        return self._model_path

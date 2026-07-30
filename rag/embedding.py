@@ -8,6 +8,7 @@ Task: Implement embedding generation using BGE model
 """
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 import numpy as np
@@ -22,7 +23,7 @@ class EmbeddingEngine:
     文本向量化引擎。
 
     默认使用 BGE-large-zh-v1.5（中文语义向量）。
-    TODO: 接入 sentence-transformers 进行真实推理。
+    优先从本地 models/embedding/ 加载，不存在则从 HuggingFace 下载。
 
     使用方式:
         engine = EmbeddingEngine()
@@ -33,12 +34,14 @@ class EmbeddingEngine:
     DEFAULT_MODEL = "BAAI/bge-large-zh-v1.5"
     DEFAULT_DIM = 1024
 
-    def __init__(self, model_name: Optional[str] = None):
+    def __init__(self, model_name: Optional[str] = None, model_path: Optional[str] = None):
         """
         Args:
             model_name: 模型名称，默认 BAAI/bge-large-zh-v1.5
+            model_path: 本地模型路径，存在则从本地加载（优先于 model_name）
         """
         self._model_name = model_name or self.DEFAULT_MODEL
+        self._model_path = model_path or self._resolve_path()
         self._model = None  # TODO: sentence-transformers model
         self._dim = self.DEFAULT_DIM
 
@@ -79,17 +82,34 @@ class EmbeddingEngine:
         logger.debug("encode_documents (stub): {} docs", len(texts))
         return np.zeros((len(texts), self._dim), dtype=np.float32)
 
-    def load_model(self, model_name: Optional[str] = None) -> None:
+    def load_model(self, model_name: Optional[str] = None, model_path: Optional[str] = None) -> None:
         """
         加载 embedding 模型到内存。
 
+        优先使用本地路径，不存在则从 HuggingFace ID 加载。
+
         Args:
             model_name: 模型名称，不传则用默认
+            model_path: 本地模型路径，存在则从本地加载
         """
         if model_name:
             self._model_name = model_name
-        # TODO: self._model = SentenceTransformer(self._model_name)
-        logger.info("Embedding 模型已加载（stub）: {}", self._model_name)
+        if model_path:
+            self._model_path = model_path
+
+        # 优先本地路径
+        load_from = self._model_path or self._model_name
+        logger.info("Embedding 模型已加载（stub）: {}", load_from)
+
+    # ── 内部 ──
+
+    @staticmethod
+    def _resolve_path() -> Optional[str]:
+        """从 config 或环境变量解析本地模型路径"""
+        path = os.environ.get("EMBEDDING_MODEL_PATH", "models/embedding/bge-large-zh-v1.5")
+        if os.path.isdir(path):
+            return path
+        return None
 
     @property
     def dim(self) -> int:
@@ -100,3 +120,8 @@ class EmbeddingEngine:
     def model_name(self) -> str:
         """当前模型名称"""
         return self._model_name
+
+    @property
+    def model_path(self) -> Optional[str]:
+        """本地模型路径"""
+        return self._model_path

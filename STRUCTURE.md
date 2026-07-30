@@ -814,7 +814,42 @@
 
 ---
 
-# 12. requirements/ — 依赖管理
+# 12. models/ — 模型文件存储
+
+> 所有模型文件已被 `.gitignore` 排除，不纳入版本管理。
+> 首次部署需按 `models/README.md` 中的说明下载模型。
+> 详见 `models/README.md`
+
+## models/README.md
+- **用途**：模型清单、下载方式、微调说明
+- **状态**：✅ 已完成
+
+## models/embedding/
+- **目录**：`models/embedding/bge-large-zh-v1.5/`
+- **用途**：BGE-large-zh-v1.5 Embedding 模型，文本向量化（dim=1024）
+- **大小**：~1.3 GB
+- **下一步**：按 README 下载 → `rag/embedding.py` 自动从本地加载
+
+## models/reranker/
+- **目录**：`models/reranker/bge-reranker-v2-m3/`
+- **用途**：BGE Reranker v2-m3 模型，检索结果精排
+- **大小**：~2.3 GB
+- **下一步**：按 README 下载 → `rag/reranker.py` 自动从本地加载
+
+## models/intent/
+- **目录**：`models/intent/bert-intent/`
+- **用途**：基于 `bert-base-chinese` 在政务语料上 fine-tune 的意图分类模型
+- **大小**：~400 MB
+- **下一步**：训练后存放 → `agents/intent/classifier.py` 自动从本地加载
+
+## models/fine_tuned/
+- **目录**：`models/fine_tuned/intent-v1/` `models/fine_tuned/ner/`
+- **用途**：项目自行微调的模型产出，支持版本化（v1/v2）、A/B 测试和回滚
+- **下一步**：Phase 2 训练脚本产出后存放于此
+
+---
+
+# 13. requirements/ — 依赖管理
 
 ## requirements/requirements.txt
 - **用途**：核心依赖（FastAPI, LangChain, LangGraph, MCP, OpenAI, Milvus, PostgreSQL, Redis, OpenTelemetry...）
@@ -834,7 +869,7 @@
 
 ---
 
-# 13. docs/ — 设计文档
+# 14. docs/ — 设计文档
 
 | 文件 | 内容 | 状态 |
 |------|------|------|
@@ -848,7 +883,7 @@
 
 ---
 
-# 14. 开发优先级总结
+# 15. 开发优先级总结
 
 ```
 第一优先级（让系统跑起来）:

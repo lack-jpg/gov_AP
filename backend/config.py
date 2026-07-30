@@ -45,11 +45,18 @@ class Settings(BaseSettings):
     # ── 服务端口 ──
     host: str = Field(
         default="0.0.0.0",
+        alias="APP_HOST",
         description="FastAPI监听地址",
     )
     port: int = Field(
-        default=8000,
-        description="FastAPI监听端口",
+        default=8002,
+        alias="APP_PORT",
+        description="FastAPI监听端口（默认 8002，避免与本地 8000 冲突）",
+    )
+    frontend_port: int = Field(
+        default=12345,
+        alias="FRONTEND_PORT",
+        description="前端开发服务器端口（Vite/Next.js）",
     )
 
     # ── LLM ──
@@ -83,16 +90,36 @@ class Settings(BaseSettings):
         description="LLM API调用超时时间（秒）",
     )
 
-    # ── Embedding ──
+    # ── 模型文件路径 ──
+    models_dir: str = Field(
+        default="models",
+        alias="MODELS_DIR",
+        description="模型文件根目录（相对于项目根目录）",
+    )
     embedding_model: str = Field(
         default="BAAI/bge-large-zh-v1.5",
         alias="EMBEDDING_MODEL",
-        description="Embedding模型名称",
+        description="Embedding模型名称（HuggingFace ID）",
+    )
+    embedding_model_path: str = Field(
+        default="models/embedding/bge-large-zh-v1.5",
+        alias="EMBEDDING_MODEL_PATH",
+        description="Embedding模型本地路径，存在则从本地加载",
     )
     reranker_model: str = Field(
         default="BAAI/bge-reranker-v2-m3",
         alias="RERANKER_MODEL",
-        description="Reranker模型名称",
+        description="Reranker模型名称（HuggingFace ID）",
+    )
+    reranker_model_path: str = Field(
+        default="models/reranker/bge-reranker-v2-m3",
+        alias="RERANKER_MODEL_PATH",
+        description="Reranker模型本地路径，存在则从本地加载",
+    )
+    intent_model_path: str = Field(
+        default="models/intent/bert-intent",
+        alias="INTENT_MODEL_PATH",
+        description="意图分类Bert模型本地路径",
     )
 
     # ── PostgreSQL ──
@@ -102,9 +129,9 @@ class Settings(BaseSettings):
         description="PostgreSQL主机地址",
     )
     postgres_port: int = Field(
-        default=5432,
+        default=5434,
         alias="POSTGRES_PORT",
-        description="PostgreSQL端口",
+        description="PostgreSQL端口（默认 5434，避免与本地 5432 冲突）",
     )
     postgres_user: str = Field(
         default="gov_agent",
@@ -145,9 +172,9 @@ class Settings(BaseSettings):
         description="Redis主机地址",
     )
     redis_port: int = Field(
-        default=6379,
+        default=6381,
         alias="REDIS_PORT",
-        description="Redis端口",
+        description="Redis端口（默认 6381，避免与本地 6379 冲突）",
     )
     redis_password: str = Field(
         default="",
@@ -169,9 +196,9 @@ class Settings(BaseSettings):
         description="Milvus主机地址",
     )
     milvus_port: int = Field(
-        default=19530,
+        default=19532,
         alias="MILVUS_PORT",
-        description="Milvus端口",
+        description="Milvus端口（默认 19532，避免与本地 19530 冲突）",
     )
 
     # ── Agent Runtime ──
@@ -193,16 +220,16 @@ class Settings(BaseSettings):
 
     # ── MCP ──
     mcp_gateway_url: str = Field(
-        default="http://localhost:8100",
+        default="http://localhost:12300",
         alias="MCP_GATEWAY_URL",
-        description="MCP Gateway地址",
+        description="MCP Gateway地址（12300 起，Policy/Material/Workflow Server 依次递增）",
     )
 
     # ── A2A ──
     a2a_callback_url: str = Field(
-        default="http://localhost:8000/api/a2a/callback",
+        default="http://localhost:12200/api/a2a/callback",
         alias="A2A_CALLBACK_URL",
-        description="A2A Callback接收地址（外部Agent完成回调）",
+        description="A2A Callback接收地址（12200 起，外部Agent完成回调）",
     )
 
     # ── JWT ──
@@ -223,9 +250,9 @@ class Settings(BaseSettings):
 
     # ── OpenTelemetry ──
     otel_exporter_endpoint: str = Field(
-        default="http://localhost:4317",
+        default="http://localhost:4319",
         alias="OTEL_EXPORTER_OTLP_ENDPOINT",
-        description="OpenTelemetry Collector gRPC端点",
+        description="OpenTelemetry Collector gRPC端点（默认 4319，避免与本地 4317 冲突）",
     )
 
     # ── LangSmith ──

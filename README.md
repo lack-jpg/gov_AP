@@ -741,6 +741,13 @@ gov_AP/
 │       ├── postgres.yaml             # 数据库
 │       └── ingress.yaml              # 入口配置
 │
+├── models/                           # 模型文件（已 gitignore）
+│   ├── README.md                     # 模型清单 + 下载说明
+│   ├── embedding/                    # BGE Embedding 模型
+│   ├── reranker/                     # BGE Reranker 模型
+│   ├── intent/                       # 意图分类 BERT 模型
+│   └── fine_tuned/                   # 微调产出版本
+│
 ├── requirements/                     # 依赖管理
 │   ├── requirements.txt              # 核心依赖
 │   ├── requirements-dev.txt          # 开发工具
@@ -808,6 +815,21 @@ gov_AP/
 python >=3.12
 ```
 
+## 端口约定
+
+为避免与本地服务冲突，所有端口偏离标准端口：
+
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| Frontend | **12345** | Vite/Next.js 开发服务器 |
+| FastAPI | **8002** | 后端 API（8000 + 2） |
+| MCP Gateway | **12300** | 后续 Server 依次 +1 |
+| A2A Callback | **12200** | 后续 Connector 依次 +1 |
+| PostgreSQL | **5434** | 5432 + 2 |
+| Redis | **6381** | 6379 + 2 |
+| Milvus | **19532** | 19530 + 2 |
+| OpenTelemetry | **4319** | 4317 + 2 |
+
 ---
 
 ## 安装
@@ -820,15 +842,32 @@ pip install -r requirements/requirements.txt
 
 ## 配置
 
-复制：
-
 ```bash
 cp .env.example .env
+# 按需编辑 .env 中的 API Key 等配置
+```
+
+## 模型下载（可选）
+
+系统在无模型时使用 stub 模式运行。需要真实推理时：
+
+```bash
+# 见 models/README.md 的详细说明
+huggingface-cli download BAAI/bge-large-zh-v1.5 --local-dir models/embedding/bge-large-zh-v1.5
+huggingface-cli download BAAI/bge-reranker-v2-m3 --local-dir models/reranker/bge-reranker-v2-m3
 ```
 
 ---
 
 ## 启动
+
+**开发模式（无需 Docker）：**
+
+```bash
+uvicorn backend.main:app --host 0.0.0.0 --port 8002 --reload
+```
+
+**Docker 部署：**
 
 ```bash
 docker compose up
@@ -972,8 +1011,8 @@ Evaluation
 
 # 16. 开发指南
 
-> **Phase 1 完成** ✅ — 26个文件实现，11个模块支持，65个文件待Phase 2/3/4。
-> 系统可在无 LLM / 无 PostgreSQL 的 stub 模式下完整运行。
+> **Phase 1 完成** ✅ — 27个模块完成，系统可在无 LLM / 无 PostgreSQL 的 stub 模式下完整运行。
+> 已建立 `models/` 模型目录（已 gitignore），端口统一偏移避免本地冲突。
 
 ## Phase 1 — LangGraph Runtime + Supervisor + RAG ✅
 
@@ -998,7 +1037,7 @@ Evaluation
 ✅ supervisor/agent.py        — SupervisorAgent（4场景编排，3次重试，192行）
 ✅ intent/prompts.py          — LLM分类模板 + few-shot示例（48行）
 ✅ intent/schema.py           — 10个预定义IntentLabel + IntentResult（64行）
-✅ intent/classifier.py       — IntentClassifier（3级：BERT→关键词→LLM，18条关键词映射，169行）
+✅ intent/classifier.py       — IntentClassifier（3级：BERT→关键词→LLM，18条关键词映射，支持本地模型，~185行）
 ✅ intent/agent.py            — IntentAgent（130行）
 ✅ policy/prompts.py          — RAG回答生成模板（27行）
 ✅ policy/schema.py           — PolicyResult + PolicyEvidence（28行）
@@ -1017,7 +1056,7 @@ Evaluation
 ### 后端层 (backend/) — 8/12 完成
 
 ```
-✅ config.py                   — Settings（30+字段，pydantic-settings + lru_cache，236行）
+✅ config.py                   — Settings（40+字段含模型路径+端口，pydantic-settings + lru_cache，~290行）
 ✅ main.py                     — FastAPI app factory + lifespan(db init/shutdown) + CORS + /health（129行）
 ✅ tools/logger.py             — loguru 完整系统（531行，20测试）
 ✅ api/schemas.py              — 10个Pydantic API模型（225行）
@@ -1027,6 +1066,16 @@ Evaluation
 ✅ services/agent_service.py   — AgentService（注册+执行+恢复，159行）
 ⏳ middleware/rbac.py           — RBAC权限（待Phase 2）
 ⏳ middleware/tracing.py        — OpenTelemetry（待Phase 3）
+```
+
+### 模型存储 (models/) — 已完成
+
+```
+✅ models/README.md              — 模型清单 + 3种下载方式 + 微调说明
+✅ models/embedding/             — BGE Embedding 模型目录（~1.3GB，已 gitignore）
+✅ models/reranker/              — BGE Reranker 模型目录（~2.3GB，已 gitignore）
+✅ models/intent/                — 意图分类 BERT 模型目录（~400MB，已 gitignore）
+✅ models/fine_tuned/            — 微调版本管理（intent-v1, ner 等）
 ```
 
 ### 数据库层 (database/) — 3/3 完成
@@ -1040,9 +1089,9 @@ Evaluation
 ### RAG管线 (rag/) — 5/5 完成（框架就绪，stub待接入真实模型）
 
 ```
-✅ embedding.py                — EmbeddingEngine（BGE-large-zh-v1.5，78行）
+✅ embedding.py                — EmbeddingEngine（BGE-large-zh-v1.5，支持本地路径加载，~100行）
 ✅ retriever.py                — HybridRetriever（Milvus稠密 + BM25稀疏 + RRF融合，134行）
-✅ reranker.py                 — Reranker（bge-reranker-v2-m3，66行）
+✅ reranker.py                 — Reranker（bge-reranker-v2-m3，支持本地路径加载，~85行）
 ✅ generator.py                — Generator（LLM + 简单拼接双模式，evidence标注，113行）
 ✅ knowledge_base.py           — KnowledgeBase（PDF/DOCX/TXT加载 → 切分 → 索引，173行）
 ```
@@ -1050,6 +1099,8 @@ Evaluation
 ---
 
 ## Phase 2 — MCP Server + Tool Calling ⏳
+
+### 第一步：MCP基础设施 (tools/mcp/)
 
 ```
 ⏳ tools/mcp/client.py                         — MCP Client（tools/list → tools/call）
@@ -1068,25 +1119,7 @@ Evaluation
 
 ---
 
-## Phase 2 — MCP Server + Tool Calling
-
-### 第一步：MCP基础设施 (tools/mcp/)
-
-```
-tools/mcp/schema.py                                 → Tool JSON Schema（search_policy, get_policy_detail, extract_entity...）
-tools/mcp/gateway.py                                → MCP Gateway（鉴权/限流/审计/路由）
-tools/mcp/client.py                                  → MCP Client（tools/list → tools/call）
-tools/mcp/servers/policy_server/tools.py              → search_policy + get_policy_detail实现
-tools/mcp/servers/policy_server/server.py             → Policy MCP Server启动
-tools/mcp/servers/material_server/tools.py            → extract_entity + check_material实现
-tools/mcp/servers/material_server/server.py           → Material MCP Server启动
-tools/mcp/servers/workflow_server/tools.py            → create_case + query_status实现
-tools/mcp/servers/workflow_server/server.py           → Workflow MCP Server启动
-```
-
----
-
-## Phase 3 — A2A + Async Callback
+## Phase 3 — A2A + Async Callback ⏳
 
 ### 第一步：A2A基础设施 (tools/a2a/)
 
@@ -1102,7 +1135,7 @@ tools/a2a/mock_agents/fund_agent.py                 → 模拟公积金Agent
 
 ---
 
-## Phase 4 — Evaluation + Dashboard
+## Phase 4 — Evaluation + Dashboard ⏳
 
 ### 第一步：评测体系 (governance/evaluation/)
 
@@ -1132,9 +1165,13 @@ prompts/registry.py → Prompt注册中心（版本化: Role/Goal/Constraints/To
 
 ---
 
-## 18. 实现优先级总结
+## 17. 实现优先级总结
 
 ```
+第零步（环境准备）:
+  .env.example → 编辑 .env（端口/密钥）
+  models/ → 按需下载 Embedding / Reranker / BERT 模型
+
 第一优先级（让系统跑起来）:
   orchestration/langgraph/state.py → graph.py → nodes.py → edges.py
   agents/supervisor/agent.py → planner.py → router.py
@@ -1163,7 +1200,7 @@ prompts/registry.py → Prompt注册中心（版本化: Role/Goal/Constraints/To
 
 ---
 
-# 19. License
+# 18. License
 
 MIT License
 

@@ -8,6 +8,7 @@ Task: Implement BERT fine-tuning and inference for intent classification
 """
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from agents.intent.schema import IntentResult, INTENT_LABELS
@@ -83,10 +84,11 @@ class IntentClassifier:
     def __init__(self, model_path: Optional[str] = None):
         """
         Args:
-            model_path: fine-tuned BERT 模型路径。
-                        不进时使用关键词匹配。
+            model_path: fine-tuned BERT 模型本地路径。
+                        默认从环境变量 INTENT_MODEL_PATH 解析。
+                        不传且本地路径不存在时使用关键词匹配。
         """
-        self._model_path = model_path
+        self._model_path = model_path or self._resolve_path()
         self._model = None
 
         # 构建标签名映射
@@ -192,14 +194,27 @@ class IntentClassifier:
         加载 fine-tuned BERT 模型。
 
         Args:
-            model_path: 模型文件路径
+            model_path: 模型文件路径（本地目录）
         """
         self._model_path = model_path
         # TODO: self._model = AutoModelForSequenceClassification.from_pretrained(model_path)
         # TODO: self._tokenizer = AutoTokenizer.from_pretrained(model_path)
         logger.info("BERT 模型已加载（stub）: {}", model_path)
 
+    @staticmethod
+    def _resolve_path() -> Optional[str]:
+        """从环境变量解析本地模型路径，存在则返回"""
+        path = os.environ.get("INTENT_MODEL_PATH", "models/intent/bert-intent")
+        if os.path.isdir(path):
+            return path
+        return None
+
     @property
     def is_model_loaded(self) -> bool:
         """BERT 模型是否已加载"""
         return self._model is not None
+
+    @property
+    def model_path(self) -> Optional[str]:
+        """本地模型路径"""
+        return self._model_path

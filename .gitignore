@@ -46,8 +46,20 @@ logs/
 # Docker
 docker-data/
 
-# Model files
-models/
+# Model files — track README/.gitkeep, ignore weights
+models/*
+!models/README.md
+!models/.gitkeep
+models/embedding/*
+!models/embedding/.gitkeep
+models/reranker/*
+!models/reranker/.gitkeep
+models/intent/*
+!models/intent/.gitkeep
+models/fine_tuned/*
+!models/fine_tuned/.gitkeep
+models/fine_tuned/intent-v1/*
+models/fine_tuned/ner/*
 *.bin
 *.safetensors
 
