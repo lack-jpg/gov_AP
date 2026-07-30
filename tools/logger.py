@@ -33,7 +33,9 @@ import uuid
 from contextvars import ContextVar
 from typing import Any, Optional
 
-from fastapi import Request, Response
+from fastapi import Request
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from loguru import logger as _loguru_logger
 
 from backend.config import Settings
@@ -301,14 +303,14 @@ logger = _loguru_logger
 # ============================================================
 
 
-class RequestLoggingMiddleware:
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """
     FastAPI 请求日志中间件。
 
-    为每个 HTTP 请求:
-    1. 提取或生成 trace_id（Header: X-Trace-Id）
-    2. 设置 ContextVar（所有下游代码通过 get_current_trace_id() 获取）
-    3. 记录请求开始/结束（method, path, status, latency）
+    为每个 HTTP 请求自动:
+    1. 提取或生成 trace_id（Header: X-Trace-Id → 自动生成）
+    2. 设置 ContextVar（下游代码通过 get_current_trace_id() 获取）
+    3. 记录请求开始/结束（method, path, status_code, latency_ms）
     4. 注入 X-Trace-Id 和 X-Process-Time-ms 到响应头
     5. 请求结束后清理 ContextVar
 
@@ -317,14 +319,12 @@ class RequestLoggingMiddleware:
         app.add_middleware(RequestLoggingMiddleware)
     """
 
-    async def __call__(self, request: Request, call_next) -> Response:
+    async def dispatch(self, request: Request, call_next) -> Response:
         trace_id = request.headers.get("X-Trace-Id") or f"trace_{uuid.uuid4().hex[:16]}"
         user_id = request.headers.get("X-User-Id", "-")
 
         token = _trace_id_ctx.set(trace_id)
         user_token = _user_id_ctx.set(user_id)
-        request.state.trace_id = trace_id
-        request.state.user_id = user_id
 
         start = time.perf_counter()
         _loguru_logger.info("--> {} {}", request.method, request.url.path)
@@ -340,10 +340,9 @@ class RequestLoggingMiddleware:
             raise
 
         elapsed = (time.perf_counter() - start) * 1000
-        status_code = getattr(response, "status_code", 0)
         _loguru_logger.info(
             "<-- {} {} {} {:.1f}ms",
-            request.method, request.url.path, status_code, elapsed,
+            request.method, request.url.path, response.status_code, elapsed,
         )
 
         response.headers["X-Trace-Id"] = trace_id
