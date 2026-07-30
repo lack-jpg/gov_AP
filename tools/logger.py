@@ -131,7 +131,7 @@ def _file_format(record: dict[str, Any]) -> str:
     agent = _agent_name_ctx.get() or "-"
     source = "{}:{}".format(record.get("name", "?"), record.get("line", "?"))
 
-    return "{time} | {level: <8} | {trace} | {user} | {agent} | {source} | {message}{ex}".format(
+    return "{time} | {level: <8} | {trace} | {user} | {agent} | {source} | {message}{ex}\n".format(
         time=record["time"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
         level=record["level"].name,
         trace=trace_id[:14],
@@ -148,7 +148,7 @@ def _error_file_format(record: dict[str, Any]) -> str:
     trace_id = _trace_id_ctx.get() or "-"
     source = "{}:{}".format(record.get("name", "?"), record.get("line", "?"))
 
-    return "{time} | {level} | {trace} | {source} | {message}{ex}".format(
+    return "{time} | {level} | {trace} | {source} | {message}{ex}\n".format(
         time=record["time"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
         level=record["level"].name,
         trace=trace_id[:14],
