@@ -972,75 +972,98 @@ Evaluation
 
 # 16. 开发指南
 
-> **Phase 1 进度**：核心编排层 ✅ | Supervisor Agent ✅ | 日志系统 ✅ | 意图/政策/材料/流程Agent ⏳（stub已就绪，待接入真实模型）| RAG管线 ⏳
+> **Phase 1 完成** ✅ — 26个文件实现，11个模块支持，65个文件待Phase 2/3/4。
+> 系统可在无 LLM / 无 PostgreSQL 的 stub 模式下完整运行。
 
-## Phase 1 — LangGraph Runtime + Supervisor + RAG
+## Phase 1 — LangGraph Runtime + Supervisor + RAG ✅
 
-### 第一步：核心状态和编排 (orchestration/langgraph/) ✅ 已完成
-
-```
-✅ orchestration/langgraph/state.py       → 24字段AgentState + 10个Pydantic模型（7枚举，65字段全带description）
-✅ orchestration/langgraph/graph.py       → StateGraph构建（6节点 + 5组条件边 + checkpointer注入）
-✅ orchestration/langgraph/nodes.py       → 6个Agent节点函数（含stub实现，TODO标注清晰）
-✅ orchestration/langgraph/edges.py       → 5个条件路由函数（错误/风险/A2A感知）
-⏳ orchestration/langgraph/checkpointer.py → PostgreSQL Checkpointer（TODO）
-⏳ orchestration/langgraph/runtime.py     → 运行时安全（TODO）
-```
-
-### 第二步：数据库和配置 (database/ + backend/) ✅ 核心已完成
+### 编排层 (orchestration/langgraph/) — 6/6 完成
 
 ```
-✅ backend/config.py          → Settings类30+字段（LLM/DB/Redis/Milvus/MCP/A2A/JWT/OTel），lru_cache单例
-✅ backend/main.py            → FastAPI app factory（lifespan + CORS + RequestLoggingMiddleware + /health）
-✅ backend/middleware/logging.py → 完整日志系统（loguru + ContextVar + 3格式函数 + 桥接stdlib + Agent/MCP日志装饰器）
-⏳ database/connection.py    → async SQLAlchemy（TODO）
-⏳ database/models.py        → ORM模型（TODO）
-⏳ database/schemas.py       → Pydantic序列化（TODO）
+✅ state.py          — AgentState(24字段) + 10 Pydantic模型 + 7枚举 + 3 reducer + 14 helper（931行，117测试）
+✅ graph.py          — StateGraph构建（6节点 + 5组条件边 + checkpointer注入）（175行）
+✅ nodes.py          — 6个Agent节点函数（336行）
+✅ edges.py          — 5个条件路由函数（145行）
+✅ checkpointer.py   — PostgreSQL Checkpointer + A2A挂起/恢复（310行）
+✅ runtime.py        — Runtime安全护栏 + LoopDetector + 3异常类（394行，22测试）
 ```
 
-### 第三步：接入层 (backend/) ✅ API层已完成
+### Agent层 (agents/) — 13/19 完成
 
 ```
-✅ backend/api/schemas.py         → 10个Pydantic模型（ChatRequest/Response, AgentStatus, A2ACallback...）
-✅ backend/api/dependencies.py    → 5个依赖注入（user_id, trace_id, config, agent_graph惰性单例, execute_agent）
-✅ backend/api/routes.py          → 5个端点（POST /api/chat核心, GET status, POST a2a, GET dashboard, GET evaluation）
-⏳ backend/middleware/auth.py     → JWT验证（TODO）
-⏳ backend/middleware/rbac.py     → RBAC权限（TODO）
-⏳ backend/middleware/tracing.py  → OpenTelemetry span（TODO）
-⏳ backend/services/agent_service.py → Agent生命周期管理（TODO）
+✅ __init__.py                — AgentRegistry（register/get/list/health_check/unregister，126行）
+✅ supervisor/prompts.py      — 5套Prompt模板（133行）
+✅ supervisor/planner.py      — Planner（LLM+规则混合，5种intent模板，JSON容错，227行）
+✅ supervisor/router.py       — Router（4层策略，16条目路由表，155行）
+✅ supervisor/agent.py        — SupervisorAgent（4场景编排，3次重试，192行）
+✅ intent/prompts.py          — LLM分类模板 + few-shot示例（48行）
+✅ intent/schema.py           — 10个预定义IntentLabel + IntentResult（64行）
+✅ intent/classifier.py       — IntentClassifier（3级：BERT→关键词→LLM，18条关键词映射，169行）
+✅ intent/agent.py            — IntentAgent（130行）
+✅ policy/prompts.py          — RAG回答生成模板（27行）
+✅ policy/schema.py           — PolicyResult + PolicyEvidence（28行）
+✅ policy/agent.py            — PolicyAgent（LLM+模板双模式，5种业务回答，165行）
+✅ material/agent.py          — MaterialAgent（5种业务材料清单，规则校验，118行）
+✅ workflow/agent.py          — WorkflowAgent（MCP stub，create_case/query_status，114行）
+✅ governance/security.py     — SecurityChecker（PII/注入/敏感词/泄露 4类检测，165行）
+✅ governance/behavior.py     — BehaviorAnalyzer（循环/步数/Token异常检测，93行）
+✅ governance/optimizer.py    — Optimizer（失败率/步数/延迟/Tool分析，127行）
+✅ governance/agent.py        — GovernanceAgent（编排安全+行为+优化，99行）
+⏳ material/ocr.py            — OCR引擎（待Phase 2）
+⏳ material/extractor.py      — 实体抽取（待Phase 2）
+⏳ material/validator.py      — 规则校验（待Phase 2）
 ```
 
-### 第四步：Agent实现 (agents/) ✅ Supervisor完成，其余stub就绪
+### 后端层 (backend/) — 8/12 完成
 
 ```
-✅ agents/supervisor/prompts.py    → 5套Prompt模板（System/Planner/Router/Synthesis）
-✅ agents/supervisor/planner.py    → Planner类（LLM+规则混合，5种intent模板，JSON容错解析，replan_on_error）
-✅ agents/supervisor/router.py     → Router类（4层策略，16条目路由表，LLM+关键词兜底）
-✅ agents/supervisor/agent.py      → SupervisorAgent类（orchestrate 4场景，error recover 3次重试，_synthesize汇总）
-⏳ agents/intent/classifier.py     → BERT分类器（TODO，当前intent_node使用关键词stub）
-⏳ agents/intent/schema.py         → IntentLabel, IntentResult（TODO，已定义在state.py的IntentResult中）
-⏳ agents/intent/agent.py          → Intent Agent主逻辑（TODO）
-⏳ agents/policy/schema.py         → PolicyResult（TODO，已定义在state.py）
-⏳ agents/policy/agent.py          → Policy Agent主逻辑（TODO，当前policy_node使用模板stub）
-⏳ agents/material/ocr.py          → OCR文档识别（TODO）
-⏳ agents/material/extractor.py    → 实体抽取（TODO）
-⏳ agents/material/validator.py    → 规则校验（TODO）
-⏳ agents/material/agent.py        → Material Agent主逻辑（TODO，当前material_node使用stub）
-⏳ agents/workflow/agent.py        → Workflow Agent（TODO，当前workflow_node使用stub模拟办件号）
-⏳ agents/governance/security.py   → 安全检测（TODO）
-⏳ agents/governance/behavior.py   → 行为分析（TODO）
-⏳ agents/governance/optimizer.py  → 自动优化（TODO）
-⏳ agents/governance/agent.py      → Governance Agent主逻辑（TODO）
+✅ config.py                   — Settings（30+字段，pydantic-settings + lru_cache，236行）
+✅ main.py                     — FastAPI app factory + lifespan(db init/shutdown) + CORS + /health（129行）
+✅ tools/logger.py             — loguru 完整系统（531行，20测试）
+✅ api/schemas.py              — 10个Pydantic API模型（225行）
+✅ api/dependencies.py         — 5个DI函数（140行）
+✅ api/routes.py               — 5个API端点（/chat, /status, /a2a, /dashboard, /eval，244行）
+✅ middleware/auth.py           — JWT + Bearer + X-User-Id + Token生成（155行）
+✅ services/agent_service.py   — AgentService（注册+执行+恢复，159行）
+⏳ middleware/rbac.py           — RBAC权限（待Phase 2）
+⏳ middleware/tracing.py        — OpenTelemetry（待Phase 3）
 ```
 
-### 第五步：RAG管线 (rag/) ⏳ 待开始
+### 数据库层 (database/) — 3/3 完成
 
 ```
-⏳ rag/embedding.py        → BGE embedding模型加载 + encode_query/encode_documents
-⏳ rag/retriever.py        → 混合检索（Milvus dense + BM25 sparse → 融合排序）
-⏳ rag/reranker.py         → BGE Reranker重排序
-⏳ rag/generator.py        → LLM生成（带evidence标注的答案）
-⏳ rag/knowledge_base.py   → 知识库索引（文档加载 → 切分 → embedding → 写入Milvus）
+✅ connection.py               — async SQLAlchemy + session factory + get_db DI + init/close（104行）
+✅ models.py                   — 5表ORM（Trace, Agent, Prompt, Evaluation, Checkpoint，310行）
+✅ schemas.py                  — CRUD Pydantic模型（Create/Response，133行）
+```
+
+### RAG管线 (rag/) — 5/5 完成（框架就绪，stub待接入真实模型）
+
+```
+✅ embedding.py                — EmbeddingEngine（BGE-large-zh-v1.5，78行）
+✅ retriever.py                — HybridRetriever（Milvus稠密 + BM25稀疏 + RRF融合，134行）
+✅ reranker.py                 — Reranker（bge-reranker-v2-m3，66行）
+✅ generator.py                — Generator（LLM + 简单拼接双模式，evidence标注，113行）
+✅ knowledge_base.py           — KnowledgeBase（PDF/DOCX/TXT加载 → 切分 → 索引，173行）
+```
+
+---
+
+## Phase 2 — MCP Server + Tool Calling ⏳
+
+```
+⏳ tools/mcp/client.py                         — MCP Client（tools/list → tools/call）
+⏳ tools/mcp/gateway.py                        — MCP Gateway（鉴权/限流/审计/路由）
+⏳ tools/mcp/schema.py                         — Tool JSON Schema定义
+⏳ tools/mcp/servers/policy_server/server.py   — Policy MCP Server
+⏳ tools/mcp/servers/policy_server/tools.py    — search_policy + get_policy_detail
+⏳ tools/mcp/servers/material_server/server.py — Material MCP Server
+⏳ tools/mcp/servers/material_server/tools.py  — extract_entity + check_material
+⏳ tools/mcp/servers/workflow_server/server.py — Workflow MCP Server
+⏳ tools/mcp/servers/workflow_server/tools.py  — create_case + query_status
+⏳ agents/material/ocr.py                      — OCR引擎
+⏳ agents/material/extractor.py                — 实体抽取
+⏳ agents/material/validator.py                — 规则校验
 ```
 
 ---

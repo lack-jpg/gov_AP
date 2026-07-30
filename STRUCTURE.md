@@ -38,11 +38,9 @@
 
 ## agents/__init__.py
 - **用途**：Agent注册中心，管理所有Agent的注册、发现、生命周期
-- **下一步**：实现 `AgentRegistry` 类：
-  - `register(name, agent_instance)` — 注册Agent
-  - `get(name) -> Agent` — 获取Agent
-  - `list() -> List[str]` — 列出所有可用Agent
-  - `health_check(name) -> bool` — 健康检查
+- **状态**：✅ 已完成（126行）
+  - `AgentRegistry` 类：register/get/list/list_active/health_check/set_status/get_metadata/unregister/clear
+  - `get_agent_registry()` 全局单例工厂
 
 ---
 
@@ -94,31 +92,33 @@
 - **下一步**：导出 `IntentAgent` 类
 
 ### agents/intent/agent.py
-- **用途**：Intent Agent核心 —— 优先BERT分类，置信度低时fallback到LLM
-- **下一步**：实现 `IntentAgent` 类：
-  - `classify(user_query: str) -> IntentResult` — BERT优先，LLM兜底
-  - `get_intent_label(intent_id: str) -> str` — 标签映射
+- **用途**：Intent Agent核心 —— 3级分类（BERT→关键词→LLM fallback）
+- **状态**：✅ 已完成（130行）
+  - `IntentAgent` 类：classify() → process() LangGraph节点接口
+  - 三级策略链：BERT分类器 → 关键词匹配 → LLM fallback
+  - 构造函数接收 classifier + llm + bert_threshold
 
 ### agents/intent/classifier.py
-- **用途**：BERT意图分类器 —— Fine-tuned BERT模型做多分类
-- **下一步**：实现 `IntentClassifier` 类：
-  - `load_model(model_path)` — 加载fine-tuned BERT
-  - `predict(text: str) -> (label, confidence)` — 推理
-  - 分类标签：business_register, fund_query, property_service, restaurant_license...
-  - 训练数据准备逻辑
+- **用途**：意图分类器 —— BERT模型推理 + 关键词匹配兜底
+- **状态**：✅ 已完成（169行）
+  - `IntentClassifier` 类：3级分类链（_bert_classify → _keyword_classify）
+  - 18条关键词→意图映射表（餐馆→restaurant_license, 公司→business_register...）
+  - _bert_classify 为stub（TODO: 加载真实 fine-tuned BERT）
+  - BERT_CONFIDENCE_THRESHOLD=0.7，低于此值触发LLM fallback
 
 ### agents/intent/schema.py
 - **用途**：Intent Agent的数据模型（Pydantic v2）
-- **下一步**：定义 Pydantic 模型：
+- **状态**：✅ 已完成（64行）
   - `IntentLabel` — {label_id, label_name, category}
-  - `IntentResult` — {label, confidence, source(bert|llm)}
-  - `IntentClassification` — {user_query, results: List[IntentResult]}
+  - `IntentResult` — {label, label_name, confidence, source}
+  - `IntentClassificationResult` — 多分类结果（含candidates）
+  - `INTENT_LABELS` — 10个预定义标签常量
 
 ### agents/intent/prompts.py
 - **用途**：Intent Agent的Prompt模板
-- **下一步**：定义 `INTENT_CLASSIFICATION_PROMPT`：
-  - 包含few-shot示例（"开餐馆" → business_license）
-  - 约束：只从预定义标签中选择
+- **状态**：✅ 已完成（48行）
+  - `INTENT_CLASSIFICATION_PROMPT` — LLM分类模板（含10种标签+分类原则）
+  - `FEW_SHOT_EXAMPLES` — 5条 few-shot 示例
 
 ---
 
@@ -129,24 +129,24 @@
 - **下一步**：导出 `PolicyAgent` 类
 
 ### agents/policy/agent.py
-- **用途**：Policy Agent核心 —— RAG管线编排（embedding → retrieve → rerank → generate）
-- **下一步**：实现 `PolicyAgent` 类：
-  - `search(query: str, top_k: int) -> PolicyResult` — 完整RAG流程
-  - `format_answer(retrieved_docs, query) -> str` — LLM生成答案
-  - 必须返回 evidence[] 标注信息来源
+- **用途**：Policy Agent核心 —— RAG管线编排 + 模板兜底
+- **状态**：✅ 已完成（165行）
+  - `PolicyAgent` 类：search() → search_with_intent() → process() LangGraph节点
+  - LLM+模板双模式：有LLM走RAG流程，无LLM用关键词模板
+  - 5种业务模板回答（餐馆/企业注册/公积金/不动产/通用）
+  - TODO: 接入 rag/ 模块的完整 RAG 管线
 
 ### agents/policy/schema.py
 - **用途**：Policy Agent的数据模型
-- **下一步**：定义 Pydantic 模型：
+- **状态**：✅ 已完成（28行）
   - `PolicyDocument` — {title, content, source, page, score}
-  - `PolicyEvidence` — {document, relevant_excerpt, relevance_score}
-  - `PolicyResult` — {answer: str, evidence: List[PolicyEvidence]}
+  - `PolicyEvidence` — {source, excerpt, page, relevance_score}
+  - `PolicyResult` — {answer, evidence[], confidence, retrieved_count}
 
 ### agents/policy/prompts.py
 - **用途**：Policy Agent的Prompt模板
-- **下一步**：定义 `POLICY_RAG_PROMPT`：
-  - "你是一个政务政策问答助手。基于提供的政策条文回答问题，必须标注每条回答的来源。"
-  - 输出格式：JSON with answer + evidence
+- **状态**：✅ 已完成（27行）
+  - `POLICY_RAG_PROMPT` — RAG回答生成模板（role + 输出格式JSON）
 
 ---
 
@@ -157,93 +157,66 @@
 - **下一步**：导出 `MaterialAgent` 类
 
 ### agents/material/agent.py
-- **用途**：Material Agent核心 —— OCR识别 → 实体抽取 → 规则校验 → 生成审核结果
-- **下一步**：实现 `MaterialAgent` 类：
-  - `review(file_path: str, business_type: str) -> MaterialResult` — 完整审核流程
-  - `check_completeness(extracted, required) -> CheckResult` — 完整性检查
+- **用途**：Material Agent核心 —— 材料完整性审核 + 建议
+- **状态**：✅ 已完成（118行）
+  - `MaterialAgent` 类：review() + process() LangGraph节点接口
+  - 5种业务类型的 REQUIRED_MATERIALS 清单（restaurant_license/business_license/business_register/property_service/fund_query）
+  - _check_warnings() 温馨提示生成
+  - TODO: OCR + 实体抽取接入
 
 ### agents/material/ocr.py
-- **用途**：OCR识别 —— 从文档图片/PDF中提取文字
-- **下一步**：实现 `OCREngine` 类：
-  - `extract_text(file_path: str) -> str` — 文件→文字
-  - 支持格式：jpg/png/pdf
-  - 考虑集成 PaddleOCR 或 Tesseract
+- **用途**：OCR识别 —— 从文档图片/PDF中提取文字（⏳ Phase 2）
 
 ### agents/material/extractor.py
-- **用途**：实体抽取 —— 从OCR文本中提取关键字段
-- **下一步**：实现 `EntityExtractor` 类：
-  - `extract(text: str, schema: Dict) -> Dict` — 提取结构化字段
-  - 字段：name, id_card, business_name, address, phone...
-  - 使用LLM + few-shot做信息抽取
+- **用途**：实体抽取 —— 从OCR文本中提取关键字段（⏳ Phase 2）
 
 ### agents/material/validator.py
-- **用途**：规则校验 —— 检查提交材料是否满足业务要求
-- **下一步**：实现 `MaterialValidator` 类：
-  - `validate(extracted: Dict, rules: List[Rule]) -> ValidationResult` — 逐条校验
-  - Rule结构：{field, requirement, condition}
-  - 输出：{passed: bool, missing: List[str], warnings: List[str]}
+- **用途**：规则校验 —— 检查提交材料是否满足业务要求（⏳ Phase 2）
 
 ### agents/material/prompts.py
-- **用途**：Material Agent的Prompt模板
-- **下一步**：定义 `MATERIAL_EXTRACTION_PROMPT`、`MATERIAL_VALIDATION_PROMPT`
+- **用途**：Material Agent的Prompt模板（⏳ Phase 2）
 
 ---
 
 ## agents/workflow/ — Workflow Agent（流程执行）
 
-### agents/workflow/__init__.py
-- **用途**：Workflow包初始化
-- **下一步**：导出 `WorkflowAgent` 类
-
 ### agents/workflow/agent.py
-- **用途**：Workflow Agent核心 —— 通过MCP Client调用业务系统创建办件、查询状态
-- **下一步**：实现 `WorkflowAgent` 类：
-  - `create_case(user_id, service_type, materials) -> CaseResult` — 通过MCP调用create_case
-  - `query_status(case_id) -> CaseStatus` — 通过MCP调用query_status
-  - 所有外部调用必须经过 `mcp_client.call_tool()`，禁止直接import业务代码
-
-### agents/workflow/prompts.py
-- **用途**：Workflow Agent的Prompt模板
-- **下一步**：定义 `WORKFLOW_EXECUTION_PROMPT`
+- **用途**：Workflow Agent核心 —— 通过MCP Client调用业务系统
+- **状态**：✅ 已完成（114行）
+  - `WorkflowAgent` 类：create_case() + query_status() + process()
+  - MCP stub 模式：模拟 CASE_XXXXXXXX 办件号 + log_mcp_call 记录
+  - TODO: 接入真实 MCP Client
 
 ---
 
 ## agents/governance/ — Governance Agent（安全治理，旁路）
 
-### agents/governance/__init__.py
-- **用途**：Governance包初始化
-- **下一步**：导出 `GovernanceAgent` 类
-
 ### agents/governance/agent.py
 - **用途**：Governance Agent核心 —— 协调安全检查、行为监控、优化建议
-- **下一步**：实现 `GovernanceAgent` 类：
-  - `check(state: AgentState) -> RiskAssessment` — 安全风险评估
-  - `monitor(trace: Trace) -> BehaviorReport` — 行为监控
-  - **注意：此Agent不能参与业务回答，仅做旁路控制**
+- **状态**：✅ 已完成（99行）
+  - `GovernanceAgent` 类：check() 输入→输出→行为分析三级检查
+  - process() LangGraph节点接口 + generate_optimization_suggestions()
+  - **旁路控制，不参与业务回答**
 
 ### agents/governance/security.py
-- **用途**：安全检测 —— PII检测、Prompt Injection检测、敏感词过滤
-- **下一步**：实现 `SecurityChecker` 类：
-  - `check_input(text: str) -> SecurityResult` — 输入安全扫描
-  - `check_output(text: str) -> SecurityResult` — 输出安全扫描
-  - 使用正则 + 关键词库 + LLM judge
+- **用途**：安全检测 —— PII/注入/敏感词/泄露4类检测
+- **状态**：✅ 已完成（165行）
+  - `SecurityChecker` 类：check_input() + check_output()
+  - PII正则（手机/身份证/邮箱）+ 8条注入特征 + 8个敏感词
+  - _detect_internal_leak() 输出泄露检测（traceback/API_KEY/SECRET/SystemMessage）
 
 ### agents/governance/behavior.py
 - **用途**：行为分析 —— 循环检测、异常行为识别
-- **下一步**：实现 `BehaviorAnalyzer` 类：
-  - `detect_loop(tool_calls: List) -> bool` — 窗口6次，连续3次相同工具触发
-  - `detect_anomaly(trace: Trace) -> AnomalyReport` — 异常检测
+- **状态**：✅ 已完成（93行）
+  - `BehaviorAnalyzer` 类：analyze() 4维度检测
+  - 工具循环（滑动窗口） + MCP步数过多(>20) + Token消耗过大(>100K)
+  - _detect_loop() 窗口6/阈值3
 
 ### agents/governance/optimizer.py
 - **用途**：自动优化 —— 分析trace和evaluation结果，生成优化建议
-- **下一步**：实现 `Optimizer` 类：
-  - `analyze(trace: Trace, eval_result: EvaluationResult) -> OptimizationSuggestion`
-  - `suggest_prompt_improvement(failure_cases) -> str`
-  - `suggest_workflow_improvement(inefficient_paths) -> str`
-
-### agents/governance/prompts.py
-- **用途**：Governance Agent的Prompt模板
-- **下一步**：定义安全检查和行为分析的Prompt模板
+- **状态**：✅ 已完成（127行）
+  - `Optimizer` 类：analyze() 4维度（失败率>20%/步数>5/延迟>5000ms/Tool频率>10）
+  - suggest_prompt_improvement() 基于失败case的Prompt改进建议
 
 ---
 
@@ -297,21 +270,22 @@
   - `route_on_start()`：起始路由
 
 ### orchestration/langgraph/checkpointer.py
-- **用途**：PostgreSQL Checkpointer —— LangGraph状态持久化
-- **下一步**：实现 `PostgresCheckpointer`:
-  - `save(state: AgentState, checkpoint_id: str)` — 保存状态快照
-  - `load(checkpoint_id: str) -> AgentState` — 恢复状态
-  - 使用 `langgraph-checkpoint-postgres` 库
-  - 支持A2A异步任务挂起/恢复
+- **用途**：PostgreSQL Checkpointer —— LangGraph状态持久化 + A2A挂起/恢复
+- **状态**：✅ 已完成（310行）
+  - `PostgresCheckpointer(BaseCheckpointSaver)`：aget_tuple/alist/aput/aput_writes/adelete_thread
+  - suspend_for_a2a() / resume_from_a2a() A2A异步任务支持
+  - `_CheckpointRow` 独立ORM表（langgraph_checkpoints）
+  - 序列化使用 JsonPlusSerializer
 
 ### orchestration/langgraph/runtime.py
 - **用途**：Agent Runtime安全控制 —— 步骤限制、循环检测、超时控制
-- **下一步**：实现 `AgentRuntime` 类：
-  - `max_steps = 10` — 超过则优雅终止
-  - `loop_window = 6` — 滑动窗口大小
-  - `loop_threshold = 3` — 连续3次相同tool触发re-plan
-  - `timeout = 30` — Agent执行超时
-  - `execute(graph, state) -> AgentState` — 带安全控制的执行器
+- **状态**：✅ 已完成（394行，22条测试通过）
+  - `RuntimeConfig` dataclass（max_steps=10, loop_window=6, loop_threshold=3, timeout=30s, max_retries=3）
+  - `LoopDetector` 类：feed()/feed_batch()/reset()/recent_tools
+  - `AgentRuntime` 类：execute_with_safeguards()/check_step()/check_loop_detected()
+  - `RuntimeExceededError`/`RuntimeTimeoutError`/`RuntimeLoopDetectedError` 3个异常类
+  - `create_runtime_from_settings()` 工厂函数
+  - 运行 `python -m orchestration.langgraph.runtime` 执行22条测试
 
 ---
 
@@ -483,42 +457,38 @@
 - **下一步**：导出 `RAGPipeline` 类
 
 ### rag/embedding.py
-- **用途**：文本向量化 —— 使用BGE模型生成embedding
-- **下一步**：实现 `EmbeddingEngine` 类：
-  - `load_model(model_name)` — 加载BGE模型（默认 BAAI/bge-large-zh-v1.5）
-  - `encode_query(text: str) -> ndarray` — 查询向量化
-  - `encode_documents(texts: List[str]) -> ndarray` — 批量文档向量化
-  - 支持GPU加速
+- **用途**：文本向量化 —— BGE-large-zh-v1.5 模型
+- **状态**：✅ 已完成框架（78行，stub就绪）
+  - `EmbeddingEngine` 类：encode_query()/encode_documents()/load_model()
+  - 默认模型 BAAI/bge-large-zh-v1.5，DIM=1024
+  - 当前返回零向量（stub），TODO: 接入 sentence-transformers
 
 ### rag/retriever.py
-- **用途**：混合检索 —— Milvus密集检索 + BM25稀疏检索 + 融合排序
-- **下一步**：实现 `HybridRetriever` 类：
-  - `dense_search(query_embedding, top_k) -> List[Document]` — Milvus向量检索
-  - `sparse_search(query, top_k) -> List[Document]` — BM25关键词检索
-  - `hybrid_search(query, query_embedding, top_k) -> List[Document]` — 融合两种结果
-  - 使用 RRF (Reciprocal Rank Fusion) 融合排序
+- **用途**：混合检索 —— Milvus + BM25 + RRF融合
+- **状态**：✅ 已完成框架（134行，stub就绪）
+  - `HybridRetriever` 类：hybrid_search()/dense_search()/sparse_search()
+  - RRF (Reciprocal Rank Fusion) 融合算法实现（alpha权重 + k平滑参数）
+  - 当前返回空结果（stub），TODO: 接入 pymilvus + BM25
 
 ### rag/reranker.py
-- **用途**：重排序 —— 使用BGE Reranker对检索结果精排
-- **下一步**：实现 `Reranker` 类：
-  - `load_model(model_name)` — 加载BGE Reranker（默认 BAAI/bge-reranker-v2-m3）
-  - `rerank(query, documents, top_k) -> List[Document]` — 重排序
-  - 返回带 relevance_score 的文档列表
+- **用途**：重排序 —— bge-reranker-v2-m3
+- **状态**：✅ 已完成框架（66行，stub就绪）
+  - `Reranker` 类：rerank() + _model_rerank() + load_model()
+  - Stub 模式按顺序递减打分（0.95→0.85→...）
 
 ### rag/generator.py
-- **用途**：LLM答案生成 —— 基于检索到的文档生成带evidence的答案
-- **下一步**：实现 `Generator` 类：
-  - `generate(query, context_docs, chat_history) -> GeneratedAnswer` — LLM生成
-  - 输出格式：{answer, evidence: [{source, excerpt, score}]}
-  - 使用LangChain的ChatOpenAI兼容接口
+- **用途**：LLM答案生成 —— 基于检索文档生成带evidence的答案
+- **状态**：✅ 已完成（113行）
+  - `Generator` 类：generate() LLM模式 + _simple_generate() 简单拼接兜底
+  - GENERATOR_SYSTEM_PROMPT 模板（role + 输出JSON格式）
+  - evidence自动构建（取top-3文档的source/excerpt/score）
 
 ### rag/knowledge_base.py
 - **用途**：知识库管理 —— 文档加载、切分、索引
-- **下一步**：实现 `KnowledgeBase` 类：
-  - `load_documents(path) -> List[Document]` — 加载政策文件（PDF/DOCX/TXT）
-  - `split_documents(docs, chunk_size, overlap)` — 文本切分
-  - `index_documents(docs)` — 写入Milvus
-  - `rebuild_index()` — 重建索引
+- **状态**：✅ 已完成（173行）
+  - `KnowledgeBase` 类：load_documents()/split_documents()/index_documents()/rebuild_index()
+  - 支持 TXT/MD/PDF/DOCX 格式（PDF/DOCX stub）
+  - 滑动窗口切分（默认512字符，64重叠）
 
 ---
 
@@ -612,23 +582,29 @@
 
 ### database/connection.py
 - **用途**：数据库连接管理 —— async SQLAlchemy + asyncpg
-- **下一步**：实现：
-  - `create_engine(url) -> AsyncEngine` — 创建异步引擎
-  - `get_session() -> AsyncSession` — 获取会话（FastAPI依赖注入用）
-  - `init_db()` — 初始化数据库表
+- **状态**：✅ 已完成（104行）
+  - `create_engine()`/`create_session_factory()` 工厂函数
+  - `get_engine()`/`get_session_factory()` 惰性单例
+  - `get_db()` FastAPI异步依赖注入（async generator, 自动commit/rollback/close）
+  - `init_db()`/`close_db()` 应用启停管理
 
 ### database/models.py
 - **用途**：SQLAlchemy ORM模型
-- **下一步**：定义5个核心表：
-  - **Trace表**：trace_id, span_id, agent_name, tool_name, input, output, latency_ms, token_usage, status, created_at
-  - **Agent表**：agent_id, name, type, version, config, status, created_at
-  - **Prompt表**：prompt_id, agent_name, version, content, is_active, created_at
-  - **Evaluation表**：eval_id, version, task_success_rate, rag_faithfulness, tool_accuracy, report_json, created_at
-  - **Checkpoint表**：checkpoint_id, task_id, state_json, created_at
+- **状态**：✅ 已完成（310行）
+  - **Trace表**（21字段）：trace_id, span_id, parent_span_id, agent_name, node_name, input/output_data, tool_name/input/output, latency_ms, input/output_tokens, status, error_message, risk_level, metadata_, created_at
+  - **Agent表**（8字段）：agent_id, name, version, config(JSON), status, description, created_at, updated_at
+  - **Prompt表**（8字段）：prompt_id, agent_name, name, version, content, variables(JSON), is_active, created_by, created_at
+  - **Evaluation表**（13字段）：eval_id, version, 7项指标, total_cases, passed_cases, report_json(JSON), created_at
+  - **Checkpoint表**（7字段）：checkpoint_id, task_id, thread_id, state_json(JSON), checkpoint_data(JSON), status, created_at
+  - 全部字段带 comment + `mapped_column`
 
 ### database/schemas.py
 - **用途**：Pydantic v2序列化模型（与ORM模型对应）
-- **下一步**：定义与models.py对应的Pydantic模型，用于API序列化
+- **状态**：✅ 已完成（133行）
+  - TraceCreate/TraceResponse, AgentCreate/AgentResponse
+  - PromptCreate/PromptResponse, EvaluationCreate/EvaluationResponse
+  - CheckpointCreate/CheckpointResponse
+  - from_attributes=True 支持 ORM 直接转 Pydantic
 
 ### database/migrations/__init__.py
 - **用途**：Alembic数据库迁移
@@ -701,49 +677,36 @@
 
 ### backend/middleware/auth.py
 - **用途**：JWT认证中间件
-- **下一步**：实现：
-  - 从Authorization header提取Bearer token
-  - 使用python-jose验证JWT
-  - 将user_id注入request.state
+- **状态**：✅ 已完成（155行）
+  - `get_current_user()` DI：JWT decode + sub/role/tenant_id 提取
+  - `get_optional_user()` DI：可选鉴权（有Token解析，无则None）
+  - `AuthMiddleware` 类：Bearer Token优先 → X-User-Id降级 → 401
+  - `create_access_token()` 工具函数
 
 ### backend/middleware/rbac.py
-- **用途**：RBAC权限中间件
-- **下一步**：实现：
-  - 定义角色：admin, agent, user
-  - 定义权限映射：哪些角色可以调用哪些API/MCP工具
-  - 在请求处理前检查权限
+- **用途**：RBAC权限中间件（⏳ Phase 2）
 
 ### backend/middleware/logging.py
-- **用途**：结构化日志系统（基于loguru）— trace_id 跨协程传递、请求/响应日志、Agent/MCP执行日志
-- **状态**：✅ 已完成（~420行）
-  - **3个ContextVar**：trace_id, user_id, agent_name — asyncio安全的跨协程上下文传递
-  - **3个Format函数**：_console_format（带颜色+尖括号转义）、_file_format（纯文本）、_error_file_format
-  - **setup_logging()**：初始化控制台（按debug模式决定颜色）+ 文件（按天轮转30天+gzip）+ 错误文件（90天）+ stdlib桥接
-  - **RequestLoggingMiddleware**：自动trace_id生成/提取、请求开始/结束日志（method/path/status/latency）、响应头注入
-  - **log_agent_call()** 装饰器、**log_mcp_call()** 函数
-  - **get_logger(name)** 便捷工厂
+- **用途**：已迁移至 `tools/logger.py`
+- **状态**：✅ 已迁移（tools/logger.py，531行，20条测试）
+  - **3个ContextVar / 3个Format函数 / setup_logging() / RequestLoggingMiddleware(BaseHTTPMiddleware) / log_agent_call() / log_mcp_call() / get_logger()**
+  - 运行时日志写入 `logger/` 目录（gitignore）
+  - 运行 `python tools/logger.py` 执行20条冒烟测试
 
 ### backend/middleware/tracing.py
-- **用途**：OpenTelemetry链路追踪中间件
-- **下一步**：实现：
-  - 为每个HTTP请求创建OpenTelemetry span
-  - 将trace context传播到下游Agent调用
-  - 使用OTLP exporter导出到collector
+- **用途**：OpenTelemetry链路追踪中间件（⏳ Phase 3）
 
 ---
 
 ## backend/services/
 
-### backend/services/__init__.py
-- **用途**：服务层包初始化
-- **下一步**：导出 `AgentService`
-
 ### backend/services/agent_service.py
 - **用途**：Agent编排服务 —— 管理Agent生命周期
-- **下一步**：实现 `AgentService` 类：
-  - `execute(user_query, user_id) -> AgentState` — 执行Agent工作流
-  - `resume(checkpoint_id, callback_result) -> AgentState` — 恢复A2A挂起的流程
-  - `get_status(trace_id) -> ExecutionStatus` — 查询执行状态
+- **状态**：✅ 已完成（159行）
+  - `AgentService` 类：initialize() 注册6个Agent + 构建Graph
+  - `execute()` 带Runtime安全护栏的完整工作流执行
+  - `resume_from_checkpoint()` A2A异步任务恢复
+  - `get_graph()` 获取已编译的StateGraph
 
 ---
 
