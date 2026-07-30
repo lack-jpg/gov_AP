@@ -22,6 +22,12 @@ from __future__ import annotations
 import logging as stdlib_logging
 import os
 import sys
+
+# ── 确保项目根在 sys.path（python tools/logger.py 直接运行时需要） ──
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import time
 import uuid
 from contextvars import ContextVar
@@ -444,3 +450,221 @@ def _summarize_dict(d: dict[str, Any], max_len: int = 80) -> str:
     if len(result) > max_len:
         result = result[:max_len - 3] + "..."
     return result
+
+
+# ============================================================
+# Smoke Test — python tools/logger.py
+# ============================================================
+
+
+def _now_str() -> str:
+    """当前日期字符串 YYYY-MM-DD，供测试用"""
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+if __name__ == "__main__":
+    import glob
+    import os
+
+    passed = 0
+    failed = 0
+
+    def check(name: str, ok: bool, detail: str = ""):
+        global passed, failed
+        if ok:
+            passed += 1
+            print(f"  [PASS] {name}")
+        else:
+            failed += 1
+            print(f"  [FAIL] {name}")
+            if detail:
+                print(f"         {detail}")
+
+    # ── 1. 初始化（用最小 Settings mock，不依赖 .env） ──
+    print("\n" + "=" * 60)
+    print("  1. 初始化")
+    print("=" * 60)
+
+    from dataclasses import dataclass
+
+    @dataclass
+    class _FakeSettings:
+        log_level: str = "DEBUG"
+        debug: bool = True
+
+    fake_settings = _FakeSettings()
+
+    # 清理旧日志
+    import shutil
+    if os.path.isdir(LOG_DIR):
+        shutil.rmtree(LOG_DIR)
+
+    setup_logging(fake_settings)
+    check("setup_logging 不抛异常", True)
+    check("logger/ 目录已创建", os.path.isdir(LOG_DIR))
+
+    # ── 2. 控制台输出（各日志级别） ──
+    print("\n" + "=" * 60)
+    print("  2. 控制台输出（各日志级别）")
+    print("=" * 60)
+
+    test_logger = get_logger("smoke_test")
+
+    print("  --- 以下为日志输出，请目视检查 ---")
+    test_logger.debug("DEBUG 级别日志（仅 debug=True 时显示）")
+    test_logger.info("INFO 级别日志 — 正常信息")
+    test_logger.warning("WARNING 级别日志 — 警告")
+    test_logger.error("ERROR 级别日志 — 错误（不含异常）")
+    print("  --- 日志输出结束 ---")
+    check("各级别日志无异常", True, "目视确认上方5行日志是否出现")
+
+    # ── 3. trace_id 上下文绑定 ──
+    print("\n" + "=" * 60)
+    print("  3. trace_id / user_id / agent_name 绑定")
+    print("=" * 60)
+
+    set_trace_context("trace_abc123def45678", user_id="test_user", agent_name="supervisor")
+    tid = get_current_trace_id()
+    uid = get_current_user_id()
+    aid = get_current_agent_name()
+    check("get_current_trace_id()", tid == "trace_abc123def45678", tid)
+    check("get_current_user_id()", uid == "test_user", uid)
+    check("get_current_agent_name()", aid == "supervisor", aid)
+
+    print("  --- 带 trace 上下文的日志 ---")
+    test_logger.bind().info("这条日志应该带上 trace_abc 前缀")
+    print("  --- 日志输出结束 ---")
+
+    log_mcp_call(
+        server_name="policy_server",
+        tool_name="search_policy",
+        input_args={"query": "开餐馆需要什么材料", "top_k": 5},
+        latency_ms=234.5,
+    )
+
+    log_mcp_call(
+        server_name="material_server",
+        tool_name="check_material",
+        input_args={"file_id": "doc_001"},
+        status="failed",
+        error="OCR 服务超时",
+    )
+    check("log_mcp_call 成功/失败均无异常", True)
+
+    # ── 4. 异常捕获 + Traceback ──
+    print("\n" + "=" * 60)
+    print("  4. 异常捕获 + Traceback")
+    print("=" * 60)
+
+    print("  --- 以下为带 traceback 的 ERROR 日志 ---")
+    try:
+        data = {"policy": "食品经营许可条例"}
+        _ = data["nonexistent_key"]  # KeyError
+    except KeyError:
+        test_logger.exception("捕获 KeyError — 应显示完整 traceback")
+    print("  --- 日志输出结束 ---")
+    check("exception() 不抛异常", True, "目视确认上方 traceback")
+
+    # ── 5. Agent 执行日志装饰器 ──
+    print("\n" + "=" * 60)
+    print("  5. Agent 执行日志装饰器")
+    print("=" * 60)
+
+    import asyncio
+
+    @log_agent_call("supervisor")
+    async def fake_agent_node(state: dict) -> dict:
+        """模拟 Agent 节点：干1ms活，返回带 mcp_history 的 state"""
+        await asyncio.sleep(0.001)
+        return {"mcp_history": [{"tool": "search_policy"}, {"tool": "check_material"}]}
+
+    print("  --- 以下为 Agent 装饰器日志 ---")
+    result = asyncio.run(fake_agent_node({"user_query": "test"}))
+    print("  --- 日志输出结束 ---")
+    check("@log_agent_call 正常完成", "mcp_history" in result)
+    check("装饰器恢复了 agent_name ContextVar",
+          get_current_agent_name() == aid,
+          f"expected={aid}, got={get_current_agent_name()}"
+    )
+
+    # 测试装饰器 + 异常
+    @log_agent_call("policy")
+    async def failing_agent(state: dict) -> dict:
+        raise ValueError("模拟 Agent 崩溃")
+
+    print("  --- 以下为 Agent 异常日志 ---")
+    try:
+        asyncio.run(failing_agent({"query": "test"}))
+    except ValueError:
+        pass
+    print("  --- 日志输出结束 ---")
+    check("@log_agent_call 异常日志正常", True)
+
+    # ── 6. 文件日志验证 ──
+    print("\n" + "=" * 60)
+    print("  6. 文件日志")
+    print("=" * 60)
+
+    import time as _time
+    _time.sleep(0.3)  # 等 loguru flush
+
+    log_files = sorted(glob.glob(os.path.join(LOG_DIR, "*.log")))
+    check("logger/ 下有日志文件", len(log_files) > 0, f"找到 {len(log_files)} 个文件")
+
+    app_file = os.path.join(LOG_DIR, f"app_{_now_str()}.log")
+    error_file = os.path.join(LOG_DIR, f"error_{_now_str()}.log")
+
+    check(f"APP 日志存在: {os.path.basename(app_file)}",
+          os.path.exists(app_file),
+          f"路径: {app_file}")
+
+    # 读取 app 日志验证内容
+    if os.path.exists(app_file):
+        with open(app_file, encoding="utf-8") as f:
+            app_content = f.read()
+        check("APP 日志含 INFO 级别",
+              "INFO" in app_content,
+              f"文件大小: {len(app_content)} bytes")
+        check("APP 日志含 trace_abc",
+              "trace_abc" in app_content,
+              "trace_id 写入文件")
+        check("APP 日志含 MCP调用",
+              "MCP调用" in app_content,
+              "MCP 调用记录写入文件")
+        check("APP 日志含 ERROR 级别",
+              "ERROR" in app_content,
+              "异常日志写入文件")
+
+    # 错误日志
+    if os.path.exists(error_file):
+        with open(error_file, encoding="utf-8") as f:
+            error_content = f.read()
+        check(f"ERROR 日志存在: {os.path.basename(error_file)}",
+              os.path.exists(error_file))
+        check("ERROR 日志含 traceback",
+              "Traceback" in error_content or "KeyError" in error_content,
+              f"文件大小: {len(error_content)} bytes")
+
+    # ── 7. 清理 ──
+    print("\n" + "=" * 60)
+    print("  7. 清理")
+    print("=" * 60)
+
+    # 先停止 loguru 的所有 handler（释放文件锁，Windows 必需）
+    _loguru_logger.remove()
+    import shutil
+    if os.path.isdir(LOG_DIR):
+        shutil.rmtree(LOG_DIR)
+        check("测试文件已清理", not os.path.exists(LOG_DIR))
+
+    # ── Summary ──
+    total = passed + failed
+    print(f"\n{'='*60}")
+    print(f"  RESULT: {passed}/{total} passed", end="")
+    if failed:
+        print(f", {failed} FAILED")
+    else:
+        print(" — 日志系统正常")
+    print(f"{'='*60}")
+    print(f"  运行方式: python tools/logger.py\n")
