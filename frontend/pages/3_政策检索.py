@@ -1,0 +1,65 @@
+"""
+frontend.pages.3_政策检索 - RAG 政策检索演示
+
+检索管线：Milvus 向量检索 + BM25 稀疏检索 + Reranker 精排 + LLM 生成
+"""
+from __future__ import annotations
+
+import os
+import sys
+
+import streamlit as st
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common import setup_paths, run_async  # noqa: E402
+
+setup_paths()
+
+from agents.policy.agent import PolicyAgent  # noqa: E402
+
+st.set_page_config(page_title="政策检索", page_icon="📚", layout="wide")
+st.title("📚 政策检索（RAG）")
+st.caption("检索管线：**Embedding(Milvus) + BM25 稀疏检索 → Reranker 精排 → LLM 生成回答**")
+
+EXAMPLES = [
+    "开办餐馆需要办理哪些证照？",
+    "小微企业有哪些税收优惠政策？",
+    "公积金贷款利率是多少？",
+    "企业注册需要哪些材料？",
+]
+
+selected = st.selectbox("选择示例问题", ["✍️ 自定义输入"] + EXAMPLES)
+query = st.text_input(
+    "政策问题",
+    value="" if selected == "✍️ 自定义输入" else selected,
+    placeholder="例如：开办餐饮店需要哪些证照",
+)
+
+if st.button("📚 检索政策", type="primary", use_container_width=True):
+    if not query.strip():
+        st.warning("请输入问题")
+    else:
+        with st.spinner("🔄 RAG 检索中（向量检索 → 重排 → 生成）..."):
+            agent = PolicyAgent()
+            result = run_async(agent.search(query))
+
+        st.divider()
+        st.markdown("### 📄 回答")
+        st.markdown(result.answer or "（未生成回答）")
+
+        m1, m2 = st.columns(2)
+        m1.metric("置信度", f"{result.confidence:.1%}")
+        m2.metric("证据条数", len(result.evidence))
+
+        if result.evidence:
+            st.subheader("📎 引用证据")
+            for ev in result.evidence:
+                # PolicyEvidence: source / content / relevance_score（兼容字段名）
+                source = getattr(ev, "source", "") or (ev.get("source") if isinstance(ev, dict) else "")
+                content = getattr(ev, "content", "") or (ev.get("content") if isinstance(ev, dict) else "")
+                score = getattr(ev, "relevance_score", 0) or (ev.get("relevance_score", 0) if isinstance(ev, dict) else 0)
+                with st.container(border=True):
+                    st.markdown(f"**来源:** {source}  ·  相关度 {score:.2f}")
+                    st.caption(content[:200])
+        else:
+            st.info("本次未返回结构化证据（可能是 LLM 直接生成或模板回答）")

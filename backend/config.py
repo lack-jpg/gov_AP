@@ -54,9 +54,9 @@ class Settings(BaseSettings):
         description="FastAPI监听端口（默认 8002，避免与本地 8000 冲突）",
     )
     frontend_port: int = Field(
-        default=12345,
+        default=12315,
         alias="FRONTEND_PORT",
-        description="前端开发服务器端口（Vite/Next.js）",
+        description="前端开发服务器端口（Streamlit / Vite / Next.js）",
     )
 
     # ── LLM ──
