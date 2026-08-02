@@ -200,22 +200,97 @@ async def a2a_callback(
     """
     task_id = request.task_id
 
-    # TODO: 从数据库/Redis根据task_id查找对应的checkpoint
-    # 然后恢复LangGraph执行:
-    #   1. 找到原始 trace_id → checkpoint_id
-    #   2. 读取AgentState checkpoint
-    #   3. 注入 external_result = request.artifact
-    #   4. graph.ainvoke(resumed_state, config)
+    try:
+        from tools.a2a.callback import get_callback_handler
 
-    logger.info(
-        f"A2A callback received: task_id={task_id}, "
-        f"status={request.status}"
-    )
+        handler = get_callback_handler()
+        result = await handler.process_callback(
+            task_id=task_id,
+            status_str=request.status,
+            artifact=request.artifact,
+            error_message=request.error_message,
+        )
 
-    return A2ACallbackResponse(
-        success=True,
-        message=f"Callback for task {task_id} acknowledged (stub mode)",
-    )
+        logger.info(
+            "A2A callback processed: task_id={task_id}, status={status}, resumed={resumed}",
+            task_id=task_id,
+            status=request.status,
+            resumed=result.get("checkpoint_resumed", False),
+        )
+
+        # 如果 checkpoint 恢复成功，尝试恢复 LangGraph 执行
+        if result.get("checkpoint_resumed") and request.status == "completed":
+            try:
+                # 尝试恢复 Agent 工作流
+                await _resume_agent_after_callback(task_id, request.artifact or {}, settings)
+            except Exception as e:
+                logger.error("恢复 Agent 工作流失败: {}", e)
+
+        return A2ACallbackResponse(
+            success=result["success"],
+            message=result["message"],
+        )
+
+    except Exception as e:
+        logger.error(f"A2A callback processing failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Callback processing failed: {e}",
+        )
+
+
+async def _resume_agent_after_callback(
+    task_id: str,
+    artifact: dict,
+    settings: Settings,
+) -> None:
+    """
+    在 A2A 回调后恢复 Agent 工作流执行。
+
+    Args:
+        task_id: A2A 任务 ID
+        artifact: 外部 Agent 返回的结果
+        settings: 应用配置
+    """
+    try:
+        from orchestration.langgraph.checkpointer import PostgresCheckpointer
+        from database.connection import get_session_factory
+
+        factory = get_session_factory()
+        if factory is None:
+            logger.warning("数据库不可用，无法恢复 Agent 工作流")
+            return
+
+        checkpointer = PostgresCheckpointer()
+        checkpoint_tuple = await checkpointer.resume_from_a2a(task_id)
+
+        if checkpoint_tuple is None:
+            logger.warning("未找到 A2A 挂起的 checkpoint: {task_id}", task_id=task_id)
+            return
+
+        # 从 checkpoint 恢复 state
+        checkpoint_state = checkpoint_tuple.checkpoint.get("channel_values", {})
+
+        # 注入 external_result 并清除 waiting_task_id
+        resumed_state = {
+            **checkpoint_state,
+            "external_result": artifact,
+            "waiting_task_id": "",
+        }
+
+        # 获取 graph 并恢复执行
+        from backend.api.dependencies import get_agent_graph
+        graph = await get_agent_graph(settings)
+
+        config = checkpoint_tuple.config
+        config["configurable"]["resumed_from_checkpoint"] = True
+
+        await graph.ainvoke(resumed_state, config=config)
+        logger.info("A2A 恢复执行完成: task_id={task_id}", task_id=task_id)
+
+    except Exception as e:
+        logger.error("A2A 恢复执行失败: {task_id} — {error}", task_id=task_id, error=e)
+        raise
 
 
 # ============================================================

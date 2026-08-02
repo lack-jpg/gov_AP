@@ -643,19 +643,20 @@ gov_AP/
 │
 ├── tools/                            # 工具层 — MCP + A2A
 │   ├── mcp/                          # MCP协议(Agent→Tool)
-│   │   ├── __init__.py               # 包初始化
-│   │   ├── client.py                 # MCP客户端
-│   │   ├── gateway.py                # MCP网关(鉴权/审计)
-│   │   ├── schema.py                 # Tool Schema定义
+│   │   ├── __init__.py               # 包初始化 + 导出
+│   │   ├── client.py                 # MCP客户端（Gateway/Direct双模）
+│   │   ├── gateway.py                # MCP网关（路由/审计/健康聚合）
+│   │   ├── schema.py                 # 6 Tool Pydantic模型 + TOOL_REGISTRY
+│   │   ├── start_servers.py          # 一键启动所有MCP基础设施
 │   │   └── servers/                  # MCP Server
-│   │       ├── policy_server/        # 政策查询服务
-│   │       │   ├── server.py         # Server入口
+│   │       ├── policy_server/        # 政策查询服务 :12301
+│   │       │   ├── server.py         # FastAPI Server入口
 │   │       │   └── tools.py          # search_policy/get_policy_detail
-│   │       ├── material_server/      # 材料审核服务
-│   │       │   ├── server.py         # Server入口
+│   │       ├── material_server/      # 材料审核服务 :12302
+│   │       │   ├── server.py         # FastAPI Server入口
 │   │       │   └── tools.py          # extract_entity/check_material
-│   │       └── workflow_server/      # 流程执行服务
-│   │           ├── server.py         # Server入口
+│   │       └── workflow_server/      # 流程执行服务 :12303
+│   │           ├── server.py         # FastAPI Server入口
 │   │           └── tools.py          # create_case/query_status
 │   └── a2a/                          # A2A协议(Agent→Agent)
 │       ├── __init__.py               # 包初始化
@@ -864,6 +865,15 @@ huggingface-cli download BAAI/bge-reranker-v2-m3 --local-dir models/reranker/bge
 **开发模式（无需 Docker）：**
 
 ```bash
+# 1. 启动 MCP 基础设施（可选，不启动则自动降级到 stub 模式）
+python tools/mcp/start_servers.py --no-gateway   # 仅启动 3 个 MCP Server
+# 或分别启动:
+python tools/mcp/servers/policy_server/server.py     # :12301
+python tools/mcp/servers/material_server/server.py   # :12302
+python tools/mcp/servers/workflow_server/server.py   # :12303
+python tools/mcp/gateway.py                          # :12300 (Gateway)
+
+# 2. 启动主 API 服务
 uvicorn backend.main:app --host 0.0.0.0 --port 8002 --reload
 ```
 
@@ -871,6 +881,20 @@ uvicorn backend.main:app --host 0.0.0.0 --port 8002 --reload
 
 ```bash
 docker compose up
+```
+
+**MCP 架构说明：**
+
+```
+Agent (LangGraph Node)
+    │
+    ├─ MCP Client ✅ (优先: 通过 MCP Server 获取真实能力)
+    │   ├─ Gateway (12300) ──→ Policy Server (12301)
+    │   │                     Material Server (12302)
+    │   │                     Workflow Server (12303)
+    │   └─ Direct 直连 ────→ Policy Server (12301)  ← Gateway fallback
+    │
+    └─ Stub 降级 ✅ (MCP 不可用时保留基本功能)
 ```
 
 ---
@@ -1012,6 +1036,8 @@ Evaluation
 # 16. 开发指南
 
 > **Phase 1 完成** ✅ — 27个模块完成，系统可在无 LLM / 无 PostgreSQL 的 stub 模式下完整运行。
+> **Phase 2 完成** ✅ — MCP Server + Tool Calling 体系就绪，6个Tool + 3个Server + Gateway + Client 全部实现。
+> **Phase 3 完成** ✅ — A2A 跨域 Agent 协同 + Async Callback 体系就绪，7个A2A模块 + LangGraph集成完成。
 > 已建立 `models/` 模型目录（已 gitignore），端口统一偏移避免本地冲突。
 
 ## Phase 1 — LangGraph Runtime + Supervisor + RAG ✅
@@ -1027,7 +1053,7 @@ Evaluation
 ✅ runtime.py        — Runtime安全护栏 + LoopDetector + 3异常类（394行，22测试）
 ```
 
-### Agent层 (agents/) — 13/19 完成
+### Agent层 (agents/) — 17/19 完成
 
 ```
 ✅ __init__.py                — AgentRegistry（register/get/list/health_check/unregister，126行）
@@ -1042,15 +1068,18 @@ Evaluation
 ✅ policy/prompts.py          — RAG回答生成模板（27行）
 ✅ policy/schema.py           — PolicyResult + PolicyEvidence（28行）
 ✅ policy/agent.py            — PolicyAgent（LLM+模板双模式，5种业务回答，165行）
+✅ material/prompts.py        — 材料审核Prompt模板（Phase 2）
+✅ material/ocr.py            — OCREngine（stub，支持图片/文本格式检测，Phase 2）
+✅ material/extractor.py      — EntityExtractor（6种正则模式，PII脱敏，Phase 2）
+✅ material/validator.py      — MaterialValidator（5种业务材料清单，别名匹配，格式校验，Phase 2）
 ✅ material/agent.py          — MaterialAgent（5种业务材料清单，规则校验，118行）
 ✅ workflow/agent.py          — WorkflowAgent（MCP stub，create_case/query_status，114行）
 ✅ governance/security.py     — SecurityChecker（PII/注入/敏感词/泄露 4类检测，165行）
 ✅ governance/behavior.py     — BehaviorAnalyzer（循环/步数/Token异常检测，93行）
 ✅ governance/optimizer.py    — Optimizer（失败率/步数/延迟/Tool分析，127行）
 ✅ governance/agent.py        — GovernanceAgent（编排安全+行为+优化，99行）
-⏳ material/ocr.py            — OCR引擎（待Phase 2）
-⏳ material/extractor.py      — 实体抽取（待Phase 2）
-⏳ material/validator.py      — 规则校验（待Phase 2）
+⏳ material/ 真实OCR模型      — PaddleOCR接入（待Phase 3）
+⏳ material/ 真实NER模型      — BERT-NER接入（待Phase 3）
 ```
 
 ### 后端层 (backend/) — 8/12 完成
@@ -1098,39 +1127,130 @@ Evaluation
 
 ---
 
-## Phase 2 — MCP Server + Tool Calling ⏳
+## Phase 2 — MCP Server + Tool Calling ✅
 
-### 第一步：MCP基础设施 (tools/mcp/)
+> **完成日期**: 2026-07-30
+> **架构**: Agent → MCPClient → MCPGateway (12300) → MCP Server (12301/12302/12303) → Business Logic
+> **降级策略**: MCP 不可用时自动 fallback 到 stub 模式，保证系统可用
+
+### MCP 工具 Schema (tools/mcp/schema.py) — 1/1 完成
 
 ```
-⏳ tools/mcp/client.py                         — MCP Client（tools/list → tools/call）
-⏳ tools/mcp/gateway.py                        — MCP Gateway（鉴权/限流/审计/路由）
-⏳ tools/mcp/schema.py                         — Tool JSON Schema定义
-⏳ tools/mcp/servers/policy_server/server.py   — Policy MCP Server
-⏳ tools/mcp/servers/policy_server/tools.py    — search_policy + get_policy_detail
-⏳ tools/mcp/servers/material_server/server.py — Material MCP Server
-⏳ tools/mcp/servers/material_server/tools.py  — extract_entity + check_material
-⏳ tools/mcp/servers/workflow_server/server.py — Workflow MCP Server
-⏳ tools/mcp/servers/workflow_server/tools.py  — create_case + query_status
-⏳ agents/material/ocr.py                      — OCR引擎
-⏳ agents/material/extractor.py                — 实体抽取
-⏳ agents/material/validator.py                — 规则校验
+✅ schema.py                   — 6个Tool的Input/Output Pydantic模型 + TOOL_REGISTRY全局注册表（267行）
+```
+
+### MCP 基础设施 (tools/mcp/) — 3/3 完成
+
+```
+✅ client.py                   — MCPClient（HTTP连接池、工具发现缓存、Gateway/Direct双模fallback，212行）
+✅ gateway.py                  — MCPGateway（路由转发、审计日志、Server健康聚合、FastAPI sub-app，153行）
+✅ start_servers.py            — 一键启动脚本（3个MCP Server + Gateway，55行）
+```
+
+### Policy MCP Server (tools/mcp/servers/policy_server/) — 2/2 完成
+
+```
+✅ tools.py                    — search_policy（7条政策语料库关键词匹配）+ get_policy_detail（文档详情查询）
+✅ server.py                   — FastAPI MCP Server（:12301, /tools/list + /tools/call）
+```
+
+### Material MCP Server + Agent 补全 — 6/6 完成
+
+**Agent 层**:
+```
+✅ agents/material/prompts.py  — 材料审核 + 实体抽取Prompt模板
+✅ agents/material/ocr.py      — OCREngine（stub: 图片magic bytes检测 + 模拟文本生成）
+✅ agents/material/extractor.py — EntityExtractor（6种正则模式: 姓名/身份证/手机号/地址/事项/信用代码 + PII脱敏）
+✅ agents/material/validator.py — MaterialValidator（5类业务材料清单、10+别名映射、身份证/手机号格式校验）
+```
+
+**MCP Server**:
+```
+✅ tools/mcp/servers/material_server/tools.py  — extract_entity（OCR→实体抽取）+ check_material（Validator调用）
+✅ tools/mcp/servers/material_server/server.py — FastAPI MCP Server（:12302）
+```
+
+### Workflow MCP Server (tools/mcp/servers/workflow_server/) — 2/2 完成
+
+```
+✅ tools.py                    — create_case（CASE_XXXXXXXX办件号生成）+ query_status（hash确定性状态）
+✅ server.py                   — FastAPI MCP Server（:12303）
+```
+
+### LangGraph 集成更新 — 2/2 完成
+
+```
+✅ orchestration/langgraph/nodes.py  — policy_node/material_node/workflow_node 接入 MCPClient，MCP优先 + stub降级
+✅ orchestration/langgraph/graph.py  — build_graph() 新增 mcp_client 参数注入
 ```
 
 ---
 
-## Phase 3 — A2A + Async Callback ⏳
+## Phase 3 — A2A + Async Callback ✅
 
-### 第一步：A2A基础设施 (tools/a2a/)
+> **完成日期**: 2026-08-02
+> **架构**: Agent → A2AConnector → External Agent (Mock/HTTP) → Callback → Checkpointer → Resume LangGraph
+> **降级策略**: 外部 Agent 不可用时自动 fallback 到 stub（本地 Mock Agent 直接调用）
+
+### A2A 协议 (tools/a2a/protocol.py) — 1/1 完成
 
 ```
-tools/a2a/protocol.py                              → Agent Card, Task定义, 消息格式
-tools/a2a/task.py                                   → Task状态机（created→submitted→working→completed/failed）
-tools/a2a/registry.py                               → Agent注册中心（register, discover, health_check）
-tools/a2a/connector.py                              → A2A Connector（send_task, check_status）
-tools/a2a/callback.py                               → Callback API（接收外部Agent结果, 恢复LangGraph）
-tools/a2a/mock_agents/housing_agent.py              → 模拟不动产Agent
-tools/a2a/mock_agents/fund_agent.py                 → 模拟公积金Agent
+✅ protocol.py                — 6个Pydantic模型（AgentCard, A2AMessage, A2ATaskRequest, A2ATaskResponse, A2AStatusQuery, A2AStatusUpdate）
+                                 + 2个枚举（A2AMessageType, AgentHealth）+ 复用 A2ATaskStatus/A2ATaskRecord（smoke test: 28 passed）
+```
+
+### A2A 任务管理 (tools/a2a/task.py) — 1/1 完成
+
+```
+✅ task.py                    — TaskStateMachine（状态机: CREATED→SUBMITTED→WORKING→COMPLETED/FAILED/TIMEOUT）
+                                 + TaskStore（内存存储: create/get/update/delete/list_by_status）
+                                 + InvalidTransitionError + 全局单例（smoke test: 27 passed）
+```
+
+### 外部 Agent 注册中心 (tools/a2a/registry.py) — 1/1 完成
+
+```
+✅ registry.py                — ExternalAgentRegistry（register, discover, get_agent, health_check, list_all）
+                                 + 技能索引（skill→Agent映射）+ initialize_default_agents 预注册（smoke test: 23 passed）
+```
+
+### A2A 连接器 (tools/a2a/connector.py) — 1/1 完成
+
+```
+✅ connector.py               — A2AConnector（send_task→HTTP/stub, check_status, cancel_task）
+                                 + httpx.AsyncClient HTTP连接池 + stub fallback 自动降级（smoke test: 14 passed）
+```
+
+### A2A 回调处理器 (tools/a2a/callback.py) — 1/1 完成
+
+```
+✅ callback.py                — A2ACallbackHandler（process_callback: 验证→更新状态→恢复LangGraph）
+                                 + create_callback_router（FastAPI sub-router）+ 全局单例（smoke test: 18 passed）
+```
+
+### Mock 外部 Agent (tools/a2a/mock_agents/) — 2/2 完成
+
+```
+✅ housing_agent.py           — HousingAgent（query_property: 3条模拟房产数据 + register_property）
+                                 + 公积金关联查询 + 脱敏返回 + stub 便捷函数（smoke test: 18 passed）
+✅ fund_agent.py              — FundAgent（query_fund: 3条模拟公积金数据 + query_fund_detail: 提取记录+贷款测算）
+                                 + stub 便捷函数（smoke test: 18 passed）
+```
+
+### LangGraph 集成 — 3/3 完成
+
+```
+✅ orchestration/langgraph/nodes.py   — 新增 a2a_node（技能检测→A2A调用→挂起/恢复）+ 3个辅助函数
+✅ orchestration/langgraph/edges.py   — 新增 route_after_workflow + route_after_a2a + _needs_a2a 检测
+✅ orchestration/langgraph/graph.py   — build_graph() 新增 a2a_connector 参数 + a2a_node 节点注册 + 路由配置
+```
+
+### FastAPI 集成 — 3/3 完成
+
+```
+✅ backend/api/routes.py              — /api/a2a/callback 实现真实回调处理 + _resume_agent_after_callback
+✅ backend/api/dependencies.py        — 新增 get_a2a_connector() DI + get_agent_graph() 注入 A2A/Checkpointer
+✅ backend/services/agent_service.py  — resume_from_checkpoint 完整实现（读取checkpoint→注入external_result→恢复执行）
 ```
 
 ---
@@ -1182,11 +1302,15 @@ prompts/registry.py → Prompt注册中心（版本化: Role/Goal/Constraints/To
   agents/policy/agent.py
   agents/intent/classifier.py → agent.py
 
-第三优先级（让Agent能调工具）:
-  tools/mcp/client.py → gateway.py
-  tools/mcp/servers/policy_server/server.py → tools.py
+第三优先级（让Agent能调工具）: ✅ Phase 2 完成
+  ✅ tools/mcp/schema.py → client.py → gateway.py
+  ✅ tools/mcp/servers/policy_server/server.py → tools.py
+  ✅ tools/mcp/servers/material_server/server.py → tools.py
+  ✅ tools/mcp/servers/workflow_server/server.py → tools.py
+  ✅ agents/material/ocr.py → extractor.py → validator.py → prompts.py
+  ✅ orchestration/langgraph/nodes.py → graph.py (MCP集成)
 
-第四优先级（让系统可治理）:
+第四优先级（让系统可治理）: ⏳ Phase 3-4
   governance/trace.py → guardrail.py → pii.py
   governance/evaluation/metrics.py → evaluator.py → benchmark.py
 

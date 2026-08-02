@@ -21,6 +21,8 @@ from orchestration.langgraph.edges import (
     route_after_supervisor,
     route_after_intent,
     route_after_specialist,
+    route_after_workflow,
+    route_after_a2a,
     route_after_governance,
 )
 from orchestration.langgraph.nodes import (
@@ -29,6 +31,7 @@ from orchestration.langgraph.nodes import (
     policy_node,
     material_node,
     workflow_node,
+    a2a_node,
     governance_node,
 )
 from orchestration.langgraph.state import AgentState
@@ -46,6 +49,8 @@ def build_graph(
     llm: Optional[BaseChatModel] = None,
     checkpointer: Optional[BaseCheckpointSaver] = None,
     supervisor: Optional[SupervisorAgent] = None,
+    mcp_client=None,
+    a2a_connector=None,
 ) -> StateGraph:
     """
     构建完整的Agent工作流 StateGraph。
@@ -72,6 +77,9 @@ def build_graph(
      workflow_node                                 │
           |                                        │
           v                                        │
+     a2a_node ──→ (waiting/END)                    │
+          |                                        │
+          v                                        │
      governance_node ──────────────────────────────┘
           |
           v
@@ -83,6 +91,10 @@ def build_graph(
                       用于A2A异步任务挂起/恢复和长流程持久化
         supervisor: 预构建的SupervisorAgent（可选复用），
                     不传则用llm自动构建
+        mcp_client: MCPClient 实例，注入 policy/material/workflow 节点。
+                    不传则使用 stub fallback。
+        a2a_connector: A2AConnector 实例，注入 a2a_node。
+                       不传则使用 stub fallback。
 
     Returns:
         已编译的LangGraph StateGraph（compiled graph）
@@ -95,31 +107,36 @@ def build_graph(
     graph = StateGraph(AgentState)
 
     # ── 注册节点 ──
-    # 每个节点是一个async函数，接受state返回state
-    graph.add_node(
-        "supervisor_node",
-        lambda state: supervisor_node(state, supervisor=supervisor, llm=llm),
-    )
-    graph.add_node(
-        "intent_node",
-        lambda state: intent_node(state, llm=llm),
-    )
-    graph.add_node(
-        "policy_node",
-        lambda state: policy_node(state, llm=llm),
-    )
-    graph.add_node(
-        "material_node",
-        lambda state: material_node(state, llm=llm),
-    )
-    graph.add_node(
-        "workflow_node",
-        lambda state: workflow_node(state, llm=llm),
-    )
-    graph.add_node(
-        "governance_node",
-        lambda state: governance_node(state, llm=llm),
-    )
+    # 注意：LangGraph 要求节点函数必须是 async def，
+    # 不能使用 sync lambda 返回 coroutine（Python 不支持 async lambda）
+    async def _supervisor_wrapper(state: AgentState) -> AgentState:
+        return await supervisor_node(state, supervisor=supervisor, llm=llm)
+
+    async def _intent_wrapper(state: AgentState) -> AgentState:
+        return await intent_node(state, llm=llm)
+
+    async def _policy_wrapper(state: AgentState) -> AgentState:
+        return await policy_node(state, llm=llm, mcp_client=mcp_client)
+
+    async def _material_wrapper(state: AgentState) -> AgentState:
+        return await material_node(state, llm=llm, mcp_client=mcp_client)
+
+    async def _workflow_wrapper(state: AgentState) -> AgentState:
+        return await workflow_node(state, llm=llm, mcp_client=mcp_client)
+
+    async def _governance_wrapper(state: AgentState) -> AgentState:
+        return await governance_node(state, llm=llm)
+
+    async def _a2a_wrapper(state: AgentState) -> AgentState:
+        return await a2a_node(state, llm=llm, a2a_connector=a2a_connector, checkpointer=checkpointer)
+
+    graph.add_node("supervisor_node", _supervisor_wrapper)
+    graph.add_node("intent_node", _intent_wrapper)
+    graph.add_node("policy_node", _policy_wrapper)
+    graph.add_node("material_node", _material_wrapper)
+    graph.add_node("workflow_node", _workflow_wrapper)
+    graph.add_node("a2a_node", _a2a_wrapper)
+    graph.add_node("governance_node", _governance_wrapper)
 
     # ── 注册边 ──
 
@@ -143,8 +160,8 @@ def build_graph(
     # intent → 回到supervisor（基于识别的意图重新规划）
     graph.add_edge("intent_node", "supervisor_node")
 
-    # policy/material/workflow → 条件路由（检查是否完成或需要继续）
-    for node in ("policy_node", "material_node", "workflow_node"):
+    # policy/material → 条件路由（检查是否完成或需要继续）
+    for node in ("policy_node", "material_node"):
         graph.add_conditional_edges(
             node,
             route_after_specialist,
@@ -157,6 +174,32 @@ def build_graph(
                 "supervisor_node": "supervisor_node",
             },
         )
+
+    # workflow → 条件路由（检查 A2A 需求）
+    graph.add_conditional_edges(
+        "workflow_node",
+        route_after_workflow,
+        {
+            "a2a_node": "a2a_node",
+            "governance_node": "governance_node",
+            "supervisor_node": "supervisor_node",
+            "policy_node": "policy_node",
+            "material_node": "material_node",
+            "intent_node": "intent_node",
+            END: END,
+        },
+    )
+
+    # a2a → 条件路由（挂起等待或继续）
+    graph.add_conditional_edges(
+        "a2a_node",
+        route_after_a2a,
+        {
+            "governance_node": "governance_node",
+            "supervisor_node": "supervisor_node",
+            END: END,
+        },
+    )
 
     # governance → 条件路由（通过则END，有问题则回supervisor）
     graph.add_conditional_edges(

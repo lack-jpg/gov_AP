@@ -76,7 +76,11 @@ def route_after_supervisor(state: AgentState) -> str:
                 elif "case" in task_type or "workflow" in task_type or "create" in task_type:
                     return NodeName.WORKFLOW.value
 
-    # 第四步：全部完成 → governance 安全检查
+    # 第四步：全部完成
+    # 如果尚未合成最终答案 → 回supervisor合成
+    # 如果已经有final_answer → governance安全检查
+    if not state.get("final_answer", ""):
+        return NodeName.SUPERVISOR.value
     return NodeName.GOVERNANCE.value
 
 
@@ -101,7 +105,7 @@ def route_after_intent(state: AgentState) -> str:
 
 
 # ============================================================
-# Policy / Material 后路由 → 检查是否还有pending任务
+# Policy / Material / Workflow 后路由 → 检查是否还有pending任务
 # ============================================================
 
 
@@ -131,6 +135,109 @@ def route_after_specialist(state: AgentState) -> str:
 
     # 继续正常路由
     return route_after_supervisor(state)
+
+
+# ============================================================
+# Workflow 后路由 → 检查 A2A 需求
+# ============================================================
+
+
+def route_after_workflow(state: AgentState) -> str:
+    """
+    Workflow 节点之后的路由 — 检查是否需要 A2A 跨域调用。
+
+    逻辑:
+    - 如果 task_plan 全部完成且有 A2A 任务等待 → a2a_node
+    - 如果 task_plan 全部完成且无 A2A → governance_node
+    - 如果有 pending → route_after_supervisor
+    - 如果有 waiting_task_id → 挂起等待（END）
+
+    Args:
+        state: 当前AgentState
+
+    Returns:
+        下一个节点名称
+    """
+    # 检查错误
+    if state.get("error", ""):
+        return NodeName.SUPERVISOR.value
+
+    # 有等待中的 A2A 外部任务 → 挂起
+    if state.get("waiting_task_id", ""):
+        from langgraph.constants import END
+        return END
+
+    # 检查是否全部完成
+    task_plan = state.get("task_plan", [])
+    all_completed = all(
+        t.get("status", "") == TaskStatus.COMPLETED.value
+        for t in task_plan
+    ) if task_plan else True
+
+    if all_completed:
+        # 检查是否需要 A2A 跨域调用
+        intent = state.get("intent", "")
+        user_query = state.get("user_query", "")
+        if _needs_a2a(intent, user_query):
+            return NodeName.A2A_CHECK.value
+        return NodeName.GOVERNANCE.value
+
+    return route_after_supervisor(state)
+
+
+def _needs_a2a(intent: str, user_query: str) -> bool:
+    """
+    判断是否需要 A2A 跨域调用。
+
+    Args:
+        intent: 意图标签
+        user_query: 用户查询
+
+    Returns:
+        True 如果需要调用外部 Agent
+    """
+    query_lower = user_query.lower()
+    a2a_keywords = ("房产", "不动产", "房屋", "产权", "房子", "公积金", "住房基金")
+    a2a_intents = ("property_service", "fund_query")
+
+    if any(kw in query_lower for kw in a2a_keywords):
+        return True
+    if intent in a2a_intents:
+        return True
+    return False
+
+
+# ============================================================
+# A2A 后路由 → 继续流程或挂起
+# ============================================================
+
+
+def route_after_a2a(state: AgentState) -> str:
+    """
+    A2A 节点之后的路由。
+
+    - 如果设置了 waiting_task_id → 挂起（END），等待外部回调
+    - 如果 A2A 任务全部完成 → governance_node
+    - 如果出错 → supervisor
+
+    Args:
+        state: 当前AgentState
+
+    Returns:
+        下一个节点名称
+    """
+    from langgraph.constants import END
+
+    # 有等待中的外部任务 → 挂起
+    if state.get("waiting_task_id", ""):
+        return END
+
+    # 错误处理
+    if state.get("error", ""):
+        return NodeName.SUPERVISOR.value
+
+    # A2A 完成 → 安全检查
+    return NodeName.GOVERNANCE.value
 
 
 # ============================================================

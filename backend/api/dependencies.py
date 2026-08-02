@@ -92,6 +92,40 @@ async def get_config() -> Settings:
 
 
 # ============================================================
+# A2A Connector — 单例注入
+# ============================================================
+
+_a2a_connector = None
+
+
+async def get_a2a_connector():
+    """
+    获取或惰性创建 A2A Connector 单例。
+
+    首次调用时初始化 A2A 基础设施（注册中心 + 默认 Agent 注册）。
+
+    Returns:
+        A2AConnector 实例
+    """
+    global _a2a_connector
+
+    if _a2a_connector is not None:
+        return _a2a_connector
+
+    try:
+        from tools.a2a.connector import get_a2a_connector as _get_connector
+        from tools.a2a.registry import initialize_default_agents
+
+        # 初始化默认外部 Agent 注册
+        initialize_default_agents()
+
+        _a2a_connector = _get_connector()
+        return _a2a_connector
+    except ImportError:
+        return None
+
+
+# ============================================================
 # Agent Graph — 单例注入（惰性初始化）
 # ============================================================
 
@@ -137,7 +171,22 @@ async def get_agent_graph(
         except ImportError:
             pass  # 没有langchain_openai时使用stub模式
 
-    _agent_graph = build_graph(llm=llm)
+    # 获取 A2A Connector
+    a2a_conn = await get_a2a_connector()
+
+    # 尝试获取 Checkpointer
+    checkpointer = None
+    try:
+        from orchestration.langgraph.checkpointer import PostgresCheckpointer
+        checkpointer = PostgresCheckpointer()
+    except Exception:
+        pass
+
+    _agent_graph = build_graph(
+        llm=llm,
+        a2a_connector=a2a_conn,
+        checkpointer=checkpointer,
+    )
     return _agent_graph
 
 

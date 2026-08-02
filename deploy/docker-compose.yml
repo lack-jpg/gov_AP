@@ -1,8 +1,111 @@
 # =====================================================
 # docker-compose.yml - Government Agent Platform
 # Author: le
-# Date: 2026/7/29
-# Version: 0.1
-# Task: Docker Compose orchestration for all services
+# Date: 2026/7/30
+# Version: 0.2
+# Task: Docker Compose orchestration for all infrastructure services
 # =====================================================
-# Services: api, postgres, redis, milvus, mcp-server
+# Services: postgres (pgvector), redis, milvus-standalone
+#
+# Port convention (all offset +2):
+#   PostgreSQL → 5434  (standard 5432 + 2)
+#   Redis       → 6480  (6380-6479 blocked by Windows excluded port range)
+#   Milvus      → 19532 (standard 19530 + 2)
+#
+# Usage:
+#   docker compose up -d              # 启动所有服务
+#   docker compose ps                  # 查看运行状态
+#   docker compose down               # 停止并清理
+#   docker compose down -v            # 停止并删除数据卷
+# =====================================================
+
+services:
+
+  # ──────────────────────────────────────
+  # PostgreSQL 16 + pgvector extension
+  # ──────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: gov_agent_postgres
+    restart: unless-stopped
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: gov_agent
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: gov_agent_platform
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gov_agent -d gov_agent_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - gov_agent_net
+
+  # ──────────────────────────────────────
+  # Redis 7
+  # ──────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: gov_agent_redis
+    restart: unless-stopped
+    ports:
+      - "6480:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - gov_agent_net
+
+  # ──────────────────────────────────────
+  # Milvus 2.5 Standalone
+  # ──────────────────────────────────────
+  milvus:
+    image: milvusdb/milvus:v2.5.1
+    container_name: gov_agent_milvus
+    restart: unless-stopped
+    ports:
+      - "19532:19530"
+      - "9091:9091"
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_USE_EMBED: "true"
+      ETCD_DATA_DIR: /var/lib/milvus/etcd
+      COMMON_STORAGETYPE: local
+    volumes:
+      - milvusdata:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
+    networks:
+      - gov_agent_net
+
+# ──────────────────────────────────────
+# Named Volumes
+# ──────────────────────────────────────
+volumes:
+  pgdata:
+    name: gov_agent_pgdata
+  redisdata:
+    name: gov_agent_redisdata
+  milvusdata:
+    name: gov_agent_milvusdata
+
+# ──────────────────────────────────────
+# Network
+# ──────────────────────────────────────
+networks:
+  gov_agent_net:
+    name: gov_agent_net
+    driver: bridge

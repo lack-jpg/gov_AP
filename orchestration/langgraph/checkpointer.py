@@ -357,16 +357,13 @@ class PostgresCheckpointer(BaseCheckpointSaver):
 
 from datetime import datetime as _dt
 from sqlalchemy import Integer, String, Text, DateTime, func
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
+
+from database.models import Base
 
 
-class _CheckpointBase(DeclarativeBase):
-    """独立的 Base，避免与 database.models.Base 冲突"""
-    pass
-
-
-class _CheckpointRow(_CheckpointBase):
-    """LangGraph checkpoint 存储表"""
+class _CheckpointRow(Base):
+    """LangGraph checkpoint 存储表 — 继承 database.models.Base 确保 init_db() 自动创建"""
 
     __tablename__ = "langgraph_checkpoints"
 

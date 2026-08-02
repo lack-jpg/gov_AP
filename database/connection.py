@@ -123,8 +123,12 @@ async def init_db() -> None:
 
     在应用启动时调用一次，创建所有 ORM 模型对应的表。
     不会删除已有数据（使用 create_all）。
+
+    注意：需显式导入 checkpointer 以确保 langgraph_checkpoints 表被注册到 Base.metadata。
     """
     from database.models import Base
+    # 确保 checkpointer 的 _CheckpointRow 表也被注册（延迟导入避免循环引用）
+    from orchestration.langgraph.checkpointer import _CheckpointRow  # noqa: F401
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

@@ -172,9 +172,9 @@ class Settings(BaseSettings):
         description="Redis主机地址",
     )
     redis_port: int = Field(
-        default=6381,
+        default=6480,
         alias="REDIS_PORT",
-        description="Redis端口（默认 6381，避免与本地 6379 冲突）",
+        description="Redis端口（默认 6480，避开 Windows 保留端口区间 6380-6479）",
     )
     redis_password: str = Field(
         default="",

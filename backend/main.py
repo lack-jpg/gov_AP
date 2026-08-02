@@ -54,13 +54,21 @@ async def lifespan(app: FastAPI):
     logger.info("Redis: {}:{}", settings.redis_host, settings.redis_port)
     logger.info("MCP Gateway: {}", settings.mcp_gateway_url)
 
-    # 初始化数据库
+    # 初始化数据库（PostgreSQL）
     try:
         from database.connection import init_db
         await init_db()
-        logger.info("数据库初始化完成")
+        logger.info("PostgreSQL 初始化完成")
     except Exception as e:
-        logger.warning("数据库初始化失败（将以无DB模式运行）: {}", e)
+        logger.warning("PostgreSQL 初始化失败（将以无DB模式运行）: {}", e)
+
+    # 初始化 Redis
+    try:
+        from database.redis import init_redis
+        await init_redis()
+        logger.info("Redis 初始化完成")
+    except Exception as e:
+        logger.warning("Redis 初始化失败（将以无缓存模式运行）: {}", e)
 
     yield  # App运行中
 
@@ -69,7 +77,13 @@ async def lifespan(app: FastAPI):
     try:
         from database.connection import close_db
         await close_db()
-        logger.info("数据库连接池已关闭")
+        logger.info("PostgreSQL 连接池已关闭")
+    except Exception:
+        pass
+    try:
+        from database.redis import close_redis
+        await close_redis()
+        logger.info("Redis 连接已关闭")
     except Exception:
         pass
 

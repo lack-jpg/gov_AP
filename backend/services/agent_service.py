@@ -174,14 +174,50 @@ class AgentService:
         if not self._initialized:
             await self.initialize()
 
-        # TODO: 从 PostgresCheckpointer 读取 checkpoint
-        # checkpointer = PostgresCheckpointer()
-        # state = await checkpointer.aget_tuple({"configurable": {...}})
-        # state["external_result"] = a2a_result
-        # result = await graph.ainvoke(state, config)
+        assert self._graph is not None
 
-        logger.info("A2A 恢复: checkpoint={}", checkpoint_id)
-        return create_initial_state(user_query="resumed")
+        try:
+            from orchestration.langgraph.checkpointer import PostgresCheckpointer
+
+            checkpointer = PostgresCheckpointer()
+            checkpoint_tuple = await checkpointer.aget_tuple({
+                "configurable": {"checkpoint_id": checkpoint_id}
+            })
+
+            if checkpoint_tuple is None:
+                logger.warning("Checkpoint {} 未找到，以新请求模式执行", checkpoint_id)
+                return create_initial_state(user_query="resumed")
+
+            # 从 checkpoint 恢复 state
+            checkpoint_state = checkpoint_tuple.checkpoint.get("channel_values", {})
+
+            # 注入 external_result
+            resumed_state = {
+                **checkpoint_state,
+                "external_result": a2a_result,
+                "waiting_task_id": "",
+            }
+
+            # 恢复执行
+            config = checkpoint_tuple.config
+            config["configurable"]["resumed_from_checkpoint"] = True
+
+            result = await self._graph.ainvoke(resumed_state, config=config)
+
+            logger.info(
+                "A2A 恢复完成: checkpoint={}, answer_len={}",
+                checkpoint_id,
+                len(result.get("final_answer", "")),
+            )
+
+            return result
+
+        except ImportError:
+            logger.warning("Checkpointer 不可用，A2A 恢复以 stub 模式执行")
+            return create_initial_state(user_query="resumed")
+        except Exception as e:
+            logger.error("A2A 恢复失败: checkpoint={} — {}", checkpoint_id, e)
+            return create_initial_state(user_query="resumed")
 
     def get_graph(self) -> StateGraph:
         """获取已编译的 LangGraph（需先 initialize）"""
