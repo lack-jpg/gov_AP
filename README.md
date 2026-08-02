@@ -3,6 +3,7 @@
 # 政务多智能体协同与治理平台
 
 > Enterprise Multi-Agent Platform based on LangGraph + MCP + A2A + AgentOps + RAG
+> 注意：前端界面全部由AI生成，请勿直接复制。
 
 ---
 
@@ -1672,12 +1673,6 @@ governance_node（末尾节点）
   deploy/Dockerfile → docker-compose.yml（根目录）
   governance/dashboard.py → monitor.py
 ```
-
----
-
-# 20. License
-
-MIT License
 
 ---
 
