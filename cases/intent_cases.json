@@ -1,10 +1,61 @@
 [
   {
-    "_description": "intent_cases.json - Intent classification test cases",
+    "_description": "intent_cases.json - Intent classification golden dataset",
     "_author": "le",
-    "_date": "2026/7/29",
-    "_version": "0.1",
+    "_date": "2026/8/2",
+    "_version": "0.2",
     "_task": "Golden dataset for Intent Agent evaluation",
-    "cases": []
+    "cases": [
+      {
+        "id": "intent_001",
+        "query": "我想开一家餐馆，需要什么手续",
+        "expected_intent": "restaurant_license"
+      },
+      {
+        "id": "intent_002",
+        "query": "办理个体工商户营业执照",
+        "expected_intent": "business_license"
+      },
+      {
+        "id": "intent_003",
+        "query": "我要注册一家科技公司",
+        "expected_intent": "business_register"
+      },
+      {
+        "id": "intent_004",
+        "query": "如何查询公积金余额",
+        "expected_intent": "fund_query"
+      },
+      {
+        "id": "intent_005",
+        "query": "办理房产过户需要什么材料",
+        "expected_intent": "property_service"
+      },
+      {
+        "id": "intent_006",
+        "query": "查询医保报销政策",
+        "expected_intent": "medical_insurance"
+      },
+      {
+        "id": "intent_007",
+        "query": "社保卡怎么办理",
+        "expected_intent": "social_security"
+      },
+      {
+        "id": "intent_008",
+        "query": "发票怎么开具",
+        "expected_intent": "tax_service"
+      },
+      {
+        "id": "intent_009",
+        "query": "营业执照遗失补办流程",
+        "expected_intent": "business_license"
+      },
+      {
+        "id": "intent_010",
+        "query": "餐饮店办理食品经营许可证",
+        "expected_intent": "restaurant_license"
+      }
+    ]
   }
 ]

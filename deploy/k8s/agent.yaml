@@ -1,7 +1,77 @@
 # =====================================================
-# agent.yaml - Agent Runtime Deployment
+# agent.yaml - A2A Mock Agents Deployment + Service
 # Author: le
-# Date: 2026/7/29
-# Version: 0.1
-# Task: Kubernetes Deployment + Service for Agent Runtime
+# Date: 2026/8/2
+# Version: 0.2
+# Task: Kubernetes Deployment + Service for A2A mock external agents (12201/12202)
+#
+# 对应 tools/a2a/mock_agents/server.py:
+#   - 12201 housing_agent (不动产系统)
+#   - 12202 fund_agent    (公积金系统)
+#
+# Usage:
+#   kubectl apply -f agent.yaml
 # =====================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gov-agent-mock-agents
+  namespace: gov-agent
+  labels:
+    app: gov-agent
+    component: mock-agents
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gov-agent
+      component: mock-agents
+  template:
+    metadata:
+      labels:
+        app: gov-agent
+        component: mock-agents
+    spec:
+      containers:
+        - name: mock-agents
+          image: gov-agent-platform/agent:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 12201
+              name: housing
+            - containerPort: 12202
+              name: fund
+          readinessProbe:
+            httpGet:
+              path: /.well-known/agent
+              port: 12201
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gov-agent-mock-agents
+  namespace: gov-agent
+  labels:
+    app: gov-agent
+    component: mock-agents
+spec:
+  selector:
+    app: gov-agent
+    component: mock-agents
+  ports:
+    - port: 12201
+      targetPort: 12201
+      name: housing
+    - port: 12202
+      targetPort: 12202
+      name: fund
+  type: ClusterIP

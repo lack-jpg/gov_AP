@@ -1,10 +1,32 @@
 [
   {
-    "_description": "agent_cases.json - Agent evaluation test cases",
+    "_description": "agent_cases.json - Multi-Agent task success and tool accuracy golden dataset",
     "_author": "le",
-    "_date": "2026/7/29",
-    "_version": "0.1",
+    "_date": "2026/8/2",
+    "_version": "0.2",
     "_task": "Golden dataset for Multi-Agent task success and tool accuracy evaluation",
-    "cases": []
+    "cases": [
+      {
+        "id": "agent_001",
+        "query": "我要开一家川菜馆，需要哪些手续和材料",
+        "expected_intent": "restaurant_license",
+        "expected_tools": ["search_policy", "check_material", "create_case"],
+        "expected_answer": ["食品经营许可证", "营业执照"]
+      },
+      {
+        "id": "agent_002",
+        "query": "新办企业注册流程和所需材料",
+        "expected_intent": "business_register",
+        "expected_tools": ["search_policy", "check_material", "create_case"],
+        "expected_answer": ["公司章程"]
+      },
+      {
+        "id": "agent_003",
+        "query": "查询公积金账户余额",
+        "expected_intent": "fund_query",
+        "expected_tools": ["search_policy"],
+        "expected_answer": ["公积金"]
+      }
+    ]
   }
 ]

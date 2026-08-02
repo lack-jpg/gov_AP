@@ -132,6 +132,34 @@ async def get_a2a_connector():
 _agent_graph: Optional[StateGraph] = None
 
 
+async def _is_db_available() -> bool:
+    """
+    检测 PostgreSQL 是否可用（通过轻量 SELECT 1）。
+
+    用于决定是否启用 Checkpointer 等依赖数据库的组件，
+    避免无 DB 环境下 Agent 执行失败。
+
+    Returns:
+        True 表示数据库可连接
+    """
+    try:
+        import asyncio
+
+        from sqlalchemy import text
+
+        from database.connection import get_engine
+
+        async def _probe() -> None:
+            async with get_engine().connect() as conn:
+                await conn.execute(text("SELECT 1"))
+
+        # 2 秒超时，避免 DB 不可达时阻塞请求几十秒
+        await asyncio.wait_for(_probe(), timeout=2.0)
+        return True
+    except Exception:
+        return False
+
+
 async def get_agent_graph(
     settings: Settings = Depends(get_config),
 ) -> StateGraph:
@@ -160,6 +188,7 @@ async def get_agent_graph(
     if settings.llm_api_key:
         try:
             from langchain_openai import ChatOpenAI
+            from governance.callbacks import TokenUsageCallback
             llm = ChatOpenAI(
                 base_url=settings.llm_api_url,
                 api_key=settings.llm_api_key,
@@ -167,6 +196,7 @@ async def get_agent_graph(
                 temperature=settings.llm_temperature,
                 max_tokens=settings.llm_max_tokens,
                 timeout=settings.llm_timeout,
+                callbacks=[TokenUsageCallback()],
             )
         except ImportError:
             pass  # 没有langchain_openai时使用stub模式
@@ -174,16 +204,33 @@ async def get_agent_graph(
     # 获取 A2A Connector
     a2a_conn = await get_a2a_connector()
 
-    # 尝试获取 Checkpointer
+    # 尝试获取 Checkpointer（仅 DB 可用时启用，避免无 DB 环境执行失败）
     checkpointer = None
+    if await _is_db_available():
+        try:
+            from orchestration.langgraph.checkpointer import PostgresCheckpointer
+            checkpointer = PostgresCheckpointer()
+        except Exception:
+            pass
+
+    # MCP Client（激活整条 MCP 工具调用链路）
+    mcp_client = None
     try:
-        from orchestration.langgraph.checkpointer import PostgresCheckpointer
-        checkpointer = PostgresCheckpointer()
+        from tools.mcp.client import MCPClient
+        mcp_client = MCPClient(gateway_url=settings.mcp_gateway_url)
+        logger = None
+        try:
+            from tools.logger import get_logger as _get_logger
+            logger = _get_logger(__name__)
+            logger.info("MCP Client 已初始化: {}", settings.mcp_gateway_url)
+        except Exception:
+            pass
     except Exception:
         pass
 
     _agent_graph = build_graph(
         llm=llm,
+        mcp_client=mcp_client,
         a2a_connector=a2a_conn,
         checkpointer=checkpointer,
     )
@@ -204,7 +251,13 @@ async def execute_agent(
     """
     执行一次完整的Agent工作流。
 
-    创建初始State → 调用graph.ainvoke → 返回最终State。
+    创建初始State → AgentRuntime 安全护栏 → graph.ainvoke → 返回最终State。
+
+    AgentRuntime 提供:
+    - 步骤限制（max_steps=10，超限优雅终止）
+    - 循环检测（滑动窗口6，连续3次同tool触发re-plan）
+    - 超时控制（单Agent 30s）
+    - 错误累积（5次累计错误→终止）
 
     Args:
         user_query: 用户输入
@@ -216,6 +269,13 @@ async def execute_agent(
         执行后的AgentState字典
     """
     from orchestration.langgraph.state import create_initial_state
+    from orchestration.langgraph.runtime import (
+        AgentRuntime,
+        create_runtime_from_settings,
+        RuntimeExceededError,
+        RuntimeTimeoutError,
+        RuntimeLoopDetectedError,
+    )
 
     # 创建初始State
     initial_state = create_initial_state(user_query=user_query, trace_id=trace_id)
@@ -223,14 +283,46 @@ async def execute_agent(
     # 获取Graph
     graph = await get_agent_graph(settings)
 
-    # 执行（config中包含thread_id用于checkpoint）
+    # 运行时安全护栏
     config = {
         "configurable": {
             "thread_id": trace_id,
             "user_id": user_id,
         },
-        "recursion_limit": settings.agent_max_steps * 2,
     }
-    result = await graph.ainvoke(initial_state, config=config)
 
-    return result
+    try:
+        runtime = create_runtime_from_settings(settings)
+        result = await runtime.execute_with_safeguards(graph, initial_state, graph_config=config)
+        return result
+    except RuntimeExceededError as e:
+        from tools.logger import get_logger as _get_logger
+        _logger = _get_logger(__name__)
+        _logger.warning("Agent 步骤/错误超限 (trace={}): {}", trace_id, e)
+        # 优雅降级：返回当前 state + 友好提示
+        return {
+            **initial_state,
+            "final_answer": "抱歉，当前请求处理步骤较多，部分结果未能完成。请简化您的问题后重试，或联系人工客服获取帮助。",
+            "risk_level": "high",
+            "error": str(e),
+        }
+    except RuntimeTimeoutError as e:
+        from tools.logger import get_logger as _get_logger
+        _logger = _get_logger(__name__)
+        _logger.warning("Agent 执行超时 (trace={}): {}", trace_id, e)
+        return {
+            **initial_state,
+            "final_answer": "抱歉，请求处理超时，请稍后重试。如果是复杂业务，建议分步咨询。",
+            "risk_level": "high",
+            "error": str(e),
+        }
+    except RuntimeLoopDetectedError as e:
+        from tools.logger import get_logger as _get_logger
+        _logger = _get_logger(__name__)
+        _logger.warning("检测到工具调用循环 (trace={}): {}", trace_id, e)
+        return {
+            **initial_state,
+            "final_answer": "抱歉，系统检测到处理异常（重复调用），已自动终止。请尝试换一种方式描述您的需求。",
+            "risk_level": "high",
+            "error": str(e),
+        }

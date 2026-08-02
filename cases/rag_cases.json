@@ -1,10 +1,41 @@
 [
   {
-    "_description": "rag_cases.json - RAG evaluation test cases",
+    "_description": "rag_cases.json - RAG retrieval and generation golden dataset",
     "_author": "le",
-    "_date": "2026/7/29",
-    "_version": "0.1",
+    "_date": "2026/8/2",
+    "_version": "0.2",
     "_task": "Golden dataset for RAG retrieval and generation evaluation",
-    "cases": []
+    "cases": [
+      {
+        "id": "rag_001",
+        "query": "开办餐馆需要办理哪些证照",
+        "expected_intent": "restaurant_license",
+        "expected_answer": ["食品经营许可证", "营业执照"]
+      },
+      {
+        "id": "rag_002",
+        "query": "企业注册需要哪些材料",
+        "expected_intent": "business_register",
+        "expected_answer": ["公司章程", "法人身份证"]
+      },
+      {
+        "id": "rag_003",
+        "query": "公积金贷款利率是多少",
+        "expected_intent": "fund_query",
+        "expected_answer": ["贷款", "利率"]
+      },
+      {
+        "id": "rag_004",
+        "query": "不动产登记需要多长时间",
+        "expected_intent": "property_service",
+        "expected_answer": ["不动产登记", "工作日"]
+      },
+      {
+        "id": "rag_005",
+        "query": "社保缴纳基数如何计算",
+        "expected_intent": "social_security",
+        "expected_answer": ["社保", "基数"]
+      }
+    ]
   }
 ]

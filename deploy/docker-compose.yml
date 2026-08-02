@@ -22,6 +22,59 @@
 services:
 
   # ──────────────────────────────────────
+  # API — FastAPI Backend (端口 8002)
+  # ──────────────────────────────────────
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: gov_agent_api
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    environment:
+      APP_PORT: 8002
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MILVUS_HOST: milvus
+      MILVUS_PORT: 19530
+      MCP_GATEWAY_URL: http://mcp-server:12300
+      A2A_CALLBACK_URL: http://api:8002/api/a2a/callback
+    volumes:
+      - ../models:/app/models
+      - ../data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+      mcp-server:
+        condition: service_started
+    networks:
+      - gov_agent_net
+
+  # ──────────────────────────────────────
+  # MCP Servers + Gateway (端口 12300-12303)
+  # ──────────────────────────────────────
+  mcp-server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.mcp
+    container_name: gov_agent_mcp
+    restart: unless-stopped
+    ports:
+      - "12300:12300"
+      - "12301:12301"
+      - "12302:12302"
+      - "12303:12303"
+    networks:
+      - gov_agent_net
+
+  # ──────────────────────────────────────
   # PostgreSQL 16 + pgvector extension
   # ──────────────────────────────────────
   postgres:

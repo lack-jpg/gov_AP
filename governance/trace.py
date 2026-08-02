@@ -66,6 +66,11 @@ _current_trace: contextvars.ContextVar[TraceInfo | None] = contextvars.ContextVa
     "current_trace", default=None
 )
 
+# 当前正在执行的 Agent 名称（供 LLM callback 记录 token 用量时归属）
+_current_agent_name: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "current_agent_name", default="llm"
+)
+
 
 def get_current_trace() -> TraceInfo | None:
     """获取当前协程的 trace 信息"""
@@ -75,6 +80,16 @@ def get_current_trace() -> TraceInfo | None:
 def set_current_trace(trace: TraceInfo | None) -> None:
     """设置当前协程的 trace 信息"""
     _current_trace.set(trace)
+
+
+def get_current_agent_name() -> str:
+    """获取当前协程正在执行的 Agent 名称（默认 'llm'）"""
+    return _current_agent_name.get()
+
+
+def set_current_agent_name(name: str) -> None:
+    """设置当前协程的 Agent 名称"""
+    _current_agent_name.set(name)
 
 
 # ============================================================
@@ -338,6 +353,7 @@ class AgentTracer:
             trace = parent.child()
 
         set_current_trace(trace)
+        _agent_token = _current_agent_name.set(agent_name)
 
         span_record = SpanRecord(
             trace_id=trace.trace_id,
@@ -369,6 +385,7 @@ class AgentTracer:
             get_trace_recorder().record(span_record)
             # 恢复父 context
             set_current_trace(parent)
+            _current_agent_name.reset(_agent_token)
 
     @staticmethod
     @contextmanager
@@ -391,6 +408,7 @@ class AgentTracer:
             trace = parent.child()
 
         set_current_trace(trace)
+        _agent_token = _current_agent_name.set(agent_name)
 
         span_record = SpanRecord(
             trace_id=trace.trace_id,
@@ -420,6 +438,7 @@ class AgentTracer:
             span_record.latency_ms = (span_record.ended_at - span_record.started_at) * 1000.0
             get_trace_recorder().record(span_record)
             set_current_trace(parent)
+            _current_agent_name.reset(_agent_token)
 
     @staticmethod
     def trace(

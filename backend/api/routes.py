@@ -8,6 +8,7 @@ Task: Implement all API endpoint routes
 """
 from __future__ import annotations
 
+import json
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -146,6 +147,9 @@ async def get_agent_status(
     """
     查询Agent执行状态。
 
+    从 trace 表按 trace_id 聚合真实执行状态；
+    数据库不可用时回退到内存 TraceRecorder。
+
     用于前端轮询长耗时任务（特别是A2A异步任务）的状态。
 
     Args:
@@ -156,16 +160,130 @@ async def get_agent_status(
     Returns:
         AgentStatusResponse
     """
-    # TODO: 从数据库/Redis按trace_id查询执行状态
-    # 当前stub: 返回固定值
+    # ── 1. 从数据库 trace 表查询 ──
+    try:
+        from database.connection import get_session_factory
+        from database.models import Trace
+        from sqlalchemy import select
+
+        factory = get_session_factory()
+        async with factory() as session:
+            stmt = (
+                select(Trace)
+                .where(Trace.trace_id == trace_id)
+                .order_by(Trace.created_at.asc())
+            )
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+
+        if rows:
+            return _aggregate_status_from_db(trace_id, rows)
+    except Exception as e:
+        logger.warning("查询 trace 表失败，回退内存: {}", e)
+
+    # ── 2. 回退：内存 TraceRecorder ──
+    try:
+        from governance.trace import get_trace_recorder
+        spans = get_trace_recorder().get_spans_by_trace(trace_id)
+        if spans:
+            return _aggregate_status_from_spans(trace_id, spans)
+    except Exception:
+        pass
+
     return AgentStatusResponse(
         trace_id=trace_id,
-        status="completed",
-        current_node="governance_node",
-        current_agent="governance",
+        status="unknown",
+        current_node="",
+        current_agent="",
         steps_completed=0,
         final_answer=None,
     )
+
+
+def _aggregate_status_from_db(trace_id: str, rows) -> AgentStatusResponse:
+    """
+    从 trace 表记录聚合执行状态。
+
+    Args:
+        trace_id: 链路追踪 ID
+        rows: 按时间正序排列的 Trace ORM 记录
+
+    Returns:
+        AgentStatusResponse
+    """
+    statuses = [r.status for r in rows if r.status]
+
+    if any(s == "failed" for s in statuses):
+        status = "failed"
+    elif any(s == "running" for s in statuses):
+        status = "running"
+    elif all(s in ("success", "completed") for s in statuses):
+        status = "completed"
+    else:
+        status = "pending"
+
+    last = rows[-1]
+    return AgentStatusResponse(
+        trace_id=trace_id,
+        status=status,
+        current_node=last.node_name or "",
+        current_agent=last.agent_name or "",
+        steps_completed=len(rows),
+        final_answer=_extract_final_answer(last.output_data),
+    )
+
+
+def _aggregate_status_from_spans(trace_id: str, spans) -> AgentStatusResponse:
+    """
+    从内存 SpanRecord 列表聚合执行状态。
+
+    Args:
+        trace_id: 链路追踪 ID
+        spans: SpanRecord 列表（时间正序）
+
+    Returns:
+        AgentStatusResponse
+    """
+    statuses = [s.status.value for s in spans if s.status]
+
+    if any(st == "failed" for st in statuses):
+        status = "failed"
+    elif any(st == "running" for st in statuses):
+        status = "running"
+    elif all(st in ("success", "completed") for st in statuses):
+        status = "completed"
+    else:
+        status = "pending"
+
+    last = spans[-1]
+    return AgentStatusResponse(
+        trace_id=trace_id,
+        status=status,
+        current_node=last.node_name or "",
+        current_agent=last.agent_name or "",
+        steps_completed=len(spans),
+        final_answer=_extract_final_answer(last.output_data),
+    )
+
+
+def _extract_final_answer(output_data) -> str | None:
+    """
+    从 Agent 输出中提取 final_answer。
+
+    支持 JSON 字符串或纯文本。
+    """
+    if not output_data:
+        return None
+    if isinstance(output_data, dict):
+        return output_data.get("final_answer") or output_data.get("answer")
+
+    try:
+        parsed = json.loads(output_data)
+        if isinstance(parsed, dict):
+            return parsed.get("final_answer") or parsed.get("answer")
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return output_data if isinstance(output_data, str) else None
 
 
 # ============================================================
@@ -310,7 +428,7 @@ async def dashboard_overview(
     """
     运维看板数据API。
 
-    TODO: 从数据库/Trace中统计真实数据：
+    从数据库 Trace 表统计真实指标（DB 不可用时回退内存监控数据）：
         - 总请求数
         - 成功率
         - 平均耗时
@@ -318,13 +436,53 @@ async def dashboard_overview(
         - MCP调用次数
         - A2A任务数
     """
+    from governance.dashboard import get_dashboard_provider
+
+    provider = get_dashboard_provider()
+
+    # 优先 DB 模式；DB 无数据时回退内存监控
+    try:
+        summary = await provider.get_summary(use_db=True)
+        if not summary.agent_stats:
+            memory_summary = await provider.get_summary(use_db=False)
+            if memory_summary.agent_stats:
+                summary = memory_summary
+    except Exception:
+        summary = await provider.get_summary(use_db=False)
+
+    agent_stats = summary.agent_stats
+    total_requests = sum(a.total_calls for a in agent_stats)
+    success_count = sum(a.success_count for a in agent_stats)
+    success_rate = success_count / total_requests if total_requests else 0.0
+
+    latencies = [a.avg_latency_ms for a in agent_stats if a.total_calls > 0]
+    avg_latency = sum(latencies) / len(latencies) if latencies else 0.0
+
+    # MCP 工具调用次数（内存 span 统计）
+    tool_call_count = 0
+    try:
+        from governance.trace import SpanKind, get_trace_recorder
+        tool_call_count = sum(
+            1 for s in get_trace_recorder().spans if s.kind == SpanKind.TOOL
+        )
+    except Exception:
+        pass
+
+    # A2A 任务数（TaskStore 统计）
+    a2a_task_count = 0
+    try:
+        from tools.a2a.task import get_task_store
+        a2a_task_count = get_task_store().count()
+    except Exception:
+        pass
+
     return {
-        "total_requests": 0,
-        "success_rate": 0.0,
-        "avg_latency_ms": 0.0,
-        "active_agents": 6,
-        "tool_call_count": 0,
-        "a2a_task_count": 0,
+        "total_requests": total_requests,
+        "success_rate": round(success_rate, 4),
+        "avg_latency_ms": round(avg_latency, 2),
+        "active_agents": len(agent_stats),
+        "tool_call_count": tool_call_count,
+        "a2a_task_count": a2a_task_count,
     }
 
 
@@ -346,7 +504,9 @@ async def evaluation_report(
     """
     评测报告API。
 
-    TODO: 从evaluation表中读取评测数据。
+    从 evaluation 表读取指定版本最新的评测结果。
+    无记录时返回 404（提示先运行评测）；
+    数据库不可用时返回空指标结构。
 
     Args:
         version: 评测版本号
@@ -356,12 +516,59 @@ async def evaluation_report(
     Returns:
         评测指标字典
     """
-    return {
-        "version": version,
-        "task_success_rate": 0.0,
-        "rag_faithfulness": 0.0,
-        "rag_answer_relevance": 0.0,
-        "tool_accuracy": 0.0,
-        "avg_latency_ms": 0.0,
-        "avg_step_count": 0.0,
-    }
+    try:
+        from database.connection import get_session_factory
+        from database.models import Evaluation
+        from sqlalchemy import select
+
+        factory = get_session_factory()
+        async with factory() as session:
+            stmt = (
+                select(Evaluation)
+                .where(Evaluation.version == version)
+                .order_by(Evaluation.created_at.desc())
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            record = result.scalars().first()
+
+        if record is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    f"未找到版本 '{version}' 的评测报告。"
+                    "请先运行: python -m governance.evaluation.runner run "
+                    f"--version {version} --save-result evaluation_results/{version}.json"
+                ),
+            )
+
+        return {
+            "version": record.version,
+            "task_success_rate": round(record.task_success_rate, 4),
+            "rag_faithfulness": round(record.rag_faithfulness, 4),
+            "rag_answer_relevance": round(record.rag_answer_relevance, 4),
+            "rag_context_recall": round(record.rag_context_recall, 4),
+            "tool_accuracy": round(record.tool_accuracy, 4),
+            "avg_latency_ms": round(record.avg_latency_ms, 2),
+            "avg_step_count": round(record.avg_step_count, 2),
+            "total_cases": record.total_cases,
+            "passed_cases": record.passed_cases,
+            "created_at": str(record.created_at),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("查询评测报告失败 (version={}): {}", version, e)
+        return {
+            "version": version,
+            "task_success_rate": 0.0,
+            "rag_faithfulness": 0.0,
+            "rag_answer_relevance": 0.0,
+            "rag_context_recall": 0.0,
+            "tool_accuracy": 0.0,
+            "avg_latency_ms": 0.0,
+            "avg_step_count": 0.0,
+            "total_cases": 0,
+            "passed_cases": 0,
+            "error": str(e) if settings.debug else "评测报告暂时不可用，请稍后重试",
+        }

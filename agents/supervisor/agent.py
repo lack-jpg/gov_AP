@@ -8,12 +8,18 @@ Task: Implement Supervisor Agent main orchestration logic
 """
 from __future__ import annotations
 
+import json
+import re
 from typing import Optional
 
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.supervisor.planner import Planner
 from agents.supervisor.router import Router
+from agents.supervisor.prompts import SUPERVISOR_SYNTHESIS_PROMPT
+from prompts.registry import get_registry
+from tools.logger import get_logger
 from orchestration.langgraph.state import (
     AgentName,
     AgentState,
@@ -29,6 +35,8 @@ from orchestration.langgraph.state import (
     update_current_agent,
     transition_to,
 )
+
+logger = get_logger(__name__)
 
 
 # ============================================================
@@ -192,6 +200,22 @@ class SupervisorAgent:
         汇总所有Agent结果，生成最终回答。
 
         优先级：
+        1. LLM 合成（有 LLM 时，用 SUPERVISOR_SYNTHESIS_PROMPT 生成结构化回答）
+        2. 规则拼接（无 LLM 时的兜底方案）
+        """
+        if self._planner._llm is not None:
+            try:
+                return await self._llm_synthesize(state)
+            except Exception as e:
+                logger.warning("LLM 合成失败，回退到规则拼接: {}", e)
+
+        return self._concat_answer(state)
+
+    def _concat_answer(self, state: AgentState) -> AgentState:
+        """
+        纯规则拼接汇总（无 LLM 兜底）。
+
+        优先级：
         1. policy_result中的answer（有证据支撑）
         2. material_result中的审核结果
         3. 现有task_plan的完成情况
@@ -211,13 +235,74 @@ class SupervisorAgent:
 
         task_plan = state.get("task_plan", [])
         if task_plan:
-            completed = sum(1 for t in task_plan if t.get("status") == TaskStatus.COMPLETED.value)
             failed = sum(1 for t in task_plan if t.get("status") == TaskStatus.FAILED.value)
             if failed > 0:
                 parts.append(f"\n有 {failed} 个步骤未能完成，建议联系人工客服。")
 
         final_answer = "\n".join(parts) if parts else "抱歉，未能处理您的请求，请稍后重试或联系人工客服。"
         return set_final_answer(state, final_answer)
+
+    async def _llm_synthesize(self, state: AgentState) -> AgentState:
+        """
+        使用 LLM 生成最终回答。
+
+        将 policy_result、material_result、intent、task_plan 注入
+        SUPERVISOR_SYNTHESIS_PROMPT，让 LLM 生成结构化自然语言回答。
+
+        Args:
+            state: 当前 AgentState
+
+        Returns:
+            更新后的 AgentState（final_answer 已设置）
+        """
+        assert self._planner._llm is not None
+
+        user_query = state.get("user_query", "")
+        intent = state.get("intent", "")
+        policy_result = state.get("policy_result", {})
+        material_result = state.get("material_result", {})
+        task_plan = state.get("task_plan", [])
+
+        # 构建输入数据
+        inputs = {
+            "user_query": user_query,
+            "intent_result": intent,
+            "policy_result": json.dumps(policy_result, ensure_ascii=False, default=str),
+            "material_result": json.dumps(material_result, ensure_ascii=False, default=str),
+            "workflow_result": json.dumps(
+                {"completed": sum(1 for t in task_plan if t.get("status") == TaskStatus.COMPLETED.value),
+                 "failed": sum(1 for t in task_plan if t.get("status") == TaskStatus.FAILED.value)},
+                ensure_ascii=False,
+            ),
+        }
+
+        # Prompt Registry 优先，硬编码常量 fallback
+        try:
+            registry = get_registry()
+            system_content = registry.render("SUPERVISOR_SYNTHESIS_PROMPT", **inputs)
+        except Exception:
+            system_content = SUPERVISOR_SYNTHESIS_PROMPT
+
+        system_msg = SystemMessage(content=system_content)
+        user_msg = HumanMessage(content=json.dumps(inputs, ensure_ascii=False, default=str))
+
+        response = await self._planner._llm.ainvoke([system_msg, user_msg])
+        text = Planner._extract_text(response).strip()
+
+        # 尝试解析 JSON 中的 "answer" 字段；失败则用原文
+        json_match = re.search(r'\{[\s\S]*"answer"[\s\S]*\}', text)
+        if json_match:
+            try:
+                data = json.loads(json_match.group(0))
+                answer = data.get("answer")
+                if answer:
+                    return set_final_answer(state, answer)
+            except json.JSONDecodeError:
+                pass
+
+        # 无法解析 → 用 LLM 原始输出作为回答
+        logger.info("LLM 合成输出无法解析为 JSON，使用原文")
+        return set_final_answer(state, text)
 
     # ── 状态检查 ──
 

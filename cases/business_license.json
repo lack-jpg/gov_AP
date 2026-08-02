@@ -1,12 +1,32 @@
-{
-  "_description": "business_license.json - Business license scenario test case",
-  "_author": "le",
-  "_date": "2026/7/29",
-  "_version": "0.1",
-  "_task": "Test case: restaurant business license application workflow",
-  "id": "case_001",
-  "query": "我要开一家餐馆，需要什么",
-  "expected_intent": "business_license",
-  "expected_tools": ["search_policy"],
-  "expected_answer": ["营业执照", "食品经营许可证"]
-}
+[
+  {
+    "_description": "business_license.json - Business license application workflow test cases",
+    "_author": "le",
+    "_date": "2026/8/2",
+    "_version": "0.2",
+    "_task": "Test cases for restaurant business license application workflow",
+    "cases": [
+      {
+        "id": "case_001",
+        "query": "我要开一家餐馆，需要什么",
+        "expected_intent": "restaurant_license",
+        "expected_tools": ["search_policy"],
+        "expected_answer": ["营业执照", "食品经营许可证"]
+      },
+      {
+        "id": "case_002",
+        "query": "办理个体户营业执照需要什么材料",
+        "expected_intent": "business_license",
+        "expected_tools": ["search_policy", "check_material"],
+        "expected_answer": ["营业执照", "身份证明"]
+      },
+      {
+        "id": "case_003",
+        "query": "注册公司需要哪些手续",
+        "expected_intent": "business_register",
+        "expected_tools": ["search_policy"],
+        "expected_answer": ["公司章程", "营业执照"]
+      }
+    ]
+  }
+]

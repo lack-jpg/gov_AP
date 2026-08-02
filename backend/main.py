@@ -120,6 +120,27 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # ── 链路追踪中间件（OpenTelemetry trace/span 注入） ──
+    try:
+        from backend.middleware.tracing import TracingMiddleware
+        app.add_middleware(TracingMiddleware)
+    except Exception:
+        pass
+
+    # ── 认证中间件（JWT Bearer Token → X-User-Id 注入） ──
+    try:
+        from backend.middleware.auth import AuthMiddleware
+        app.add_middleware(AuthMiddleware)
+    except Exception:
+        pass
+
+    # ── 权限中间件（RBAC 角色/权限校验） ──
+    try:
+        from backend.middleware.rbac import RBACMiddleware
+        app.add_middleware(RBACMiddleware)
+    except Exception:
+        pass
+
     # ── 请求日志中间件（trace_id注入 + 请求/响应日志） ──
     app.add_middleware(RequestLoggingMiddleware)
 

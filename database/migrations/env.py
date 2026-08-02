@@ -47,7 +47,9 @@ def run_migrations_offline() -> None:
 
     用法: alembic upgrade head --sql > migration.sql
     """
-    url = config.get_main_option("sqlalchemy.url")
+    from backend.config import get_settings
+
+    url = get_settings().postgres_sync_url
     context.configure(
         url=url,
         target_metadata=target_metadata,

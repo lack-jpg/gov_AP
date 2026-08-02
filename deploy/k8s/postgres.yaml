@@ -1,7 +1,101 @@
 # =====================================================
-# postgres.yaml - PostgreSQL StatefulSet
+# postgres.yaml - PostgreSQL 16 StatefulSet + Service
 # Author: le
-# Date: 2026/7/29
-# Version: 0.1
-# Task: Kubernetes StatefulSet + Service for PostgreSQL 16
+# Date: 2026/8/2
+# Version: 0.2
+# Task: Kubernetes StatefulSet + Service + PVC for PostgreSQL 16 (pgvector)
+#
+# 说明:
+#   - 使用 pgvector/pgvector:pg16 镜像（支持向量检索）
+#   - 通过 StatefulSet + volumeClaimTemplates 持久化数据
+#   - 密码通过 Secret gov-agent-env 注入
+#
+# Usage:
+#   kubectl apply -f postgres.yaml
 # =====================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: gov-agent
+  labels:
+    app: gov-agent
+    component: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gov-agent
+      component: postgres
+  template:
+    metadata:
+      labels:
+        app: gov-agent
+        component: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg16
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_USER
+              value: gov_agent
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gov-agent-env
+                  key: POSTGRES_PASSWORD
+                  optional: true
+            - name: POSTGRES_DB
+              value: gov_agent_platform
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              subPath: postgres
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - gov_agent
+                - -d
+                - gov_agent_platform
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: gov-agent
+  labels:
+    app: gov-agent
+    component: postgres
+spec:
+  selector:
+    app: gov-agent
+    component: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+  type: ClusterIP

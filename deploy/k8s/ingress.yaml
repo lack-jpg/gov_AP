@@ -1,7 +1,54 @@
 # =====================================================
-# ingress.yaml - Ingress Configuration
+# ingress.yaml - Ingress for external API access
 # Author: le
-# Date: 2026/7/29
-# Version: 0.1
-# Task: Kubernetes Ingress for external API access
+# Date: 2026/8/2
+# Version: 0.2
+# Task: Kubernetes Ingress routing external traffic to backend API
+#
+# 前置条件:
+#   - Ingress Controller（如 nginx-ingress）已安装
+#   - DNS: api.gov-agent.local → Ingress Controller 地址
+#     （或修改 /etc/hosts 指向集群节点 IP）
+#
+# Usage:
+#   kubectl apply -f ingress.yaml
 # =====================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gov-agent-ingress
+  namespace: gov-agent
+  labels:
+    app: gov-agent
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.gov-agent.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gov-agent-api
+                port:
+                  number: 8002
+    # ── A2A Callback（外部 Agent → 本系统） ──
+    - host: a2a.gov-agent.local
+      http:
+        paths:
+          - path: /api/a2a/callback
+            pathType: Prefix
+            backend:
+              service:
+                name: gov-agent-api
+                port:
+                  number: 8002
+  tls:
+    - hosts:
+        - api.gov-agent.local
+      secretName: gov-agent-tls

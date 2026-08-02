@@ -13,6 +13,7 @@ from typing import Optional
 from fastapi import HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.config import get_settings
 
@@ -106,7 +107,7 @@ async def get_optional_user(
 # ============================================================
 
 
-class AuthMiddleware:
+class AuthMiddleware(BaseHTTPMiddleware):
     """
     FastAPI 认证中间件。
 
@@ -119,7 +120,10 @@ class AuthMiddleware:
         app.add_middleware(AuthMiddleware)
     """
 
-    async def __call__(self, request: Request, call_next):
+    def __init__(self, app=None, **kwargs):
+        super().__init__(app, **kwargs)
+
+    async def dispatch(self, request: Request, call_next):
         # 跳过健康检查和文档端点
         if request.url.path in ("/health", "/docs", "/redoc", "/openapi.json"):
             return await call_next(request)

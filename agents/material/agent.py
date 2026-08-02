@@ -81,37 +81,72 @@ class MaterialAgent:
         审核材料完整性和合规性。
 
         Args:
-            file_bytes: 上传的文件内容（TODO: OCR）
+            file_bytes: 上传的文件内容（支持 OCR + 实体抽取）
             business_type: 业务类型
             submitted_materials: 用户声称已提交的材料列表
 
         Returns:
             MaterialCheckResult
         """
-        # 获取必需材料清单
-        required = self.REQUIRED_MATERIALS.get(business_type, ["身份证明"])
+        extracted_fields: dict[str, Any] = {}
 
-        # TODO: OCR + 实体抽取
-        # if file_bytes:
-        #     text = await self._ocr_engine.extract_text(file_bytes)
-        #     extracted = await self._extractor.extract(text, schema)
+        # OCR + 实体抽取（当有文件上传时）
+        if file_bytes:
+            try:
+                from agents.material.ocr import OCREngine
+                from agents.material.extractor import EntityExtractor
 
-        # 规则校验
-        if submitted_materials:
-            missing = [m for m in required if m not in submitted_materials]
-            warnings = self._check_warnings(submitted_materials)
-        else:
-            # 无材料列表 → 提示所有需要的材料
-            missing = required
-            warnings = ["未检测到已提交材料，请上传相关文件进行审核"]
+                ocr = OCREngine()
+                text = await ocr.extract_text(file_bytes)
 
-        passed = len(missing) == 0
+                extractor = EntityExtractor()
+                extracted = await extractor.extract(text)
+                extracted_fields = extracted.entities if hasattr(extracted, "entities") else extracted
+
+                logger.info("OCR+NER 完成: 抽取字段={}", list(extracted_fields.keys())[:10])
+            except Exception as e:
+                logger.warning("OCR/实体抽取失败，继续检查必需材料: {}", e)
+
+        # 使用 MaterialValidator 进行规则校验（集成别名匹配和模糊匹配）
+        try:
+            from agents.material.validator import MaterialValidator
+
+            validator = MaterialValidator()
+            validation_result = await validator.validate(
+                business_type=business_type,
+                materials=submitted_materials or [],
+            )
+
+            missing = validation_result.get("missing", [])
+            warnings = validation_result.get("warnings", [])
+            passed = validation_result.get("passed", len(missing) == 0)
+
+            # 补充温馨提醒
+            if submitted_materials:
+                extra_warnings = self._check_warnings(submitted_materials)
+                warnings = list(set(warnings + extra_warnings))
+            else:
+                warnings.append("未检测到已提交材料，请上传相关文件进行审核")
+
+        except Exception as e:
+            logger.warning("MaterialValidator 不可用，回退内置规则: {}", e)
+            # Fallback: 内置必需材料清单
+            required = self.REQUIRED_MATERIALS.get(business_type, ["身份证明"])
+
+            if submitted_materials:
+                missing = [m for m in required if m not in submitted_materials]
+                warnings = self._check_warnings(submitted_materials)
+            else:
+                missing = required
+                warnings = ["未检测到已提交材料，请上传相关文件进行审核"]
+
+            passed = len(missing) == 0
 
         return MaterialCheckResult(
             passed=passed,
             missing=missing,
             warnings=warnings,
-            extracted_fields={},
+            extracted_fields=extracted_fields,
         )
 
     async def process(self, state: AgentState) -> AgentState:

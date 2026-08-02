@@ -1,7 +1,109 @@
 # =====================================================
-# backend.yaml - Backend Deployment
+# backend.yaml - FastAPI Backend Deployment + Service
 # Author: le
-# Date: 2026/7/29
-# Version: 0.1
-# Task: Kubernetes Deployment + Service for FastAPI backend
+# Date: 2026/8/2
+# Version: 0.2
+# Task: Kubernetes Deployment + Service for FastAPI backend (端口 8002)
+#
+# Usage:
+#   kubectl apply -f backend.yaml
 # =====================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gov-agent
+  labels:
+    app: gov-agent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gov-agent-api
+  namespace: gov-agent
+  labels:
+    app: gov-agent
+    component: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gov-agent
+      component: api
+  template:
+    metadata:
+      labels:
+        app: gov-agent
+        component: api
+    spec:
+      containers:
+        - name: api
+          image: gov-agent-platform/backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8002
+              name: http
+          env:
+            - name: APP_PORT
+              value: "8002"
+            - name: POSTGRES_HOST
+              value: postgres
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: REDIS_HOST
+              value: redis
+            - name: REDIS_PORT
+              value: "6379"
+            - name: MILVUS_HOST
+              value: milvus
+            - name: MILVUS_PORT
+              value: "19530"
+            - name: MCP_GATEWAY_URL
+              value: http://gov-agent-mcp:12300
+            - name: A2A_CALLBACK_URL
+              value: http://gov-agent-api:8002/api/a2a/callback
+            # 密钥（JWT_SECRET_KEY / POSTGRES_PASSWORD / LLM_API_KEY 等）
+            # 通过 Secret 注入：
+            #   kubectl create secret generic gov-agent-env \
+            #     --from-literal=JWT_SECRET_KEY=<secret> \
+            #     --from-literal=POSTGRES_PASSWORD=<password>
+          envFrom:
+            - secretRef:
+                name: gov-agent-env
+                optional: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gov-agent-api
+  namespace: gov-agent
+  labels:
+    app: gov-agent
+    component: api
+spec:
+  selector:
+    app: gov-agent
+    component: api
+  ports:
+    - port: 8002
+      targetPort: 8002
+      name: http
+  type: ClusterIP

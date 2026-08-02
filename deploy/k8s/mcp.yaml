@@ -1,7 +1,89 @@
 # =====================================================
-# mcp.yaml - MCP Server Deployment
+# mcp.yaml - MCP Servers + Gateway Deployment + Service
 # Author: le
-# Date: 2026/7/29
-# Version: 0.1
-# Task: Kubernetes Deployment for MCP Servers (policy, material, workflow)
+# Date: 2026/8/2
+# Version: 0.2
+# Task: Kubernetes Deployment + Service for MCP Servers (Gateway + policy/material/workflow)
+#
+# 对应 tools/mcp/start_servers.py:
+#   - 12300 MCP Gateway
+#   - 12301 Policy Server
+#   - 12302 Material Server
+#   - 12303 Workflow Server
+#
+# Usage:
+#   kubectl apply -f mcp.yaml
 # =====================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gov-agent-mcp
+  namespace: gov-agent
+  labels:
+    app: gov-agent
+    component: mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gov-agent
+      component: mcp
+  template:
+    metadata:
+      labels:
+        app: gov-agent
+        component: mcp
+    spec:
+      containers:
+        - name: mcp
+          image: gov-agent-platform/mcp:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 12300
+              name: gateway
+            - containerPort: 12301
+              name: policy
+            - containerPort: 12302
+              name: material
+            - containerPort: 12303
+              name: workflow
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 12300
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gov-agent-mcp
+  namespace: gov-agent
+  labels:
+    app: gov-agent
+    component: mcp
+spec:
+  selector:
+    app: gov-agent
+    component: mcp
+  ports:
+    - port: 12300
+      targetPort: 12300
+      name: gateway
+    - port: 12301
+      targetPort: 12301
+      name: policy
+    - port: 12302
+      targetPort: 12302
+      name: material
+    - port: 12303
+      targetPort: 12303
+      name: workflow
+  type: ClusterIP

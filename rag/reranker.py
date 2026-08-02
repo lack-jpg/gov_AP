@@ -33,7 +33,7 @@ class Reranker:
     def __init__(self, model_name: Optional[str] = None, model_path: Optional[str] = None):
         self._model_name = model_name or self.DEFAULT_MODEL
         self._model_path = model_path or self._resolve_path()
-        self._model = None  # TODO: FlagEmbedding FlagReranker
+        self._model = None  # FlagEmbedding FlagReranker
 
     async def rerank(
         self,
@@ -55,8 +55,16 @@ class Reranker:
         if not documents:
             return []
 
+        try:
+            self._ensure_model()
+        except Exception as e:
+            logger.warning("Reranker 模型不可用，保持原顺序: {}", e)
+
         if self._model is not None:
-            return await self._model_rerank(query, documents, top_k)
+            try:
+                return await self._model_rerank(query, documents, top_k)
+            except Exception as e:
+                logger.warning("Reranker 重排失败，回退原顺序: {}", e)
 
         # Stub: 保持原顺序，标注分数
         logger.debug("rerank (stub): {} docs → top_k={}", len(documents), top_k)
@@ -72,11 +80,34 @@ class Reranker:
         """
         使用 BGE Reranker 模型重排序。
 
-        TODO: 接入 FlagEmbedding
         pairs = [[query, doc["content"]] for doc in documents]
         scores = self._model.compute_score(pairs)
         """
-        return documents[:top_k]
+        import asyncio
+
+        pairs = [[query, doc.get("content", "")] for doc in documents]
+
+        def _compute() -> list[float]:
+            raw = self._model.compute_score(pairs)
+            # FlagReranker 返回 float 或 list[float]
+            if isinstance(raw, (int, float)):
+                return [float(raw)] * len(pairs)
+            return [float(s) for s in raw]
+
+        scores = await asyncio.to_thread(_compute)
+
+        # 按分数降序排列
+        ranked = sorted(
+            zip(documents, scores),
+            key=lambda x: x[1],
+            reverse=True,
+        )[:top_k]
+
+        result = []
+        for doc, score in ranked:
+            doc["relevance_score"] = float(score)
+            result.append(doc)
+        return result
 
     def load_model(self, model_name: Optional[str] = None, model_path: Optional[str] = None) -> None:
         """加载 Reranker 模型"""
@@ -86,9 +117,20 @@ class Reranker:
             self._model_path = model_path
 
         load_from = self._model_path or self._model_name
-        logger.info("Reranker 模型已加载（stub）: {}", load_from)
+        try:
+            from FlagEmbedding import FlagReranker
+            self._model = FlagReranker(load_from, use_fp16=False)
+            logger.info("Reranker 模型已加载: {}", load_from)
+        except Exception as e:
+            logger.warning("Reranker 模型加载失败（将使用原顺序兜底）: {}", e)
+            self._model = None
 
     # ── 内部 ──
+
+    def _ensure_model(self) -> None:
+        """确保模型已加载（惰性加载）"""
+        if self._model is None:
+            self.load_model()
 
     @staticmethod
     def _resolve_path() -> Optional[str]:

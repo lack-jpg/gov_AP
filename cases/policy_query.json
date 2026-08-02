@@ -1,8 +1,29 @@
-{
-  "_description": "policy_query.json - Policy query scenario test case",
-  "_author": "le",
-  "_date": "2026/7/29",
-  "_version": "0.1",
-  "_task": "Test case: policy knowledge retrieval workflow",
-  "cases": []
-}
+[
+  {
+    "_description": "policy_query.json - Policy knowledge retrieval test cases",
+    "_author": "le",
+    "_date": "2026/8/2",
+    "_version": "0.2",
+    "_task": "Test cases for policy knowledge retrieval workflow",
+    "cases": [
+      {
+        "id": "policy_001",
+        "query": "小微企业税收优惠政策有哪些",
+        "expected_intent": "tax_service",
+        "expected_answer": ["税收", "优惠"]
+      },
+      {
+        "id": "policy_002",
+        "query": "大学生创业补贴政策",
+        "expected_intent": "policy_query",
+        "expected_answer": ["创业", "补贴"]
+      },
+      {
+        "id": "policy_003",
+        "query": "老旧小区加装电梯政策",
+        "expected_intent": "policy_query",
+        "expected_answer": ["电梯"]
+      }
+    ]
+  }
+]

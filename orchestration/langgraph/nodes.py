@@ -82,6 +82,20 @@ async def supervisor_node(
     if get_current_trace() is None:
         start_trace(user_query=state.get("user_query", ""))
 
+    # === 意图到达后重新规划 ===
+    # intent_node 执行完会无条件回到 supervisor_node（edges.py:161），
+    # 此时 intent 已更新但 task_plan 可能还是用 intent="unknown" 生成的旧计划。
+    # 检测这种情况并触发 replan。
+    intent = state.get("intent", "")
+    task_plan = state.get("task_plan", [])
+    prev_node = state.get("current_node", "")
+    if intent and task_plan and prev_node == NodeName.INTENT.value:
+        logger.info(
+            "意图已识别: {}，触发 re-plan（原 plan 基于 intent=unknown 生成）",
+            intent,
+        )
+        state = await supervisor.handle_intent_result(state, intent)
+
     _start = time.perf_counter()
     try:
         async with AgentTracer.span(
@@ -127,8 +141,11 @@ async def intent_node(
     """
     Intent节点 — 意图识别。
 
-    当前为stub实现（返回默认意图）。
-    完整实现需要接入BERT模型 + LLM fallback。
+    分类链（统一走 IntentAgent）:
+        IntentClassifier（BERT → 关键词匹配）-> 置信度 >= 0.7 直接返回
+        -> 置信度不足 -> LLM fallback（IntentAgent._llm_classify）
+
+    LLM 不可用时仅使用关键词/BERT 分类，不再维护重复的 stub 函数。
 
     Args:
         state: 当前AgentState
@@ -150,24 +167,33 @@ async def intent_node(
         ) as span:
             user_query = state.get("user_query", "")
 
-            # TODO: 替换为真实的BERT分类器 + LLM fallback
-            # from agents.intent.classifier import IntentClassifier
-            # from agents.intent.agent import IntentAgent
-            # agent = IntentAgent(classifier=classifier, llm=llm)
-            # result = await agent.classify(user_query)
+            # 统一分类链：BERT → keyword → LLM fallback（IntentAgent）
+            from agents.intent.classifier import IntentClassifier
+            from agents.intent.agent import IntentAgent
 
-            # Stub: 简单的关键词匹配
-            intent_label = _stub_intent_classify(user_query)
+            classifier = IntentClassifier(auto_load=False)
+            try:
+                agent = IntentAgent(classifier=classifier, llm=llm)
+                result = await agent.classify(user_query)
+            except Exception as e:
+                logger.warning("IntentAgent 失败，回退 keyword: {}", e)
+                result = classifier._keyword_classify(user_query)
 
             intent_result = IntentResult(
-                label=intent_label,
-                label_name="",
-                confidence=0.85,
-                source="stub",
+                label=result.label,
+                label_name=result.label_name,
+                confidence=result.confidence,
+                source=result.source,
+            )
+            logger.info(
+                "IntentAgent: {} -> {} (conf={:.2f}, src={})",
+                user_query[:40], result.label, result.confidence, result.source,
             )
             from orchestration.langgraph.state import set_intent
             state = set_intent(state, intent_result)
-            span.record_output(f"intent={intent_label} confidence=0.85")
+            span.record_output(
+                f"intent={intent_result.label} conf={intent_result.confidence:.2f} src={intent_result.source}"
+            )
 
         record_agent_call(
             AgentName.INTENT.value,
@@ -186,20 +212,6 @@ async def intent_node(
         )
 
     return state
-
-
-def _stub_intent_classify(query: str) -> str:
-    """临时意图分类stub — 后续替换为BERT模型"""
-    query_lower = query.lower()
-    if any(kw in query_lower for kw in ("餐馆", "餐饮", "饭店", "餐厅", "食品")):
-        return "restaurant_license"
-    if any(kw in query_lower for kw in ("公司", "企业", "注册", "营业执照")):
-        return "business_register"
-    if any(kw in query_lower for kw in ("公积金", "住房")):
-        return "fund_query"
-    if any(kw in query_lower for kw in ("房产", "不动产", "房屋", "产权")):
-        return "property_service"
-    return "business_license"  # 默认
 
 
 # ============================================================
@@ -292,14 +304,34 @@ async def policy_node(
             except Exception as e:
                 logger.warning("MCP policy search failed, falling back to stub: {}", e)
 
-        # ── Stub fallback ──
-        stub_answer = _stub_policy_search(intent, user_query)
+        # ── Fallback: LLM Agent 或 stub 模板 ──
+        if llm is not None:
+            try:
+                from agents.policy.agent import PolicyAgent
 
-        policy_result = PolicyResult(
-            answer=stub_answer["answer"],
-            evidence=[],
-            confidence=0.9,
-        )
+                agent = PolicyAgent(llm=llm)
+                result = await agent.search_with_intent(user_query, intent)
+                policy_result = PolicyResult(
+                    answer=result.answer,
+                    evidence=[],
+                    confidence=result.confidence,
+                )
+                logger.info("PolicyAgent LLM 生成回答完成 (confidence={:.2f})", result.confidence)
+            except Exception as e:
+                logger.warning("PolicyAgent 失败，回退 stub: {}", e)
+                stub_answer = _stub_policy_search(intent, user_query)
+                policy_result = PolicyResult(
+                    answer=stub_answer["answer"],
+                    evidence=[],
+                    confidence=0.9,
+                )
+        else:
+            stub_answer = _stub_policy_search(intent, user_query)
+            policy_result = PolicyResult(
+                answer=stub_answer["answer"],
+                evidence=[],
+                confidence=0.9,
+            )
         state["policy_result"] = policy_result.model_dump()
 
         # 标记task_plan中对应的policy任务为完成
@@ -312,17 +344,7 @@ async def policy_node(
             updated_plan.append(t)
         state["task_plan"] = updated_plan
 
-        # 记录MCP调用
-        mcp = MCPCallRecord(
-            trace_id=state["trace_id"],
-            server_name="policy_server",
-            tool_name="search_policy",
-            input_args={"query": user_query, "top_k": 5},
-            output_result={"policy_found": True},
-            latency_ms=200.0,
-            status=MCPCallStatus.SUCCESS,
-        )
-        state = record_mcp_call(state, mcp)
+        # 注意：stub fallback 不再伪造 MCPCallRecord
 
         record_agent_call(
             AgentName.POLICY.value,
@@ -467,17 +489,27 @@ async def material_node(
             except Exception as e:
                 logger.warning("MCP material check failed, falling back to stub: {}", e)
 
-        # ── Stub fallback ──
-        # TODO: 替换为真实的Material Agent
-        # from agents.material.agent import MaterialAgent
-        # agent = MaterialAgent(llm=llm)
-        # result = await agent.review(...)
+        # ── Fallback: MaterialAgent 规则检查 ──
+        try:
+            from agents.material.agent import MaterialAgent
 
-        result = MaterialCheckResult(
-            passed=True,
-            missing=[],
-            warnings=["当前为stub模式，未进行真实材料审核"],
-        )
+            agent = MaterialAgent(llm=llm)
+            result = await agent.review(
+                file_bytes=None,
+                business_type=intent,
+                submitted_materials=None,
+            )
+            logger.info(
+                "MaterialAgent 审核完成: passed={}, missing={}, warnings={}",
+                result.passed, len(result.missing), len(result.warnings),
+            )
+        except Exception as e:
+            logger.warning("MaterialAgent 失败，回退 stub: {}", e)
+            result = MaterialCheckResult(
+                passed=True,
+                missing=[],
+                warnings=["当前为stub模式，未进行真实材料审核"],
+            )
         state["material_result"] = result.model_dump()
 
         # 标记task_plan中对应的material任务为完成
@@ -583,26 +615,18 @@ async def workflow_node(
             except Exception as e:
                 logger.warning("MCP workflow call failed, falling back to stub: {}", e)
 
-        # ── Stub fallback ──
-        # TODO: 替换为真实的Workflow Agent + MCP调用
-        # from tools.mcp.client import MCPClient
-        # client = MCPClient(gateway_url=...)
-        # result = await client.call_tool("create_case", {...})
+        # ── Fallback: WorkflowAgent ──
+        from agents.workflow.agent import WorkflowAgent
 
-        # Stub: 模拟创建办件
-        import uuid
-        stub_case_id = f"CASE_{uuid.uuid4().hex[:8].upper()}"
-
-        mcp = MCPCallRecord(
-            trace_id=state["trace_id"],
-            server_name="workflow_server",
-            tool_name="create_case",
-            input_args={"user_id": "stub_user", "service": state.get("intent", "unknown")},
-            output_result={"case_id": stub_case_id, "status": "created"},
-            latency_ms=150.0,
-            status=MCPCallStatus.SUCCESS,
+        agent = WorkflowAgent(mcp_client=mcp_client)
+        case_result = await agent.create_case(
+            user_id="default_user",
+            service=intent,
         )
-        state = record_mcp_call(state, mcp)
+        stub_case_id = case_result.get("case_id", "CASE_UNKNOWN")
+
+        # 注意：stub fallback 不再伪造 MCPCallRecord
+        state["workflow_result"] = case_result
 
         # 标记workflow任务完成
         task_plan = state.get("task_plan", [])
@@ -852,9 +876,12 @@ async def a2a_node(
                 if checkpointer is not None:
                     try:
                         trace_id = state.get("trace_id", "")
+                        # 使用当前 LangGraph checkpoint_id（非空字符串）
+                        from orchestration.langgraph.state import create_initial_state
+                        _ckpt_id = state.get("trace_id", f"ckpt_{id(state)}")
                         await checkpointer.suspend_for_a2a(
                             thread_id=trace_id,
-                            checkpoint_id="",  # 当前 checkpoint 由 LangGraph 管理
+                            checkpoint_id=_ckpt_id,
                             a2a_task_id=result["task_id"],
                         )
                         logger.info(

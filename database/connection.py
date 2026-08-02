@@ -41,6 +41,7 @@ def create_engine(settings: Settings) -> AsyncEngine:
         max_overflow=20,
         pool_pre_ping=True,     # 每次从池中取出连接时先 ping 验证
         echo=settings.debug,     # debug 模式打印 SQL
+        connect_args={"timeout": 5},  # asyncpg 连接超时（秒），DB 不可达时快速失败
     )
 
 
@@ -117,21 +118,53 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 # ============================================================
 
 
+def _run_alembic_upgrade_sync() -> None:
+    """
+    同步执行 Alembic 迁移到最新版本（在 asyncio.to_thread 中运行）。
+
+    从 backend.config 动态读取数据库连接 URL（见 env.py），
+    不依赖 alembic.ini 中的 sqlalchemy.url。
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    cfg = Config("alembic.ini")
+    command.upgrade(cfg, "head")
+
+
+async def run_alembic_upgrade() -> None:
+    """
+    执行 Alembic 迁移到最新版本。
+
+    生产部署时通过 alembic upgrade head 管理 schema 变更。
+    """
+    import asyncio
+    await asyncio.to_thread(_run_alembic_upgrade_sync)
+
+
 async def init_db() -> None:
     """
     初始化数据库表。
 
-    在应用启动时调用一次，创建所有 ORM 模型对应的表。
-    不会删除已有数据（使用 create_all）。
+    在应用启动时调用一次。
+    优先使用 Alembic 迁移（生产部署，管理 schema 版本）；
+    迁移不可用（如未安装 alembic）时回退到 create_all（开发模式）。
 
     注意：需显式导入 checkpointer 以确保 langgraph_checkpoints 表被注册到 Base.metadata。
     """
     from database.models import Base
     # 确保 checkpointer 的 _CheckpointRow 表也被注册（延迟导入避免循环引用）
     from orchestration.langgraph.checkpointer import _CheckpointRow  # noqa: F401
-    engine = get_engine()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+
+    # ── 优先 Alembic 迁移 ──
+    try:
+        await run_alembic_upgrade()
+        return
+    except Exception:
+        # Alembic 不可用 → 回退 create_all（不会删除已有数据）
+        engine = get_engine()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
 
 async def close_db() -> None:

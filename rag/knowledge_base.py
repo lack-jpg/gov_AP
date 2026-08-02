@@ -123,12 +123,19 @@ class KnowledgeBase:
     async def index_documents(
         self,
         documents: Optional[list[dict]] = None,
+        milvus_host: str = "localhost",
+        milvus_port: int = 19530,
     ) -> int:
         """
-        将文档索引到 Milvus。
+        将文档索引到 Milvus（含 Embedding）。
+
+        流程: 切分 → Embedding → 写入 Milvus。
+        Milvus 不可用时仅完成切分和 Embedding，不中断。
 
         Args:
             documents: 文档列表，不传则用 load_documents 的结果
+            milvus_host: Milvus 主机
+            milvus_port: Milvus 端口
 
         Returns:
             索引的文档数
@@ -140,36 +147,89 @@ class KnowledgeBase:
 
         # 1. 切分
         chunks = await self.split_documents(docs)
+        if not chunks:
+            return 0
 
         # 2. Embedding
-        # TODO: from rag.embedding import EmbeddingEngine
-        # engine = EmbeddingEngine()
-        # vectors = await engine.encode_documents([c["content"] for c in chunks])
+        vectors = None
+        try:
+            from rag.embedding import EmbeddingEngine
+            engine = EmbeddingEngine()
+            vectors = await engine.encode_documents([c["content"] for c in chunks])
+            logger.info("Embedding 完成: {} 个片段 → {}", len(chunks), vectors.shape)
+        except Exception as e:
+            logger.warning("Embedding 失败（跳过向量索引）: {}", e)
 
         # 3. 写入 Milvus
-        # TODO: from pymilvus import Collection
-        # collection.insert([...])
+        if vectors is not None:
+            try:
+                from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
+
+                connections.connect(alias="default", host=milvus_host, port=str(milvus_port))
+                collection_name = "gov_policy"
+
+                if utility.has_collection(collection_name):
+                    collection = Collection(collection_name)
+                else:
+                    fields = [
+                        FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
+                        FieldSchema(name="title", dtype=DataType.VARCHAR, max_length=512),
+                        FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=8192),
+                        FieldSchema(name="source", dtype=DataType.VARCHAR, max_length=1024),
+                        FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=vectors.shape[1]),
+                    ]
+                    schema = CollectionSchema(fields, description="政务政策知识库")
+                    collection = Collection(collection_name, schema)
+
+                # 插入数据
+                data = [
+                    [c["title"] for c in chunks],
+                    [c["content"] for c in chunks],
+                    [c["source"] for c in chunks],
+                    [v.tolist() for v in vectors],
+                ]
+                collection.insert(data)
+                collection.flush()
+                logger.info("Milvus 索引完成: {} 个片段 → {}", len(chunks), collection_name)
+            except Exception as e:
+                logger.warning("Milvus 索引失败（数据保留在内存）: {}", e)
 
         logger.info("文档索引完成: {} 个片段", len(chunks))
         return len(chunks)
 
-    async def rebuild_index(self, path: str) -> int:
+    async def rebuild_index(self, path: str, milvus_host: str = "localhost", milvus_port: int = 19530) -> int:
         """
         重建知识库索引（清空后重新索引）。
 
         Args:
             path: 文档路径
+            milvus_host: Milvus 主机
+            milvus_port: Milvus 端口
 
         Returns:
             索引的文档数
         """
-        # TODO: 清空 Milvus 集合
+        # 清空 Milvus 集合
+        try:
+            from pymilvus import utility
+            if utility.has_collection("gov_policy"):
+                utility.drop_collection("gov_policy")
+                logger.info("已清空旧集合 gov_policy")
+        except Exception as e:
+            logger.warning("清空 Milvus 集合失败: {}", e)
+
         docs = await self.load_documents(path)
-        return await self.index_documents(docs)
+        return await self.index_documents(docs, milvus_host=milvus_host, milvus_port=milvus_port)
 
     async def get_document_count(self) -> int:
         """获取已索引的文档数"""
-        # TODO: Milvus num_entities
+        try:
+            from pymilvus import utility
+            if utility.has_collection("gov_policy"):
+                from pymilvus import Collection
+                return Collection("gov_policy").num_entities
+        except Exception:
+            pass
         return len(self._documents)
 
     # ── 内部 ──

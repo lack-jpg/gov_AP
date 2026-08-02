@@ -8,6 +8,7 @@ Task: Implement Policy Agent with Milvus + BM25 + Reranker pipeline
 """
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from langchain_core.language_models import BaseChatModel
@@ -61,6 +62,11 @@ class PolicyAgent:
         """
         执行政策检索。
 
+        三级策略（按优先级）:
+        1. RAG 管线（Embedding → Milvus/BM25 混合检索 → Reranker → LLM 生成带证据回答）
+        2. LLM 生成（RAG 不可用时）
+        3. 模板回答（无 LLM 时）
+
         Args:
             query: 用户查询
             top_k: 返回文档数量
@@ -68,18 +74,90 @@ class PolicyAgent:
         Returns:
             PolicyResult
         """
-        # TODO: 接入完整 RAG 管线
-        # from rag.retriever import HybridRetriever
-        # from rag.reranker import Reranker
-        # from rag.generator import Generator
-        # docs = await retriever.hybrid_search(query, ...)
-        # docs = await reranker.rerank(query, docs, top_k)
-        # answer = await generator.generate(query, docs)
+        # 1. RAG 管线（真实检索增强）
+        rag_result = await self._try_rag(query, top_k)
+        if rag_result is not None:
+            return rag_result
 
+        # 2. LLM 生成（无 RAG 检索）
         if self._llm is not None:
             return await self._llm_search(query, top_k)
 
+        # 3. 模板兜底
         return self._template_search(query)
+
+    async def _try_rag(self, query: str, top_k: int) -> Optional[PolicyResult]:
+        """
+        尝试通过 RAG 管线检索并生成回答。
+
+        若 RAG 组件不可用（模型未加载 / Milvus 未连接 / 无语料），
+        返回 None 由调用方降级。
+
+        Args:
+            query: 用户查询
+            top_k: 返回文档数量
+
+        Returns:
+            PolicyResult 或 None（不可用时）
+        """
+        if self._llm is None:
+            return None
+
+        try:
+            # 惰性加载 RAG 组件，避免启动即失败
+            from rag.embedding import EmbeddingEngine
+            from rag.retriever import HybridRetriever
+            from rag.reranker import Reranker
+            from rag.generator import Generator
+
+            # 1. Embedding
+            engine = EmbeddingEngine()
+            query_vec = await engine.encode_query(query)
+
+            # 2. 混合检索（Milvus + BM25）
+            retriever = HybridRetriever()
+            # 尝试连接 Milvus（失败则只走 BM25）
+            retriever.connect_milvus()
+            # 尝试加载本地语料（data/policies/）
+            corpus = _load_policy_corpus()
+            if corpus:
+                retriever.set_corpus(corpus)
+
+            docs = await retriever.hybrid_search(query, query_vec, top_k=top_k * 2)
+
+            # 3. 重排序
+            reranker = Reranker()
+            if docs:
+                docs = await reranker.rerank(query, docs, top_k=top_k)
+
+            if not docs:
+                logger.info("RAG 检索无结果，降级到 LLM 生成")
+                return None
+
+            # 4. LLM 生成（带证据）
+            generator = Generator(llm=self._llm)
+            gen_result = await generator.generate(query, docs)
+            answer = gen_result.get("answer", "")
+
+            evidence = [
+                PolicyEvidence(
+                    source=doc.get("source", doc.get("title", "政策文档")),
+                    excerpt=doc.get("content", "")[:200],
+                    relevance_score=float(doc.get("relevance_score", doc.get("score", 0.5))),
+                )
+                for doc in docs[:3]
+            ]
+
+            logger.info("RAG 管线完成: {} 条证据, confidence={:.2f}", len(evidence), 0.85)
+            return PolicyResult(
+                answer=answer,
+                evidence=evidence,
+                confidence=0.85,
+                retrieved_count=len(docs),
+            )
+        except Exception as e:
+            logger.warning("RAG 管线不可用，降级到 LLM 生成: {}", e)
+            return None
 
     async def search_with_intent(
         self, query: str, intent: str, top_k: int = 5
@@ -161,6 +239,38 @@ class PolicyAgent:
         if hasattr(response, "content"):
             return response.content
         return str(response)
+
+
+# ============================================================
+# 政策语料加载（RAG 检索用）
+# ============================================================
+
+_POLICY_CORPUS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "policies")
+
+
+def _load_policy_corpus() -> list[dict]:
+    """
+    从 data/policies/ 目录加载政策文档语料（用于 BM25 检索）。
+
+    若目录不存在或为空，返回空列表（RAG 自动降级到纯 LLM）。
+
+    Returns:
+        文档列表 [{title, content, source}, ...]
+    """
+    import os
+
+    if not os.path.isdir(_POLICY_CORPUS_DIR):
+        logger.debug("政策语料目录不存在: {}，跳过 RAG 检索", _POLICY_CORPUS_DIR)
+        return []
+
+    try:
+        from rag.knowledge_base import KnowledgeBase
+        kb = KnowledgeBase()
+        docs = kb.load_documents(_POLICY_CORPUS_DIR)
+        return docs
+    except Exception as e:
+        logger.warning("政策语料加载失败: {}", e)
+        return []
 
 
 # ============================================================

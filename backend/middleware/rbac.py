@@ -18,6 +18,7 @@ from functools import wraps
 from typing import Any, Callable, Optional
 
 from fastapi import Depends, HTTPException, Request, status
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from tools.logger import get_logger
 
@@ -362,7 +363,7 @@ def check_mcp_tool_access(role: str, tool_name: str, raise_on_deny: bool = False
 # ============================================================
 
 
-class RBACMiddleware:
+class RBACMiddleware(BaseHTTPMiddleware):
     """
     FastAPI RBAC 中间件 — 自动检查端点权限。
 
@@ -377,7 +378,10 @@ class RBACMiddleware:
     - 公开端点（PUBLIC_ENDPOINTS）不做检查
     """
 
-    async def __call__(self, request: Request, call_next):
+    def __init__(self, app=None, **kwargs):
+        super().__init__(app, **kwargs)
+
+    async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
         # ── 跳过公开端点 ──

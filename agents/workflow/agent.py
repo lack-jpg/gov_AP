@@ -132,11 +132,22 @@ class WorkflowAgent:
             state: 当前 AgentState
 
         Returns:
-            更新后的 AgentState
+            更新后的 AgentState（含 case_id 和 workflow_result）
         """
         user_id = "default_user"
         intent = state.get("intent", "business_license")
 
         result = await self.create_case(user_id=user_id, service=intent)
-        logger.info("Workflow 完成: {}", result.get("case_id", "?"))
-        return state
+        case_id = result.get("case_id", "CASE_UNKNOWN")
+        logger.info("Workflow 完成: case_id={}", case_id)
+
+        # 将 case_id 写回 state
+        import json
+        return {
+            **state,
+            "workflow_result": {
+                "case_id": case_id,
+                "service": intent,
+                "status": result.get("status", "created"),
+            },
+        }

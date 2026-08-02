@@ -152,13 +152,18 @@ class GoldenDataset:
                 data = json.load(f)
 
             if isinstance(data, list):
-                # 提取元数据
+                # 提取元数据 + 用例
+                # 兼容 "{"_description": ..., "cases": [...]}" 同层嵌套格式：
+                # 即使条目含 _description，其 cases 也应被提取。
                 for item in data:
-                    if isinstance(item, dict) and item.get("_description"):
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("_description"):
                         self.metadata = item
-                    elif isinstance(item, dict) and "cases" in item:
-                        self.cases.extend(item["cases"])
-                    elif isinstance(item, dict):
+                    cases_list = item.get("cases")
+                    if isinstance(cases_list, list):
+                        self.cases.extend(cases_list)
+                    elif "cases" not in item:
                         self.cases.append(item)
             elif isinstance(data, dict):
                 if "cases" in data:

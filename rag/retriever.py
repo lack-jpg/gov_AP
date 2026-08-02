@@ -16,6 +16,9 @@ from tools.logger import get_logger
 
 logger = get_logger(__name__)
 
+# 默认 Milvus 集合名（与 knowledge_base.index_documents 保持一致）
+DEFAULT_COLLECTION = "gov_policy"
+
 
 class HybridRetriever:
     """
@@ -27,7 +30,7 @@ class HybridRetriever:
         3. Query → BM25 → Top-K 稀疏结果
         4. RRF (Reciprocal Rank Fusion) 融合排序 → 最终 Top-K
 
-    TODO: 接入 pymilvus 进行真实向量检索
+    Milvus 或 BM25 不可用时自动降级（返回空列表），由调用方处理。
 
     使用方式:
         retriever = HybridRetriever()
@@ -37,8 +40,54 @@ class HybridRetriever:
     def __init__(self, milvus_host: str = "localhost", milvus_port: int = 19530):
         self._milvus_host = milvus_host
         self._milvus_port = milvus_port
-        self._milvus_client = None  # TODO: pymilvus.Collection
-        self._bm25 = None  # TODO: BM25Okapi or similar
+        self._milvus_client = None  # pymilvus Collection
+        self._milvus_connected = False
+        self._bm25 = None  # _SimpleBM25
+        self._docs: list[dict] = []  # BM25 语料
+
+    def set_corpus(self, documents: list[dict]) -> None:
+        """
+        设置 BM25 检索语料（从 KnowledgeBase 加载）。
+
+        Args:
+            documents: 文档列表 [{title, content, source, ...}]
+        """
+        self._docs = list(documents)
+        try:
+            from rag.bm25 import SimpleBM25
+            self._bm25 = SimpleBM25(
+                [d.get("content", "") for d in documents]
+            )
+            logger.info("BM25 索引已构建: {} docs", len(documents))
+        except Exception as e:
+            logger.warning("BM25 构建失败: {}", e)
+            self._bm25 = None
+
+    def connect_milvus(self, collection: str = DEFAULT_COLLECTION) -> bool:
+        """
+        连接 Milvus 并绑定集合。
+
+        Args:
+            collection: Milvus 集合名
+
+        Returns:
+            是否连接成功
+        """
+        try:
+            from pymilvus import connections, Collection
+            connections.connect(
+                alias="default",
+                host=self._milvus_host,
+                port=str(self._milvus_port),
+            )
+            self._milvus_client = Collection(collection)
+            self._milvus_connected = True
+            logger.info("Milvus 已连接: {}:{} collection={}", self._milvus_host, self._milvus_port, collection)
+            return True
+        except Exception as e:
+            logger.warning("Milvus 连接失败（将只使用 BM25）: {}", e)
+            self._milvus_connected = False
+            return False
 
     async def hybrid_search(
         self,
@@ -63,7 +112,7 @@ class HybridRetriever:
         sparse_results: list[dict] = []
 
         # 1. 密集检索
-        if query_embedding is not None and self._milvus_client is not None:
+        if query_embedding is not None and self._milvus_connected and self._milvus_client is not None:
             dense_results = await self._dense_search(query_embedding, top_k * 2)
 
         # 2. 稀疏检索（BM25）
@@ -94,30 +143,67 @@ class HybridRetriever:
     ) -> list[dict]:
         """
         Milvus 密集向量检索。
-
-        TODO: 接入 pymilvus
-        results = self._milvus_client.search(
-            data=[query_embedding.tolist()],
-            anns_field="embedding",
-            param={"metric_type": "IP", "params": {"nprobe": 10}},
-            limit=top_k,
-            output_fields=["title", "content", "source"],
-        )
         """
-        logger.debug("dense_search (stub): top_k={}", top_k)
-        return []
+        try:
+            import asyncio
+            from pymilvus import Collection
+
+            def _search() -> list[dict]:
+                results = self._milvus_client.search(
+                    data=[query_embedding.tolist()],
+                    anns_field="embedding",
+                    param={"metric_type": "COSINE", "params": {"nprobe": 10}},
+                    limit=top_k,
+                    output_fields=["title", "content", "source"],
+                )
+                docs = []
+                for hits in results:
+                    for hit in hits:
+                        entity = hit.entity
+                        docs.append({
+                            "title": entity.get("title", ""),
+                            "content": entity.get("content", ""),
+                            "source": entity.get("source", ""),
+                            "score": float(hit.score),
+                        })
+                return docs
+
+            docs = await asyncio.to_thread(_search)
+            logger.debug("Milvus 返回 {} 条结果", len(docs))
+            return docs
+        except Exception as e:
+            logger.warning("Milvus 检索失败: {}", e)
+            return []
 
     async def _sparse_search(self, query: str, top_k: int = 5) -> list[dict]:
         """
         BM25 稀疏检索。
-
-        TODO: 实现 BM25
-        - 构建倒排索引
-        - 分词（jieba）
-        - 计算 BM25 分数
         """
-        logger.debug("sparse_search (stub): query={}, top_k={}", query[:30], top_k)
-        return []
+        if self._bm25 is None:
+            logger.debug("BM25 未构建索引，跳过稀疏检索")
+            return []
+
+        try:
+            import asyncio
+            def _score() -> list[dict]:
+                scores = self._bm25.score(query)
+                # 合并文档信息
+                ranked = []
+                for doc, score in zip(self._docs, scores):
+                    if score > 0:
+                        ranked.append({
+                            **doc,
+                            "score": float(score),
+                        })
+                ranked.sort(key=lambda d: d["score"], reverse=True)
+                return ranked[:top_k]
+
+            results = await asyncio.to_thread(_score)
+            logger.debug("BM25 返回 {} 条结果", len(results))
+            return results
+        except Exception as e:
+            logger.warning("BM25 检索失败: {}", e)
+            return []
 
     @staticmethod
     def _rrf_fusion(

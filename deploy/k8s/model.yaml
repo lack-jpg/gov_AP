@@ -1,7 +1,78 @@
 # =====================================================
-# model.yaml - Model Service Deployment (GPU)
+# model.yaml - Model Inference Service Deployment (GPU)
 # Author: le
-# Date: 2026/7/29
-# Version: 0.1
-# Task: Kubernetes Deployment for vLLM model inference service
+# Date: 2026/8/2
+# Version: 0.2
+# Task: Kubernetes Deployment for model inference services (vLLM / embedding / reranker)
+#
+# 说明:
+#   - 生产环境建议用 vLLM 部署 LLM（OpenAI 兼容 /v1 接口）
+#   - Embedding / Reranker 模型通过挂载 models/ 卷在应用进程内加载
+#   - 此 manifest 描述独立的模型推理服务（可选）
+#
+# Usage:
+#   kubectl apply -f model.yaml
 # =====================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gov-agent-model
+  namespace: gov-agent
+  labels:
+    app: gov-agent
+    component: model
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gov-agent
+      component: model
+  template:
+    metadata:
+      labels:
+        app: gov-agent
+        component: model
+    spec:
+      # GPU 节点调度（如集群有 GPU）
+      # nodeSelector:
+      #   gpu: "true"
+      containers:
+        - name: model
+          image: gov-agent-platform/model:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8003
+              name: http
+          env:
+            - name: LLM_MODEL
+              value: "Qwen/Qwen2.5-14B-Instruct"
+            - name: EMBEDDING_MODEL
+              value: "BAAI/bge-large-zh-v1.5"
+            - name: RERANKER_MODEL
+              value: "BAAI/bge-reranker-v2-m3"
+          resources:
+            requests:
+              cpu: "2"
+              memory: 8Gi
+            limits:
+              cpu: "4"
+              memory: 16Gi
+              # nvidia.com/gpu: "1"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gov-agent-model
+  namespace: gov-agent
+  labels:
+    app: gov-agent
+    component: model
+spec:
+  selector:
+    app: gov-agent
+    component: model
+  ports:
+    - port: 8003
+      targetPort: 8003
+      name: http
+  type: ClusterIP

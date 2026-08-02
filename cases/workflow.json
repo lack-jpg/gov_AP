@@ -1,8 +1,25 @@
-{
-  "_description": "workflow.json - Workflow scenario test case",
-  "_author": "le",
-  "_date": "2026/7/29",
-  "_version": "0.1",
-  "_task": "Test case: end-to-end business workflow execution",
-  "cases": []
-}
+[
+  {
+    "_description": "workflow.json - End-to-end business workflow execution test cases",
+    "_author": "le",
+    "_date": "2026/8/2",
+    "_version": "0.2",
+    "_task": "Test cases for end-to-end business workflow execution",
+    "cases": [
+      {
+        "id": "wf_001",
+        "query": "我想开一家火锅店，帮我办手续",
+        "expected_intent": "restaurant_license",
+        "expected_tools": ["search_policy", "check_material", "create_case"],
+        "expected_answer": ["营业执照", "食品经营许可证"]
+      },
+      {
+        "id": "wf_002",
+        "query": "查询公积金并申请贷款",
+        "expected_intent": "fund_query",
+        "expected_tools": ["search_policy", "create_case"],
+        "expected_answer": ["公积金"]
+      }
+    ]
+  }
+]
