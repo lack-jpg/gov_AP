@@ -44,4 +44,4 @@ EXPOSE 12300 12301 12302 12303
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:12300/health || exit 1
 
-CMD ["python", "tools/mcp/start_servers.py"]
+CMD ["python", "-m", "tools.mcp.start_servers"]

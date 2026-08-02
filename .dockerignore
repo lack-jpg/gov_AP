@@ -1,0 +1,35 @@
+# =====================================================
+# .dockerignore - 排除构建上下文中的非必要/敏感文件
+# =====================================================
+
+# ── 版本控制 ──
+.git
+.gitignore
+
+# ── 密钥/配置（运行时通过 compose environment 注入） ──
+.env
+
+# ── 模型/数据（通过 compose volumes 挂载，避免打进镜像） ──
+models/
+data/
+
+# ── Python 缓存 ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── 测试/文档/产物 ──
+tests/
+evaluation_results/
+*.md
+*.log
+
+# ── IDE/系统 ──
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

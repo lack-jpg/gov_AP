@@ -94,6 +94,12 @@ class MCPGateway:
             description="MCP 统一网关 — 路由、审计、服务发现",
         )
 
+        # 根路径健康检查（供容器 healthcheck 使用，避免依赖各 Server 状态）
+        @app.get("/health")
+        async def root_health():
+            """简单健康检查 — 仅确认 Gateway 进程存活"""
+            return {"status": "healthy", "gateway": "MCP Gateway v0.2.0"}
+
         router = APIRouter(prefix="/api")
 
         @router.post("/tools/list")

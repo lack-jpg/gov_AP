@@ -1,22 +1,26 @@
 # =====================================================
 # docker-compose.yml - Government Agent Platform
 # Author: le
-# Date: 2026/7/30
-# Version: 0.2
-# Task: Docker Compose orchestration for all infrastructure services
-# =====================================================
-# Services: postgres (pgvector), redis, milvus-standalone
+# Date: 2026/8/2
+# Version: 0.3
+# Task: Docker Compose orchestration for all services
 #
-# Port convention (all offset +2):
-#   PostgreSQL → 5434  (standard 5432 + 2)
-#   Redis       → 6480  (6380-6479 blocked by Windows excluded port range)
-#   Milvus      → 19532 (standard 19530 + 2)
+# 位置说明: 放在仓库根目录，`docker compose up -d` 直接可用。
+# 密码从同目录 .env 读取（POSTGRES_PASSWORD / REDIS_PASSWORD），
+# 不再硬编码。
+#
+# 端口约定（宿主端口）:
+#   API         8002
+#   MCP Gateway 12300 | Servers 12301-12303
+#   PostgreSQL  5434  (标准 5432 + 2)
+#   Redis       6480  (6380-6479 blocked by Windows)
+#   Milvus      19532 (标准 19530 + 2)
 #
 # Usage:
-#   docker compose up -d              # 启动所有服务
-#   docker compose ps                  # 查看运行状态
-#   docker compose down               # 停止并清理
-#   docker compose down -v            # 停止并删除数据卷
+#   docker compose config        # 校验配置
+#   docker compose up -d         # 启动所有服务
+#   docker compose ps            # 查看状态
+#   docker compose down -v       # 停止并删除数据卷
 # =====================================================
 
 services:
@@ -26,25 +30,35 @@ services:
   # ──────────────────────────────────────
   api:
     build:
-      context: ..
+      context: .
       dockerfile: deploy/Dockerfile
     container_name: gov_agent_api
     restart: unless-stopped
     ports:
-      - "8002:8002"
+      - "${APP_PORT:-8002}:8002"
     environment:
       APP_PORT: 8002
+      # LLM（从 .env 注入，密钥不写入镜像）
+      LLM_API_URL: ${LLM_API_URL:-http://localhost:8000/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5-14b-instruct}
+      # 容器间通过服务名通信
       POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-gov_agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: ${POSTGRES_DB:-gov_agent_platform}
       REDIS_HOST: redis
-      REDIS_PORT: 6379
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       MILVUS_HOST: milvus
-      MILVUS_PORT: 19530
+      MILVUS_PORT: "19530"
       MCP_GATEWAY_URL: http://mcp-server:12300
       A2A_CALLBACK_URL: http://api:8002/api/a2a/callback
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-changeme}
     volumes:
-      - ../models:/app/models
-      - ../data:/app/data
+      - ./models:/app/models
+      - ./data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,7 +76,7 @@ services:
   # ──────────────────────────────────────
   mcp-server:
     build:
-      context: ..
+      context: .
       dockerfile: deploy/Dockerfile.mcp
     container_name: gov_agent_mcp
     restart: unless-stopped
@@ -82,15 +96,15 @@ services:
     container_name: gov_agent_postgres
     restart: unless-stopped
     ports:
-      - "5434:5432"
+      - "${POSTGRES_PORT:-5434}:5432"
     environment:
-      POSTGRES_USER: gov_agent
-      POSTGRES_PASSWORD: changeme
-      POSTGRES_DB: gov_agent_platform
+      POSTGRES_USER: ${POSTGRES_USER:-gov_agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: ${POSTGRES_DB:-gov_agent_platform}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gov_agent -d gov_agent_platform"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gov_agent} -d ${POSTGRES_DB:-gov_agent_platform}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -99,18 +113,19 @@ services:
       - gov_agent_net
 
   # ──────────────────────────────────────
-  # Redis 7
+  # Redis 7 (支持密码)
   # ──────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: gov_agent_redis
     restart: unless-stopped
+    command: ["sh", "-c", "redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}"]
     ports:
-      - "6480:6379"
+      - "${REDIS_PORT:-6500}:6379"
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "sh", "-c", "redis-cli ${REDIS_PASSWORD:+-a ${REDIS_PASSWORD}} ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -126,7 +141,7 @@ services:
     container_name: gov_agent_milvus
     restart: unless-stopped
     ports:
-      - "19532:19530"
+      - "${MILVUS_PORT:-19532}:19530"
       - "9091:9091"
     command: ["milvus", "run", "standalone"]
     environment:

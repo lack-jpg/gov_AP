@@ -598,6 +598,8 @@ gov_AP/
 ├── .env.example                      # 环境变量模板
 ├── .gitignore                        # Git忽略规则
 ├── example.py                        # 文件头模板
+├── docker-compose.yml                # Docker编排（根目录，docker compose up 直接可用）
+├── .dockerignore                     # Docker构建上下文排除
 │
 ├── agents/                           # Agent层 — 6个专业Agent
 │   ├── __init__.py                   # Agent注册中心
@@ -733,7 +735,6 @@ gov_AP/
 │
 ├── deploy/                           # 部署配置
 │   ├── Dockerfile                    # Docker镜像
-│   ├── docker-compose.yml            # Docker编排
 │   └── k8s/                          # Kubernetes
 │       ├── backend.yaml              # 后端Deployment
 │       ├── agent.yaml                # Agent Runtime
@@ -1668,7 +1669,7 @@ governance_node（末尾节点）
   tools/a2a/protocol.py → task.py → connector.py → callback.py
 
 第六优先级（生产化）:
-  deploy/Dockerfile → docker-compose.yml
+  deploy/Dockerfile → docker-compose.yml（根目录）
   governance/dashboard.py → monitor.py
 ```
 
