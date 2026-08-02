@@ -28,6 +28,9 @@ env/
 
 # Environment
 .env
+
+# 项目内部计划（不推送 GitHub）
+PLAN.md
 *.env.local
 
 # OS

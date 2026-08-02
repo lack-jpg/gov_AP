@@ -823,12 +823,12 @@ python >=3.12
 
 | 服务 | 端口 | 说明 |
 |------|------|------|
-| Frontend | **12345** | Vite/Next.js 开发服务器 |
+| Frontend | **12315** | Streamlit 前端界面 |
 | FastAPI | **8002** | 后端 API（8000 + 2） |
 | MCP Gateway | **12300** | 后续 Server 依次 +1 |
 | A2A Callback | **12200** | 后续 Connector 依次 +1 |
 | PostgreSQL | **5434** | 5432 + 2 |
-| Redis | **6381** | 6379 + 2 |
+| Redis | **6500** | 避开 Windows 保留端口区间 |
 | Milvus | **19532** | 19530 + 2 |
 | OpenTelemetry | **4319** | 4317 + 2 |
 
