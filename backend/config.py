@@ -121,6 +121,16 @@ class Settings(BaseSettings):
         alias="INTENT_MODEL_PATH",
         description="意图分类Bert模型本地路径",
     )
+    ocr_model_path: str = Field(
+        default="",
+        alias="OCR_MODEL_PATH",
+        description="PaddleOCR 模型本地路径（空则使用默认）",
+    )
+    ner_model_path: str = Field(
+        default="",
+        alias="NER_MODEL_PATH",
+        description="BERT-NER 命名实体识别模型本地路径（空则使用regex模式）",
+    )
 
     # ── PostgreSQL ──
     postgres_host: str = Field(

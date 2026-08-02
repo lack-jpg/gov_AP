@@ -8,6 +8,7 @@ Task: Implement node functions (supervisor_node, intent_node, policy_node, etc.)
 """
 from __future__ import annotations
 
+import time
 from typing import Optional
 
 from langchain_core.language_models import BaseChatModel
@@ -25,13 +26,24 @@ from orchestration.langgraph.state import (
     MCPCallStatus,
     NodeName,
     PolicyResult,
+    RiskLevel,
     TaskStatus,
     update_current_agent,
     transition_to,
     set_error,
+    set_final_answer,
     add_evidence,
     record_mcp_call,
 )
+from governance.trace import (
+    AgentTracer,
+    SpanKind,
+    start_trace,
+    end_trace,
+    get_current_trace,
+    get_trace_recorder,
+)
+from governance.monitor import get_collector, record_agent_call
 
 logger = get_logger(__name__)
 
@@ -66,11 +78,39 @@ async def supervisor_node(
     state = update_current_agent(state, AgentName.SUPERVISOR)
     state = transition_to(state, NodeName.SUPERVISOR)
 
+    # 首次进入时建立顶层 trace（避免多次回访重置 trace）
+    if get_current_trace() is None:
+        start_trace(user_query=state.get("user_query", ""))
+
+    _start = time.perf_counter()
     try:
-        state = await supervisor.orchestrate(state)
+        async with AgentTracer.span(
+            agent_name=AgentName.SUPERVISOR.value,
+            kind=SpanKind.AGENT,
+            node_name=NodeName.SUPERVISOR.value,
+            input_data=state.get("user_query", "")[:500],
+        ) as span:
+            state = await supervisor.orchestrate(state)
+            span.record_output(
+                f"task_plan={len(state.get('task_plan', []))} "
+                f"final_answer_len={len(state.get('final_answer', ''))}"
+            )
+
+        record_agent_call(
+            AgentName.SUPERVISOR.value,
+            success=True,
+            latency_ms=(time.perf_counter() - _start) * 1000.0,
+            trace_id=state.get("trace_id"),
+        )
     except Exception as e:
         logger.error(f"Supervisor orchestrate failed: {e}", exc_info=True)
         state = set_error(state, f"Supervisor orchestrate error: {e}")
+        record_agent_call(
+            AgentName.SUPERVISOR.value,
+            success=False,
+            latency_ms=(time.perf_counter() - _start) * 1000.0,
+            trace_id=state.get("trace_id"),
+        )
 
     return state
 
@@ -100,30 +140,50 @@ async def intent_node(
     state = update_current_agent(state, AgentName.INTENT)
     state = transition_to(state, NodeName.INTENT)
 
+    _start = time.perf_counter()
     try:
-        user_query = state.get("user_query", "")
+        async with AgentTracer.span(
+            agent_name=AgentName.INTENT.value,
+            kind=SpanKind.AGENT,
+            node_name=NodeName.INTENT.value,
+            input_data=state.get("user_query", "")[:500],
+        ) as span:
+            user_query = state.get("user_query", "")
 
-        # TODO: 替换为真实的BERT分类器 + LLM fallback
-        # from agents.intent.classifier import IntentClassifier
-        # from agents.intent.agent import IntentAgent
-        # agent = IntentAgent(classifier=classifier, llm=llm)
-        # result = await agent.classify(user_query)
+            # TODO: 替换为真实的BERT分类器 + LLM fallback
+            # from agents.intent.classifier import IntentClassifier
+            # from agents.intent.agent import IntentAgent
+            # agent = IntentAgent(classifier=classifier, llm=llm)
+            # result = await agent.classify(user_query)
 
-        # Stub: 简单的关键词匹配
-        intent_label = _stub_intent_classify(user_query)
+            # Stub: 简单的关键词匹配
+            intent_label = _stub_intent_classify(user_query)
 
-        intent_result = IntentResult(
-            label=intent_label,
-            label_name="",
-            confidence=0.85,
-            source="stub",
+            intent_result = IntentResult(
+                label=intent_label,
+                label_name="",
+                confidence=0.85,
+                source="stub",
+            )
+            from orchestration.langgraph.state import set_intent
+            state = set_intent(state, intent_result)
+            span.record_output(f"intent={intent_label} confidence=0.85")
+
+        record_agent_call(
+            AgentName.INTENT.value,
+            success=True,
+            latency_ms=(time.perf_counter() - _start) * 1000.0,
+            trace_id=state.get("trace_id"),
         )
-        from orchestration.langgraph.state import set_intent
-        state = set_intent(state, intent_result)
-
     except Exception as e:
         logger.error(f"Intent classification failed: {e}", exc_info=True)
         state = set_error(state, f"Intent classification error: {e}")
+        record_agent_call(
+            AgentName.INTENT.value,
+            success=False,
+            latency_ms=(time.perf_counter() - _start) * 1000.0,
+            trace_id=state.get("trace_id"),
+        )
 
     return state
 
@@ -169,6 +229,7 @@ async def policy_node(
     state = update_current_agent(state, AgentName.POLICY)
     state = transition_to(state, NodeName.POLICY)
 
+    _start = time.perf_counter()
     try:
         user_query = state.get("user_query", "")
         intent = state.get("intent", "")
@@ -220,6 +281,12 @@ async def policy_node(
                     updated_plan.append(t)
                 state["task_plan"] = updated_plan
 
+                record_agent_call(
+                    AgentName.POLICY.value,
+                    success=True,
+                    latency_ms=(time.perf_counter() - _start) * 1000.0,
+                    trace_id=state.get("trace_id"),
+                )
                 return state
 
             except Exception as e:
@@ -257,9 +324,22 @@ async def policy_node(
         )
         state = record_mcp_call(state, mcp)
 
+        record_agent_call(
+            AgentName.POLICY.value,
+            success=True,
+            latency_ms=(time.perf_counter() - _start) * 1000.0,
+            trace_id=state.get("trace_id"),
+        )
+
     except Exception as e:
         logger.error(f"Policy search failed: {e}", exc_info=True)
         state = set_error(state, f"Policy search error: {e}")
+        record_agent_call(
+            AgentName.POLICY.value,
+            success=False,
+            latency_ms=(time.perf_counter() - _start) * 1000.0,
+            trace_id=state.get("trace_id"),
+        )
 
     return state
 
@@ -337,6 +417,7 @@ async def material_node(
     state = transition_to(state, NodeName.MATERIAL)
 
     try:
+        _start = time.perf_counter()
         intent = state.get("intent", "business_license")
 
         # Phase 2: 通过 MCP Client 调用 Material Server
@@ -375,6 +456,12 @@ async def material_node(
                     updated_plan.append(t)
                 state["task_plan"] = updated_plan
 
+                record_agent_call(
+                    AgentName.MATERIAL.value,
+                    success=True,
+                    latency_ms=(time.perf_counter() - _start) * 1000.0,
+                    trace_id=state.get("trace_id"),
+                )
                 return state
 
             except Exception as e:
@@ -403,9 +490,22 @@ async def material_node(
             updated_plan.append(t)
         state["task_plan"] = updated_plan
 
+        record_agent_call(
+            AgentName.MATERIAL.value,
+            success=True,
+            latency_ms=(time.perf_counter() - _start) * 1000.0,
+            trace_id=state.get("trace_id"),
+        )
+
     except Exception as e:
         logger.error(f"Material check failed: {e}", exc_info=True)
         state = set_error(state, f"Material check error: {e}")
+        record_agent_call(
+            AgentName.MATERIAL.value,
+            success=False,
+            latency_ms=(time.perf_counter() - _start) * 1000.0,
+            trace_id=state.get("trace_id"),
+        )
 
     return state
 
@@ -438,6 +538,7 @@ async def workflow_node(
     state = transition_to(state, NodeName.WORKFLOW)
 
     try:
+        _start = time.perf_counter()
         intent = state.get("intent", "unknown")
 
         # Phase 2: 通过 MCP Client 调用 Workflow Server
@@ -471,6 +572,12 @@ async def workflow_node(
                     updated_plan.append(t)
                 state["task_plan"] = updated_plan
 
+                record_agent_call(
+                    AgentName.WORKFLOW.value,
+                    success=True,
+                    latency_ms=(time.perf_counter() - _start) * 1000.0,
+                    trace_id=state.get("trace_id"),
+                )
                 return state
 
             except Exception as e:
@@ -507,9 +614,22 @@ async def workflow_node(
             updated_plan.append(t)
         state["task_plan"] = updated_plan
 
+        record_agent_call(
+            AgentName.WORKFLOW.value,
+            success=True,
+            latency_ms=(time.perf_counter() - _start) * 1000.0,
+            trace_id=state.get("trace_id"),
+        )
+
     except Exception as e:
         logger.error(f"Workflow execution failed: {e}", exc_info=True)
         state = set_error(state, f"Workflow execution error: {e}")
+        record_agent_call(
+            AgentName.WORKFLOW.value,
+            success=False,
+            latency_ms=(time.perf_counter() - _start) * 1000.0,
+            trace_id=state.get("trace_id"),
+        )
 
     return state
 
@@ -524,46 +644,127 @@ async def governance_node(
     llm: Optional[BaseChatModel] = None,
 ) -> AgentState:
     """
-    Governance节点 — 安全检查。
+    Governance节点 — 安全护栏检查（真实实现）。
 
-    当前为stub实现（默认通过）。
-    完整实现需要接入PII检测、Prompt Injection检测、敏感词过滤。
+    执行顺序:
+        1. 输入护栏 — PII 检测 + Prompt Injection 检测 + 敏感词过滤
+        2. 输出护栏 — 错误泄露检测 + 密钥泄露检测 + Prompt 泄露检测 + 输出过滤
+        3. 阻断决策 — 根据严重等级决定 block/通过
+        4. 风险标记 — 更新 state["risk_level"] + 记录 metrics
 
     Args:
-        state: 当前AgentState
-        llm: LLM实例
-
-    Returns:
-        更新后的AgentState
+        state: 当前 AgentState
+        llm: LLM 实例（保留接口兼容）
     """
     state = update_current_agent(state, AgentName.GOVERNANCE)
     state = transition_to(state, NodeName.GOVERNANCE)
 
+    _start = time.perf_counter()
     try:
-        # TODO: 替换为真实的Governance Agent
-        # from agents.governance.security import SecurityChecker
-        # from governance.guardrail import Guardrail
-        # from governance.pii import PIIDesensitizer
+        async with AgentTracer.span(
+            agent_name=AgentName.GOVERNANCE.value,
+            kind=SpanKind.AGENT,
+            node_name=NodeName.GOVERNANCE.value,
+        ) as span:
+            from governance.guardrail import GuardrailRunner, GuardType
+            from governance.pii import detect_pii
 
-        from orchestration.langgraph.state import GuardrailResult
+            user_query = state.get("user_query", "")
+            final_answer = state.get("final_answer", "")
 
-        final_answer = state.get("final_answer", "")
+            # ── 1. 输入护栏 ──
+            runner = GuardrailRunner()
+            input_result = runner.run_input(user_query)
 
-        # Stub: 默认通过
-        guard = GuardrailResult(
+            # ── 2. PII 检测（独立于 guardrail，获取详细匹配列表） ──
+            pii_result = detect_pii(user_query)
+
+            # ── 3. 输出护栏 ──
+            output_result = None
+            if final_answer:
+                output_result = runner.run_output(final_answer)
+                # 使用过滤后的输出替换原回答
+                if output_result.output_text and output_result.output_text != final_answer:
+                    state = set_final_answer(state, output_result.output_text)
+
+            # ── 4. 合并结果 ──
+            # 以 governance.guardrail.GuardrailResult.to_dict() 为基底（必含 blocked 键）
+            merged = input_result
+            if output_result:
+                merged.output_findings = output_result.output_findings
+                merged.output_text = output_result.output_text
+                if not output_result.passed:
+                    merged.passed = False
+                    if output_result.blocked:
+                        merged.blocked = True
+                        merged.block_reason = merged.block_reason or output_result.block_reason
+
+            safety = merged.to_dict()  # 含: passed, blocked, block_reason, highest_severity 等
+            # 补充 state.py GuardrailResult schema 兼容字段
+            safety["pii_detected"] = [m.pii_type.value for m in pii_result.matches]
+            safety["injection_detected"] = any(
+                f.guard_type == GuardType.INJECTION for f in input_result.input_findings
+            )
+            safety["sensitive_words"] = [
+                f.matched_text for f in input_result.input_findings
+                if f.guard_type == GuardType.SENSITIVE
+            ]
+            safety["reason"] = merged.block_reason
+            safety["passed"] = merged.passed and not merged.blocked
+            state["safety_check"] = safety
+
+            # ── 5. 风险等级 + 护栏阻断指标 ──
+            if merged.blocked:
+                state["risk_level"] = RiskLevel.HIGH.value
+                get_collector().record_guardrail_block(
+                    ",".join(
+                        f.guard_type.value
+                        for f in merged.all_findings
+                        if f.severity.value in ("high", "critical")
+                    ) or "unknown",
+                    merged.highest_severity.value if merged.highest_severity else "medium",
+                )
+                span.set_risk_level("high")
+            else:
+                state["risk_level"] = RiskLevel.LOW.value
+
+            # 将输出过滤后的安全结果写入 final_answer（若有发现则附加提示）
+            if output_result and not merged.blocked:
+                out_filtered = output_result.output_text or final_answer
+                if out_filtered != final_answer:
+                    state = set_final_answer(state, out_filtered)
+
+            span.record_output(str(safety)[:500])
+
+        record_agent_call(
+            AgentName.GOVERNANCE.value,
+            success=True,
+            latency_ms=(time.perf_counter() - _start) * 1000.0,
+            trace_id=state.get("trace_id"),
+        )
+
+    except Exception as e:
+        logger.error(f"Governance check failed: {e}", exc_info=True)
+        state = set_error(state, f"Governance check error: {e}")
+        # 异常时保持低风险，不做 block（避免误杀）
+        from orchestration.langgraph.state import GuardrailResult as StateGuardrailResult
+        state["safety_check"] = StateGuardrailResult(
             passed=True,
             pii_detected=[],
             injection_detected=False,
             sensitive_words=[],
             blocked=False,
-            reason=None,
+            reason=f"Governance 异常自动放行: {e}",
+        ).model_dump()
+        record_agent_call(
+            AgentName.GOVERNANCE.value,
+            success=False,
+            latency_ms=(time.perf_counter() - _start) * 1000.0,
+            trace_id=state.get("trace_id"),
         )
-
-        state["safety_check"] = guard.model_dump()
-
-    except Exception as e:
-        logger.error(f"Governance check failed: {e}", exc_info=True)
-        state = set_error(state, f"Governance check error: {e}")
+    finally:
+        # 顶层 trace 收口（governance 是最后一个节点）
+        end_trace()
 
     return state
 
@@ -603,6 +804,7 @@ async def a2a_node(
     """
     state = transition_to(state, NodeName.A2A_CHECK)
 
+    _start = time.perf_counter()
     try:
         intent = state.get("intent", "")
         user_query = state.get("user_query", "")
@@ -671,9 +873,22 @@ async def a2a_node(
                 status=result.get("status", "?"),
             )
 
+        record_agent_call(
+            "a2a",
+            success=True,
+            latency_ms=(time.perf_counter() - _start) * 1000.0,
+            trace_id=state.get("trace_id"),
+        )
+
     except Exception as e:
         logger.error(f"A2A node failed: {e}", exc_info=True)
         state = set_error(state, f"A2A node error: {e}")
+        record_agent_call(
+            "a2a",
+            success=False,
+            latency_ms=(time.perf_counter() - _start) * 1000.0,
+            trace_id=state.get("trace_id"),
+        )
 
     return state
 

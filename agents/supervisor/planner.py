@@ -16,6 +16,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.supervisor.prompts import PLANNER_SYSTEM_PROMPT, PLANNER_USER_PROMPT
+from prompts.registry import get_registry
 from orchestration.langgraph.state import AgentState, Task, TaskStatus, RiskLevel
 
 
@@ -113,13 +114,21 @@ class Planner:
         """使用LLM生成任务规划"""
         assert self._llm is not None
 
-        system_msg = SystemMessage(content=PLANNER_SYSTEM_PROMPT.format(
-            intent=state.get("intent", "unknown"),
-            context=self._build_context(state),
-        ))
-        user_msg = HumanMessage(content=PLANNER_USER_PROMPT.format(
-            user_query=state.get("user_query", ""),
-        ))
+        intent_v = state.get("intent", "unknown")
+        context_v = self._build_context(state)
+        query_v = state.get("user_query", "")
+
+        # Prompt Registry 优先，硬编码常量 fallback
+        try:
+            registry = get_registry()
+            system_content = registry.render("PLANNER_SYSTEM_PROMPT", intent=intent_v, context=context_v)
+            user_content = registry.render("PLANNER_USER_PROMPT", user_query=query_v)
+        except Exception:
+            system_content = PLANNER_SYSTEM_PROMPT.format(intent=intent_v, context=context_v)
+            user_content = PLANNER_USER_PROMPT.format(user_query=query_v)
+
+        system_msg = SystemMessage(content=system_content)
+        user_msg = HumanMessage(content=user_content)
 
         response = await self._llm.ainvoke([system_msg, user_msg])
         content = self._extract_text(response)

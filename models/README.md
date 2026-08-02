@@ -15,6 +15,7 @@
 | bert-intent | 意图分类 | 自训练 | ~400 MB | `intent/bert-intent/` |
 | intent-v1 | 意图分类 v1（微调） | 自训练 | ~400 MB | `fine_tuned/intent-v1/` |
 | ner | 命名实体识别（微调） | 自训练 | ~400 MB | `fine_tuned/ner/` |
+| paddleocr | OCR 文字识别 | PaddlePaddle | ~200 MB | `ocr/paddleocr/` |
 
 ---
 
@@ -43,6 +44,25 @@ modelscope download --model BAAI/bge-large-zh-v1.5 --local_dir models/embedding/
 
 # Reranker 模型
 modelscope download --model BAAI/bge-reranker-v2-m3 --local_dir models/reranker/bge-reranker-v2-m3
+```
+
+### PaddleOCR 模型
+
+```bash
+# PaddleOCR 模型会自动下载到 ~/.paddleocr/ 目录
+pip install paddleocr
+# 首次调用时会自动下载 det + rec + cls 模型（约 200 MB）
+```
+
+### BERT-NER 模型
+
+```bash
+# 方式一：HuggingFace 微调模型
+huggingface-cli download uer/roberta-base-finetuned-cluener2020-chinese --local-dir models/fine_tuned/ner
+
+# 方式二：使用通用中文 NER
+# 在代码中传入 model_path="uer/roberta-base-finetuned-cluener2020-chinese"
+# 并设置 auto_download=True 即可自动下载
 ```
 
 ### 方式三：Python 脚本
@@ -83,6 +103,8 @@ MODELS_DIR=models                              # 模型根目录（相对于项�
 EMBEDDING_MODEL_PATH=models/embedding/bge-large-zh-v1.5
 RERANKER_MODEL_PATH=models/reranker/bge-reranker-v2-m3
 INTENT_MODEL_PATH=models/intent/bert-intent
+OCR_MODEL_PATH=                                # PaddleOCR 模型路径（空则自动）
+NER_MODEL_PATH=models/fine_tuned/ner           # BERT-NER 模型路径（空则用regex）
 ```
 
 默认值即可使用，无需修改（除非模型放在项目外）。

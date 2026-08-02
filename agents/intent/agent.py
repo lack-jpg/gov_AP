@@ -15,6 +15,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.intent.classifier import IntentClassifier
 from agents.intent.prompts import INTENT_CLASSIFICATION_PROMPT, FEW_SHOT_EXAMPLES
+from prompts.registry import get_registry
 from agents.intent.schema import IntentResult
 from orchestration.langgraph.state import AgentState
 from tools.logger import get_logger
@@ -126,8 +127,14 @@ class IntentAgent:
         """使用 LLM 进行意图分类"""
         assert self._llm is not None
 
-        prompt = INTENT_CLASSIFICATION_PROMPT.format(user_query=text)
-        system_msg = SystemMessage(content=prompt + "\n" + FEW_SHOT_EXAMPLES)
+        # Prompt Registry 优先，硬编码常量 fallback
+        try:
+            registry = get_registry()
+            prompt = registry.render("INTENT_CLASSIFIER_PROMPT", user_query=text)
+        except Exception:
+            prompt = INTENT_CLASSIFICATION_PROMPT.format(user_query=text) + "\n" + FEW_SHOT_EXAMPLES
+
+        system_msg = SystemMessage(content=prompt)
         user_msg = HumanMessage(content=text)
 
         response = await self._llm.ainvoke([system_msg, user_msg])

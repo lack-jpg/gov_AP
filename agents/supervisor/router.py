@@ -16,6 +16,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.supervisor.prompts import ROUTER_SYSTEM_PROMPT, ROUTER_USER_PROMPT
+from prompts.registry import get_registry
 from orchestration.langgraph.state import AgentName, Task
 
 
@@ -133,11 +134,22 @@ class Router:
         """使用LLM判断任务应该路由到哪个Agent"""
         assert self._llm is not None
 
-        system_msg = SystemMessage(content=ROUTER_SYSTEM_PROMPT)
-        user_msg = HumanMessage(content=ROUTER_USER_PROMPT.format(
-            task_type=task.type,
-            task_description=task.description or "无描述",
-        ))
+        # Prompt Registry 优先，硬编码常量 fallback
+        try:
+            registry = get_registry()
+            system_content = registry.render("ROUTER_SYSTEM_PROMPT")
+            user_content = registry.render("ROUTER_USER_PROMPT",
+                                           task_type=task.type,
+                                           task_description=task.description or "无描述")
+        except Exception:
+            system_content = ROUTER_SYSTEM_PROMPT
+            user_content = ROUTER_USER_PROMPT.format(
+                task_type=task.type,
+                task_description=task.description or "无描述",
+            )
+
+        system_msg = SystemMessage(content=system_content)
+        user_msg = HumanMessage(content=user_content)
 
         response = await self._llm.ainvoke([system_msg, user_msg])
         content = self._extract_text(response)

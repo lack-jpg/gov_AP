@@ -15,6 +15,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.policy.schema import PolicyResult, PolicyEvidence
 from agents.policy.prompts import POLICY_RAG_PROMPT
+from prompts.registry import get_registry
 from orchestration.langgraph.state import AgentState
 from tools.logger import get_logger
 
@@ -121,7 +122,14 @@ class PolicyAgent:
         """使用 LLM 生成回答（无 RAG 库时作为兜底）"""
         assert self._llm is not None
 
-        system_msg = SystemMessage(content=POLICY_RAG_PROMPT)
+        # Prompt Registry 优先，硬编码常量 fallback
+        try:
+            registry = get_registry()
+            system_content = registry.render("POLICY_RAG_PROMPT", user_query=query, context="")
+        except Exception:
+            system_content = POLICY_RAG_PROMPT
+
+        system_msg = SystemMessage(content=system_content)
         user_msg = HumanMessage(content=f"查询: {query}\n请基于政策知识回答。")
 
         response = await self._llm.ainvoke([system_msg, user_msg])
