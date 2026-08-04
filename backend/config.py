@@ -54,7 +54,7 @@ class Settings(BaseSettings):
         description="FastAPI监听端口（默认 8002，避免与本地 8000 冲突）",
     )
     frontend_port: int = Field(
-        default=12315,
+        default=12345,
         alias="FRONTEND_PORT",
         description="前端开发服务器端口（Streamlit / Vite / Next.js）",
     )
@@ -139,7 +139,7 @@ class Settings(BaseSettings):
         description="PostgreSQL主机地址",
     )
     postgres_port: int = Field(
-        default=5434,
+        default=5658,
         alias="POSTGRES_PORT",
         description="PostgreSQL端口（默认 5434，避免与本地 5432 冲突）",
     )

@@ -1,40 +1,745 @@
 [
   {
-    "_description": "rag_cases.json - RAG retrieval and generation golden dataset",
+    "_description": "RAG retrieval and generation golden dataset",
     "_author": "le",
-    "_date": "2026/8/2",
-    "_version": "0.2",
-    "_task": "Golden dataset for RAG retrieval and generation evaluation",
+    "_date": "2026/8/4",
+    "_version": "0.3",
+    "_task": "RAG retrieval and generation golden dataset",
+    "_count": 80,
     "cases": [
       {
-        "id": "rag_001",
-        "query": "开办餐馆需要办理哪些证照",
+        "id": "rag_0001",
+        "query": "变更个体户执照需要什么手续",
+        "expected_intent": "business_license",
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "rag_0002",
+        "query": "营业执照的经营期限怎么填",
+        "expected_intent": "business_license",
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "rag_0003",
+        "query": "申请企业执照需要什么流程",
+        "expected_intent": "business_license",
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "rag_0004",
+        "query": "营业执照的注册号从哪里查",
+        "expected_intent": "business_license",
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "rag_0005",
+        "query": "办理电子营业执照需要什么证件",
+        "expected_intent": "business_license",
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "rag_0006",
+        "query": "办理个体户执照需要什么证明",
+        "expected_intent": "business_license",
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "rag_0007",
+        "query": "营业执照办理地点是工商局吗",
+        "expected_intent": "business_license",
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "rag_0008",
+        "query": "营业执照被盗用了怎么办",
+        "expected_intent": "business_license",
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "rag_0009",
+        "query": "开办火锅店需要什么条件",
         "expected_intent": "restaurant_license",
-        "expected_answer": ["食品经营许可证", "营业执照"]
+        "expected_answer": [
+          "食品经营许可证",
+          "营业执照"
+        ]
       },
       {
-        "id": "rag_002",
-        "query": "企业注册需要哪些材料",
+        "id": "rag_0010",
+        "query": "开办面馆需要什么手续",
+        "expected_intent": "restaurant_license",
+        "expected_answer": [
+          "食品经营许可证",
+          "营业执照"
+        ]
+      },
+      {
+        "id": "rag_0011",
+        "query": "餐饮店可以在居民楼下开吗",
+        "expected_intent": "restaurant_license",
+        "expected_answer": [
+          "营业执照",
+          "健康证",
+          "食品经营许可"
+        ]
+      },
+      {
+        "id": "rag_0012",
+        "query": "餐饮许可证可以跨区使用吗",
+        "expected_intent": "restaurant_license",
+        "expected_answer": [
+          "营业执照",
+          "健康证",
+          "食品经营许可"
+        ]
+      },
+      {
+        "id": "rag_0013",
+        "query": "开办日料店需要什么审批流程",
+        "expected_intent": "restaurant_license",
+        "expected_answer": [
+          "营业执照",
+          "餐饮服务许可证"
+        ]
+      },
+      {
+        "id": "rag_0014",
+        "query": "餐饮店噪音扰民被投诉会影响许可证吗",
+        "expected_intent": "restaurant_license",
+        "expected_answer": [
+          "营业执照",
+          "健康证",
+          "食品经营许可"
+        ]
+      },
+      {
+        "id": "rag_0015",
+        "query": "开办快餐店需要什么证照",
+        "expected_intent": "restaurant_license",
+        "expected_answer": [
+          "卫生许可证",
+          "食品经营许可证"
+        ]
+      },
+      {
+        "id": "rag_0016",
+        "query": "食品经营许可证需要现场核查吗",
+        "expected_intent": "restaurant_license",
+        "expected_answer": [
+          "卫生许可证",
+          "食品经营许可证"
+        ]
+      },
+      {
+        "id": "rag_0017",
+        "query": "公司银行开户需要什么材料",
         "expected_intent": "business_register",
-        "expected_answer": ["公司章程", "法人身份证"]
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
       },
       {
-        "id": "rag_003",
-        "query": "公积金贷款利率是多少",
+        "id": "rag_0018",
+        "query": "注册个人独资企业需要什么流程",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "rag_0019",
+        "query": "公司注册后还需要办哪些手续",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "公司章程",
+          "法人身份证"
+        ]
+      },
+      {
+        "id": "rag_0020",
+        "query": "公司注册时法人需要什么条件",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "rag_0021",
+        "query": "公司注册资本认缴和实缴的区别",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "rag_0022",
+        "query": "公司经营范围变更怎么操作",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "rag_0023",
+        "query": "公司股权怎么分配合理",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "rag_0024",
+        "query": "公司吊销和注销有什么区别",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "rag_0025",
+        "query": "提取住房公积金需要什么规定",
         "expected_intent": "fund_query",
-        "expected_answer": ["贷款", "利率"]
+        "expected_answer": [
+          "公积金",
+          "提取条件"
+        ]
       },
       {
-        "id": "rag_004",
-        "query": "不动产登记需要多长时间",
+        "id": "rag_0026",
+        "query": "查询公积金账户需要什么利率",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "公积金",
+          "提取条件"
+        ]
+      },
+      {
+        "id": "rag_0027",
+        "query": "公积金租房提取需要什么材料",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "贷款",
+          "利率"
+        ]
+      },
+      {
+        "id": "rag_0028",
+        "query": "提取公积金余额需要什么利率",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "贷款额度",
+          "缴纳年限"
+        ]
+      },
+      {
+        "id": "rag_0029",
+        "query": "公积金账户的利息是多少",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "贷款额度",
+          "缴纳年限"
+        ]
+      },
+      {
+        "id": "rag_0030",
+        "query": "离职后公积金怎么处理最好",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "贷款",
+          "利率"
+        ]
+      },
+      {
+        "id": "rag_0031",
+        "query": "公积金可以给子女买房用吗",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "公积金",
+          "提取条件"
+        ]
+      },
+      {
+        "id": "rag_0032",
+        "query": "查询公积金余额需要什么额度",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "贷款",
+          "利率"
+        ]
+      },
+      {
+        "id": "rag_0033",
+        "query": "房屋赠与过户需要什么条件",
         "expected_intent": "property_service",
-        "expected_answer": ["不动产登记", "工作日"]
+        "expected_answer": [
+          "房产证",
+          "过户流程"
+        ]
       },
       {
-        "id": "rag_005",
-        "query": "社保缴纳基数如何计算",
+        "id": "rag_0034",
+        "query": "小产权房能办不动产证吗",
+        "expected_intent": "property_service",
+        "expected_answer": [
+          "房产证",
+          "过户流程"
+        ]
+      },
+      {
+        "id": "rag_0035",
+        "query": "二手房交易需要中介吗",
+        "expected_intent": "property_service",
+        "expected_answer": [
+          "不动产登记",
+          "工作日"
+        ]
+      },
+      {
+        "id": "rag_0036",
+        "query": "过户不动产需要什么材料",
+        "expected_intent": "property_service",
+        "expected_answer": [
+          "契税",
+          "网签合同"
+        ]
+      },
+      {
+        "id": "rag_0037",
+        "query": "不动产登记中心周末上班吗",
+        "expected_intent": "property_service",
+        "expected_answer": [
+          "契税",
+          "网签合同"
+        ]
+      },
+      {
+        "id": "rag_0038",
+        "query": "房产过户中发现有抵押怎么办",
+        "expected_intent": "property_service",
+        "expected_answer": [
+          "房产证",
+          "过户流程"
+        ]
+      },
+      {
+        "id": "rag_0039",
+        "query": "商品房交付后多久能办不动产证",
+        "expected_intent": "property_service",
+        "expected_answer": [
+          "契税",
+          "网签合同"
+        ]
+      },
+      {
+        "id": "rag_0040",
+        "query": "房产过户后多久能拿到新证",
+        "expected_intent": "property_service",
+        "expected_answer": [
+          "不动产登记",
+          "工作日"
+        ]
+      },
+      {
+        "id": "rag_0041",
+        "query": "跨省异地就医备案怎么办理",
+        "expected_intent": "medical_insurance",
+        "expected_answer": [
+          "医保",
+          "报销比例"
+        ]
+      },
+      {
+        "id": "rag_0042",
+        "query": "医保缴费基数是怎么定的",
+        "expected_intent": "medical_insurance",
+        "expected_answer": [
+          "异地就医",
+          "备案"
+        ]
+      },
+      {
+        "id": "rag_0043",
+        "query": "异地就医直接结算怎么开通",
+        "expected_intent": "medical_insurance",
+        "expected_answer": [
+          "门诊",
+          "住院",
+          "医保目录"
+        ]
+      },
+      {
+        "id": "rag_0044",
+        "query": "报销社保卡需要什么标准",
+        "expected_intent": "medical_insurance",
+        "expected_answer": [
+          "医保",
+          "报销比例"
+        ]
+      },
+      {
+        "id": "rag_0045",
+        "query": "住院医保报销需要什么手续",
+        "expected_intent": "medical_insurance",
+        "expected_answer": [
+          "门诊",
+          "住院",
+          "医保目录"
+        ]
+      },
+      {
+        "id": "rag_0046",
+        "query": "报销医保卡需要什么条件",
+        "expected_intent": "medical_insurance",
+        "expected_answer": [
+          "医保",
+          "报销比例"
+        ]
+      },
+      {
+        "id": "rag_0047",
+        "query": "慢性病医保报销需要什么材料",
+        "expected_intent": "medical_insurance",
+        "expected_answer": [
+          "医保",
+          "报销比例"
+        ]
+      },
+      {
+        "id": "rag_0048",
+        "query": "报销居民医保需要什么材料",
+        "expected_intent": "medical_insurance",
+        "expected_answer": [
+          "门诊",
+          "住院",
+          "医保目录"
+        ]
+      },
+      {
+        "id": "rag_0049",
+        "query": "工伤期间工资怎么发",
         "expected_intent": "social_security",
-        "expected_answer": ["社保", "基数"]
+        "expected_answer": [
+          "社保卡",
+          "激活"
+        ]
+      },
+      {
+        "id": "rag_0050",
+        "query": "办理生育保险需要什么流程",
+        "expected_intent": "social_security",
+        "expected_answer": [
+          "养老保险",
+          "缴费年限"
+        ]
+      },
+      {
+        "id": "rag_0051",
+        "query": "缴纳养老金需要什么待遇",
+        "expected_intent": "social_security",
+        "expected_answer": [
+          "社保卡",
+          "激活"
+        ]
+      },
+      {
+        "id": "rag_0052",
+        "query": "办理社会保险需要什么政策",
+        "expected_intent": "social_security",
+        "expected_answer": [
+          "社保卡",
+          "激活"
+        ]
+      },
+      {
+        "id": "rag_0053",
+        "query": "办理养老保险需要什么材料",
+        "expected_intent": "social_security",
+        "expected_answer": [
+          "社保",
+          "基数"
+        ]
+      },
+      {
+        "id": "rag_0054",
+        "query": "社保个人交和单位交有什么区别",
+        "expected_intent": "social_security",
+        "expected_answer": [
+          "社保卡",
+          "激活"
+        ]
+      },
+      {
+        "id": "rag_0055",
+        "query": "缴纳社保需要什么比例",
+        "expected_intent": "social_security",
+        "expected_answer": [
+          "养老保险",
+          "缴费年限"
+        ]
+      },
+      {
+        "id": "rag_0056",
+        "query": "社保转移期间看病能报销吗",
+        "expected_intent": "social_security",
+        "expected_answer": [
+          "社保",
+          "基数"
+        ]
+      },
+      {
+        "id": "rag_0057",
+        "query": "出口退税怎么操作",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "企业所得税",
+          "汇算清缴"
+        ]
+      },
+      {
+        "id": "rag_0058",
+        "query": "印花税什么情况下需要缴纳",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "个税",
+          "专项扣除"
+        ]
+      },
+      {
+        "id": "rag_0059",
+        "query": "申报税需要什么税率",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "企业所得税",
+          "汇算清缴"
+        ]
+      },
+      {
+        "id": "rag_0060",
+        "query": "申报发票需要什么材料",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "发票",
+          "税率"
+        ]
+      },
+      {
+        "id": "rag_0061",
+        "query": "发票丢失了怎么处理",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "企业所得税",
+          "汇算清缴"
+        ]
+      },
+      {
+        "id": "rag_0062",
+        "query": "公司零申报可以持续多久",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "个税",
+          "专项扣除"
+        ]
+      },
+      {
+        "id": "rag_0063",
+        "query": "个税汇算清缴怎么操作",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "发票",
+          "税率"
+        ]
+      },
+      {
+        "id": "rag_0064",
+        "query": "个体户需要交哪些税",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "个税",
+          "专项扣除"
+        ]
+      },
+      {
+        "id": "rag_0065",
+        "query": "人才引进有什么优惠政策",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "营商环境",
+          "改革"
+        ]
+      },
+      {
+        "id": "rag_0066",
+        "query": "今年政府对小微企业有什么扶持",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "税收",
+          "优惠"
+        ]
+      },
+      {
+        "id": "rag_0067",
+        "query": "科技成果转化有什么奖励政策",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "税收",
+          "优惠"
+        ]
+      },
+      {
+        "id": "rag_0068",
+        "query": "数字经济发展有什么政策支持",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "创业",
+          "补贴"
+        ]
+      },
+      {
+        "id": "rag_0069",
+        "query": "农业补贴有哪些种类",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "营商环境",
+          "改革"
+        ]
+      },
+      {
+        "id": "rag_0070",
+        "query": "政府补贴项目在哪里可以查询",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "创业",
+          "补贴"
+        ]
+      },
+      {
+        "id": "rag_0071",
+        "query": "出口企业有什么补贴政策",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "营商环境",
+          "改革"
+        ]
+      },
+      {
+        "id": "rag_0072",
+        "query": "政府有哪些创业扶持项目",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "创业",
+          "补贴"
+        ]
+      },
+      {
+        "id": "rag_0073",
+        "query": "为什么我的手机这么卡",
+        "expected_intent": "other",
+        "expected_answer": [
+          "无法回答",
+          "请咨询"
+        ]
+      },
+      {
+        "id": "rag_0074",
+        "query": "闲聊天气需要什么信息",
+        "expected_intent": "other",
+        "expected_answer": [
+          "无法回答",
+          "请咨询"
+        ]
+      },
+      {
+        "id": "rag_0075",
+        "query": "闲聊游戏需要什么建议",
+        "expected_intent": "other",
+        "expected_answer": [
+          "无法回答",
+          "请咨询"
+        ]
+      },
+      {
+        "id": "rag_0076",
+        "query": "帮我看看这个合同有没有坑",
+        "expected_intent": "other",
+        "expected_answer": [
+          "无法回答",
+          "请咨询"
+        ]
+      },
+      {
+        "id": "rag_0077",
+        "query": "给我讲个笑话吧",
+        "expected_intent": "other",
+        "expected_answer": [
+          "无法回答",
+          "请咨询"
+        ]
+      },
+      {
+        "id": "rag_0078",
+        "query": "怎么学编程最快",
+        "expected_intent": "other",
+        "expected_answer": [
+          "无法回答",
+          "请咨询"
+        ]
+      },
+      {
+        "id": "rag_0079",
+        "query": "什么是机器学习",
+        "expected_intent": "other",
+        "expected_answer": [
+          "无法回答",
+          "请咨询"
+        ]
+      },
+      {
+        "id": "rag_0080",
+        "query": "这个菜怎么做",
+        "expected_intent": "other",
+        "expected_answer": [
+          "无法回答",
+          "请咨询"
+        ]
       }
     ]
   }

@@ -36,6 +36,8 @@ class RunnerConfig:
     output_format: str = "all"  # json | markdown | console | all
     dataset_filter: Optional[list[str]] = None
     use_llm: bool = False
+    run_real: bool = False  # 是否运行真实 Agent 工作流收集 trace
+    run_full_workflow: bool = False  # 是否对全流程用例也运行 LangGraph（耗时）
     fail_on_error: bool = False
     fail_threshold: float = 0.0  # overall_score 低于此值则失败
 
@@ -206,20 +208,50 @@ class EvalRunner:
         self.runner_result.started_at = started_at.isoformat()
 
         try:
-            # Step 1: 创建 BenchmarkRunner
+            # Step 1: 构建 trace_provider / llm_call（若启用）
+            trace_provider = None
+            llm_call = None
+
+            if self.config.run_real:
+                from governance.evaluation.trace_provider import create_trace_provider
+                trace_provider = await create_trace_provider(
+                    run_full_workflow=self.config.run_full_workflow,
+                )
+                print("  trace_provider: 已创建（run_full_workflow=%s）",
+                      self.config.run_full_workflow)
+
+            if self.config.use_llm:
+                from langchain_openai import ChatOpenAI
+                from governance.evaluation.llm_adapter import create_llm_judge
+                from backend.config import get_settings
+                s = get_settings()
+                llm = ChatOpenAI(
+                    base_url=s.llm_api_url,
+                    api_key=s.llm_api_key,
+                    model=s.llm_model,
+                    temperature=0.0,
+                    max_tokens=512,
+                    timeout=s.llm_timeout,
+                )
+                llm_call = create_llm_judge(llm)
+                print("  llm_call: LLM judge 已就绪（%s）", s.llm_model)
+
+            # Step 2: 创建 BenchmarkRunner
             benchmark_runner = BenchmarkRunner(
                 version=self.config.version,
                 cases_dir=self.config.cases_dir,
                 use_llm=self.config.use_llm,
+                llm_call=llm_call,
+                trace_provider=trace_provider,
             )
 
-            # Step 2: 运行 Benchmark
+            # Step 3: 运行 Benchmark
             benchmark = await benchmark_runner.run_all(
                 dataset_filter=self.config.dataset_filter,
             )
             self.runner_result.benchmark = benchmark
 
-            # Step 3: 输出报告
+            # Step 4: 输出报告
             if self.config.output_format != "none":
                 writer = ReportWriter(output_dir=self.config.output_dir)
 
@@ -365,6 +397,16 @@ Examples:
         help="Use LLM for semantic metric evaluation",
     )
     run_parser.add_argument(
+        "--run-real",
+        action="store_true",
+        help="Run real Agent workflow to collect traces (BERT for intent-only cases)",
+    )
+    run_parser.add_argument(
+        "--run-full-workflow",
+        action="store_true",
+        help="Also run full LangGraph workflow for non-intent cases (uses LLM API, slow)",
+    )
+    run_parser.add_argument(
         "--fail-threshold",
         type=float,
         default=0.0,
@@ -379,6 +421,11 @@ Examples:
         "--save-result",
         default="",
         help="Save RunnerResult JSON to this path",
+    )
+    run_parser.add_argument(
+        "--save-to-db",
+        action="store_true",
+        help="Save evaluation results to PostgreSQL evaluation table",
     )
 
     # ── compare ──
@@ -410,6 +457,49 @@ Examples:
 # ============================================================
 
 
+def _save_benchmark_to_db(result: RunnerResult) -> None:
+    """将 Benchmark 中各数据集的 EvaluationResult 写入 evaluation 表"""
+    b = result.benchmark
+    if not b or not b.datasets:
+        print("  [WARN] No benchmark datasets to save to DB")
+        return
+
+    try:
+        from database.connection import (
+            get_session_factory,
+            create_engine_and_session_factory,
+        )
+        from backend.config import get_settings
+        from governance.evaluation.evaluator import EvaluationEngine
+
+        settings = get_settings()
+        try:
+            session_factory = get_session_factory()
+        except Exception:
+            session_factory = create_engine_and_session_factory(settings.postgres_url)
+
+        saved = 0
+        for ds_name, eval_result in b.datasets.items():
+            if not eval_result:
+                continue
+            try:
+                EvaluationEngine.save_result(eval_result, session_factory)
+                saved += 1
+                print(f"  ✅ {ds_name}: {eval_result.total_cases} cases, "
+                      f"{eval_result.passed_cases} passed, "
+                      f"score={eval_result.overall_score:.2%}")
+            except Exception as e:
+                print(f"  ❌ {ds_name}: DB save failed — {e}")
+
+        print(f"  Saved {saved}/{len(b.datasets)} datasets to evaluation table.")
+
+    except ImportError as e:
+        print(f"  [WARN] Cannot save to DB (missing dependency): {e}")
+    except Exception as e:
+        print(f"  [WARN] DB save failed: {e}")
+
+
+
 async def handle_run(args: argparse.Namespace) -> int:
     """处理 run 命令"""
     # 构建配置
@@ -424,15 +514,20 @@ async def handle_run(args: argparse.Namespace) -> int:
         output_format=args.output,
         dataset_filter=dataset_filter,
         use_llm=args.use_llm,
+        run_real=args.run_real,
+        run_full_workflow=args.run_full_workflow,
         fail_on_error=args.fail_on_error,
         fail_threshold=args.fail_threshold,
     )
 
     print(f"Starting evaluation run...")
-    print(f"  Version:     {config.version}")
-    print(f"  Cases dir:   {config.cases_dir}")
-    print(f"  Datasets:    {config.dataset_filter or 'all'}")
-    print(f"  Output:      {config.output_format}")
+    print(f"  Version:        {config.version}")
+    print(f"  Cases dir:      {config.cases_dir}")
+    print(f"  Datasets:       {config.dataset_filter or 'all'}")
+    print(f"  Run real trace: {config.run_real}")
+    print(f"  Full workflow:  {config.run_full_workflow}")
+    print(f"  Use LLM judge:  {config.use_llm}")
+    print(f"  Output:         {config.output_format}")
     print()
 
     runner = EvalRunner(config)
@@ -448,10 +543,15 @@ async def handle_run(args: argparse.Namespace) -> int:
     else:
         print(f"\nEvaluation FAILED: {result.error_message}", file=sys.stderr)
 
-    # 保存结果
+    # 保存结果到 JSON
     if args.save_result:
         path = EvalRunner.save_result(result, args.save_result)
         print(f"Runner result saved to: {path}")
+
+    # 保存结果到数据库
+    if args.save_to_db:
+        _save_benchmark_to_db(result)
+        print("Evaluation results saved to database.")
 
     return 0 if result.success else 1
 
@@ -856,4 +956,8 @@ def _smoke_test() -> None:
 
 
 if __name__ == "__main__":
-    _smoke_test()
+    import sys
+    if len(sys.argv) > 1:
+        sys.exit(cli_main())
+    else:
+        _smoke_test()

@@ -10,9 +10,10 @@
 # 不再硬编码。
 #
 # 端口约定（宿主端口）:
+#   Frontend    12345
 #   API         8002
 #   MCP Gateway 12300 | Servers 12301-12303
-#   PostgreSQL  5434  (标准 5432 + 2)
+#   PostgreSQL  5658  (Hyper-V excludes 5358-5457; use 5658 instead)
 #   Redis       6480  (6380-6479 blocked by Windows)
 #   Milvus      19532 (标准 19530 + 2)
 #
@@ -72,6 +73,25 @@ services:
       - gov_agent_net
 
   # ──────────────────────────────────────
+  # Frontend — Streamlit UI (端口 12345)
+  # ──────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.frontend
+    container_name: gov_agent_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-12345}:12345"
+    environment:
+      # 后端 API 地址（容器间服务名通信）
+      API_BASE_URL: http://api:8002
+    depends_on:
+      - api
+    networks:
+      - gov_agent_net
+
+  # ──────────────────────────────────────
   # MCP Servers + Gateway (端口 12300-12303)
   # ──────────────────────────────────────
   mcp-server:
@@ -96,7 +116,7 @@ services:
     container_name: gov_agent_postgres
     restart: unless-stopped
     ports:
-      - "${POSTGRES_PORT:-5434}:5432"
+      - "${POSTGRES_PORT:-5658}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-gov_agent}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}

@@ -1,28 +1,448 @@
 [
   {
-    "_description": "policy_query.json - Policy knowledge retrieval test cases",
+    "_description": "Policy knowledge retrieval test cases",
     "_author": "le",
-    "_date": "2026/8/2",
-    "_version": "0.2",
-    "_task": "Test cases for policy knowledge retrieval workflow",
+    "_date": "2026/8/4",
+    "_version": "0.3",
+    "_task": "Policy knowledge retrieval test cases",
+    "_count": 48,
     "cases": [
       {
-        "id": "policy_001",
-        "query": "小微企业税收优惠政策有哪些",
+        "id": "policy_0001",
+        "query": "了解优惠政策需要什么时间",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "税收",
+          "优惠"
+        ]
+      },
+      {
+        "id": "policy_0002",
+        "query": "中小企业融资有什么扶持政策",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "税收",
+          "优惠"
+        ]
+      },
+      {
+        "id": "policy_0003",
+        "query": "今年政府对小微企业有什么扶持",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "营商环境",
+          "改革"
+        ]
+      },
+      {
+        "id": "policy_0004",
+        "query": "查询优惠政策需要什么对象",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "税收",
+          "优惠"
+        ]
+      },
+      {
+        "id": "policy_0005",
+        "query": "咨询优惠政策需要什么内容",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "创业",
+          "补贴"
+        ]
+      },
+      {
+        "id": "policy_0006",
+        "query": "了解惠企政策需要什么时间",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "创业",
+          "补贴"
+        ]
+      },
+      {
+        "id": "policy_0007",
+        "query": "今年有哪些新的行政审批改革",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "税收",
+          "优惠"
+        ]
+      },
+      {
+        "id": "policy_0008",
+        "query": "政府购买服务项目怎么参与",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "创业",
+          "补贴"
+        ]
+      },
+      {
+        "id": "policy_0009",
+        "query": "咨询营商环境需要什么标准",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "税收",
+          "优惠"
+        ]
+      },
+      {
+        "id": "policy_0010",
+        "query": "新能源汽车有什么补贴政策",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "创业",
+          "补贴"
+        ]
+      },
+      {
+        "id": "policy_0011",
+        "query": "农业补贴有哪些种类",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "创业",
+          "补贴"
+        ]
+      },
+      {
+        "id": "policy_0012",
+        "query": "查询改革政策需要什么条件",
+        "expected_intent": "policy_query",
+        "expected_answer": [
+          "创业",
+          "补贴"
+        ]
+      },
+      {
+        "id": "policy_0013",
+        "query": "缴纳契税需要什么扣除",
         "expected_intent": "tax_service",
-        "expected_answer": ["税收", "优惠"]
+        "expected_answer": [
+          "个税",
+          "专项扣除"
+        ]
       },
       {
-        "id": "policy_002",
-        "query": "大学生创业补贴政策",
-        "expected_intent": "policy_query",
-        "expected_answer": ["创业", "补贴"]
+        "id": "policy_0014",
+        "query": "个税专项附加扣除怎么申报",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "企业所得税",
+          "汇算清缴"
+        ]
       },
       {
-        "id": "policy_003",
-        "query": "老旧小区加装电梯政策",
-        "expected_intent": "policy_query",
-        "expected_answer": ["电梯"]
+        "id": "policy_0015",
+        "query": "企业所得税减免政策有哪些",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "发票",
+          "税率"
+        ]
+      },
+      {
+        "id": "policy_0016",
+        "query": "公司零申报可以持续多久",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "发票",
+          "税率"
+        ]
+      },
+      {
+        "id": "policy_0017",
+        "query": "企业所得税怎么计算",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "个税",
+          "专项扣除"
+        ]
+      },
+      {
+        "id": "policy_0018",
+        "query": "缴纳附加税需要什么材料",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "发票",
+          "税率"
+        ]
+      },
+      {
+        "id": "policy_0019",
+        "query": "申报印花税需要什么流程",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "发票",
+          "税率"
+        ]
+      },
+      {
+        "id": "policy_0020",
+        "query": "发票真伪怎么查验",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "企业所得税",
+          "汇算清缴"
+        ]
+      },
+      {
+        "id": "policy_0021",
+        "query": "缴纳税需要什么减免",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "个税",
+          "专项扣除"
+        ]
+      },
+      {
+        "id": "policy_0022",
+        "query": "个税汇算清缴怎么操作",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "企业所得税",
+          "汇算清缴"
+        ]
+      },
+      {
+        "id": "policy_0023",
+        "query": "申报税务需要什么税率",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "企业所得税",
+          "汇算清缴"
+        ]
+      },
+      {
+        "id": "policy_0024",
+        "query": "申报个人所得税需要什么流程",
+        "expected_intent": "tax_service",
+        "expected_answer": [
+          "企业所得税",
+          "汇算清缴"
+        ]
+      },
+      {
+        "id": "policy_0025",
+        "query": "公司注册后多久可以开发票",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "公司章程",
+          "法人身份证"
+        ]
+      },
+      {
+        "id": "policy_0026",
+        "query": "公司经营范围变更怎么操作",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "policy_0027",
+        "query": "注册公司需要验资吗",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "policy_0028",
+        "query": "注册公司对注册资金有什么要求",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "policy_0029",
+        "query": "公司名称可以随便取吗",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "policy_0030",
+        "query": "注册建筑公司需要什么材料",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "公司章程",
+          "法人身份证"
+        ]
+      },
+      {
+        "id": "policy_0031",
+        "query": "公司注册后多久要做税务登记",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "policy_0032",
+        "query": "注册教育公司需要什么条件",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "policy_0033",
+        "query": "公司股权怎么分配合理",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "policy_0034",
+        "query": "大学生创业注册公司有优惠吗",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "公司章程",
+          "法人身份证"
+        ]
+      },
+      {
+        "id": "policy_0035",
+        "query": "注册个人独资企业需要什么手续",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "policy_0036",
+        "query": "注册外贸公司需要什么流程",
+        "expected_intent": "business_register",
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "policy_0037",
+        "query": "转移公积金需要什么手续",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "贷款",
+          "利率"
+        ]
+      },
+      {
+        "id": "policy_0038",
+        "query": "公积金账户的利息是多少",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "贷款",
+          "利率"
+        ]
+      },
+      {
+        "id": "policy_0039",
+        "query": "提取公积金账户需要什么政策",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "公积金",
+          "提取条件"
+        ]
+      },
+      {
+        "id": "policy_0040",
+        "query": "提取住房补贴需要什么政策",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "贷款额度",
+          "缴纳年限"
+        ]
+      },
+      {
+        "id": "policy_0041",
+        "query": "缴纳公积金账户需要什么政策",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "公积金",
+          "提取条件"
+        ]
+      },
+      {
+        "id": "policy_0042",
+        "query": "公积金贷款利率比商贷低多少",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "贷款额度",
+          "缴纳年限"
+        ]
+      },
+      {
+        "id": "policy_0043",
+        "query": "公积金最多能贷多少年",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "贷款额度",
+          "缴纳年限"
+        ]
+      },
+      {
+        "id": "policy_0044",
+        "query": "查询住房公积金需要什么利率",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "公积金",
+          "提取条件"
+        ]
+      },
+      {
+        "id": "policy_0045",
+        "query": "公积金租房提取需要什么材料",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "公积金",
+          "提取条件"
+        ]
+      },
+      {
+        "id": "policy_0046",
+        "query": "公积金账户销户提取需要什么条件",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "公积金",
+          "提取条件"
+        ]
+      },
+      {
+        "id": "policy_0047",
+        "query": "缴纳公积金余额需要什么条件",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "贷款额度",
+          "缴纳年限"
+        ]
+      },
+      {
+        "id": "policy_0048",
+        "query": "公积金贷款审批需要多长时间",
+        "expected_intent": "fund_query",
+        "expected_answer": [
+          "公积金",
+          "提取条件"
+        ]
       }
     ]
   }

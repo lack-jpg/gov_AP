@@ -1,0 +1,39 @@
+# =====================================================
+# Dockerfile.frontend - Streamlit Frontend
+# Author: le
+# Date: 2026/8/3
+# Version: 0.1
+# Task: Lightweight container for Streamlit frontend
+#
+# Usage:
+#   docker build -f deploy/Dockerfile.frontend -t gov-agent-frontend:latest .
+# =====================================================
+
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 仅安装前端所需依赖（轻量）
+RUN pip install --no-cache-dir \
+    "streamlit>=1.40.0,<2.0" \
+    "httpx>=0.28.0,<1.0"
+
+# 复制前端代码和公共模块
+COPY frontend/ frontend/
+COPY .streamlit/ .streamlit/
+
+RUN useradd -m -u 1000 streamlituser \
+    && chown -R streamlituser:streamlituser /app
+USER streamlituser
+
+EXPOSE 12345
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:12345/_stcore/health || exit 1
+
+CMD ["python", "-m", "streamlit", "run", "frontend/app.py", \
+     "--server.port=12345", "--server.address=0.0.0.0"]

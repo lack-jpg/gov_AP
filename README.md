@@ -108,7 +108,7 @@ Evaluation Platform
 | Agent            | 职责     |
 | ---------------- | ------ |
 | Supervisor Agent | 全局任务规划 |
-| Intent Agent     | 用户意图识别 |
+| Intent Agent     | 用户意图识别（BERT 微调模型 + 关键词兜底 + LLM fallback） |
 | Policy Agent     | 政策知识检索 |
 | Material Agent   | 材料审核   |
 | Workflow Agent   | 流程执行   |
@@ -538,15 +538,46 @@ u***@domain.com
 
 # 9. 自动评测体系
 
+> **最新更新（2026-08-04）**: trace_provider 已接入，支持真实 Agent 工作流执行并收集 trace 数据。
+> Intent 数据集（3500 条）评测通过率 **99.5%**，BERT 模型 `source="bert"` 确认有效。
+
+## 快速运行
+
+```bash
+# Intent 快速评测（BERT 本地推理，3500 条约 90 秒）
+python -m governance.evaluation.runner run \
+  --version v0.2 \
+  --datasets intent_cases \
+  --run-real --output console
+
+# 全流程评测（LangGraph + LLM API，需 --run-full-workflow）
+python -m governance.evaluation.runner run \
+  --version v0.2 \
+  --datasets rag_cases,agent_cases \
+  --run-real --run-full-workflow
+
+# LLM Judge 语义打分 + 数据库持久化
+python -m governance.evaluation.runner run \
+  --version v0.2 \
+  --datasets rag_cases \
+  --run-real --run-full-workflow --use-llm --save-to-db
+
+# 列出所有可用数据集
+python -m governance.evaluation.runner list
+
+# 对比两个版本
+python -m governance.evaluation.runner compare --versions v0.1,v0.2
+```
+
 ## RAG评测
 
 指标：
 
-| 指标               | 说明    |
-| ---------------- | ----- |
-| Faithfulness     | 回答真实性 |
-| Answer Relevance | 答案相关性 |
-| Context Recall   | 上下文召回 |
+| 指标               | 说明    | 评分方式 |
+| ---------------- | ----- |------|
+| Faithfulness     | 回答真实性 | 规则（bigram Jaccard）/ LLM Judge |
+| Answer Relevance | 答案相关性 | 规则（token overlap）/ LLM Judge |
+| Context Recall   | 上下文召回 | 规则（bigram overlap）/ LLM Judge |
 
 ---
 
@@ -560,6 +591,8 @@ u***@domain.com
 | Tool Accuracy     | 工具选择准确率 |
 | Latency           | 响应耗时    |
 | Step Count        | 执行步骤    |
+
+**综合评分权重**：task_success_rate 0.25 + tool_accuracy 0.15 + faithfulness 0.15 + answer_relevance 0.15 + context_recall 0.10 + intent_accuracy 0.10 + efficiency 0.10
 
 ---
 
@@ -611,7 +644,7 @@ gov_AP/
 │   │   └── prompts.py                # Prompt模板
 │   ├── intent/                       # 意图识别
 │   │   ├── agent.py                  # Intent核心
-│   │   ├── classifier.py             # BERT分类器
+│   │   ├── classifier.py             # BERT分类器（微调模型自动加载，source="bert"）
 │   │   ├── schema.py                 # 数据模型
 │   │   └── prompts.py                # Prompt模板
 │   ├── policy/                       # 政策检索
@@ -689,10 +722,12 @@ gov_AP/
 │   ├── dashboard.py                  # 运维看板
 │   └── evaluation/                   # 自动评测
 │       ├── __init__.py               # 包初始化
-│       ├── evaluator.py              # 评测引擎
-│       ├── metrics.py                # 指标计算
-│       ├── benchmark.py              # 基准测试
-│       └── runner.py                 # 评测流水线
+│       ├── evaluator.py              # 评测引擎（evaluate_from_cases/traces/db）
+│       ├── metrics.py                # 指标计算（RAG + Agent + Intent 复合评分）
+│       ├── benchmark.py              # 基准测试（GoldenDataset + BenchmarkRunner）
+│       ├── runner.py                 # 评测流水线（CLI: run/compare/list + DB持久化）
+│       ├── trace_provider.py         # 真实trace提供者（BERT意图 / LangGraph全流程）
+│       └── llm_adapter.py            # LLM Judge适配器（BaseChatModel → score回调）
 │
 ├── database/                         # 数据层 — PostgreSQL
 │   ├── __init__.py                   # 包初始化
@@ -720,6 +755,21 @@ gov_AP/
 │       ├── __init__.py               # 包初始化
 │       └── agent_service.py          # Agent编排服务
 │
+├── frontend/                         # 前端层 — Streamlit 能力演示
+│   ├── app.py                        # 导航入口（st.navigation + 8 st.Page）
+│   ├── common.py                     # 公共工具（路径设置 + 异步执行）
+│   ├── api_client.py                 # 后端 API 客户端（httpx，含 chat_with_fallback 降级）
+│   ├── stub_chat.py                  # 本地 stub 对话（BERT 意图分类 + 政策模板 + PII 脱敏）
+│   └── pages/                        # 8 个功能页面
+│       ├── home_page.py              # 首页总览
+│       ├── chat_page.py              # 智能对话（API 优先 → stub 降级）
+│       ├── intent_page.py            # 意图识别演示
+│       ├── policy_page.py            # 政策检索演示
+│       ├── material_page.py          # 材料审核演示
+│       ├── a2a_page.py               # 跨域协同演示
+│       ├── governance_page.py        # 安全治理演示
+│       └── dashboard_page.py         # 运维看板
+│
 ├── prompts/                          # Prompt管理
 │   ├── __init__.py                   # 包初始化
 │   └── registry.py                   # Prompt注册中心(版本化)
@@ -735,7 +785,8 @@ gov_AP/
 │   └── workflow.json                 # 流程执行场景
 │
 ├── deploy/                           # 部署配置
-│   ├── Dockerfile                    # Docker镜像
+│   ├── Dockerfile                    # API + MCP Server Docker 镜像
+│   ├── Dockerfile.frontend           # Streamlit 前端 Docker 镜像（轻量，仅 streamlit + httpx）
 │   └── k8s/                          # Kubernetes
 │       ├── backend.yaml              # 后端Deployment
 │       ├── agent.yaml                # Agent Runtime
@@ -824,11 +875,11 @@ python >=3.12
 
 | 服务 | 端口 | 说明 |
 |------|------|------|
-| Frontend | **12315** | Streamlit 前端界面 |
+| Frontend | **12345** | Streamlit 前端界面 |
 | FastAPI | **8002** | 后端 API（8000 + 2） |
 | MCP Gateway | **12300** | 后续 Server 依次 +1 |
 | A2A Callback | **12200** | 后续 Connector 依次 +1 |
-| PostgreSQL | **5434** | 5432 + 2 |
+| PostgreSQL | **5658** | 避开 Hyper-V 保留段 |
 | Redis | **6500** | 避开 Windows 保留端口区间 |
 | Milvus | **19532** | 19530 + 2 |
 | OpenTelemetry | **4319** | 4317 + 2 |
@@ -882,8 +933,35 @@ uvicorn backend.main:app --host 0.0.0.0 --port 8002 --reload
 **Docker 部署：**
 
 ```bash
-docker compose up
+# 构建并启动全部服务（API + 前端 + MCP + PostgreSQL + Redis + Milvus）
+docker compose up -d
+
+# 仅重建前端（代码更新后）
+docker compose build --no-cache frontend
+docker compose up -d frontend
 ```
+
+**前端界面：**
+
+| 访问方式 | URL | 说明 |
+|----------|-----|------|
+| Docker | http://localhost:12345 | 轻量容器（仅 streamlit + httpx），部分页面需本地运行 |
+| 本地开发 | http://localhost:12345 | `streamlit run frontend/app.py`，全部 8 页功能完整 |
+
+**Docker 前端页面可用性：**
+
+| 页面 | Docker | 本地 | 说明 |
+|------|--------|------|------|
+| 🏠 首页 | ✅ | ✅ | API 健康检查 + 看板概览 |
+| 💬 智能对话 | ✅ | ✅ | API 优先 + stub 降级（后端离线时本地 BERT + 模板） |
+| 📊 运维看板 | ✅ | ✅ | 纯 API 数据展示 |
+| 🎯 意图识别 | ⚠️ | ✅ | 需 `agents/` 模块，Docker 中显示本地运行指引 |
+| 📚 政策检索 | ⚠️ | ✅ | 需 `agents/policy/` + langchain，Docker 中显示本地运行指引 |
+| 📋 材料审核 | ⚠️ | ✅ | 需 `agents/material/`，Docker 中显示本地运行指引 |
+| 🤝 跨域协同 | ⚠️ | ✅ | 需 `tools/a2a/`，Docker 中显示本地运行指引 |
+| 🛡️ 安全治理 | ⚠️ | ✅ | 需 `governance/`，Docker 中显示本地运行指引 |
+
+> 💡 **设计原则**：Docker 前端镜像保持轻量（~200MB），仅包含 streamlit + httpx。依赖项目模块（agents/governance/tools）的页面在 Docker 中优雅降级为提示信息，引导用户本地运行 `streamlit run frontend/app.py` 获得完整体验。安全护栏（PII 脱敏、注入检测）在 Docker 中通过后端 Agent 工作流完整集成。
 
 **MCP 架构说明：**
 
@@ -1136,10 +1214,10 @@ supervisor_node 进入
 ```
 
 Intent 节点：
-- **BERT 模型推理**（若已加载）→ 高置信度(>0.7)直接返回
-- **关键词匹配**（18条规则）→ 中置信度(0.5-0.7)
+- **BERT 模型推理**（已微调，`models/intent/bert-intent/`，10 标签 99.5% 准确率）→ 高置信度(>0.7)直接返回
+- **关键词匹配**（18条规则）→ 中置信度(0.5-0.7)，BERT 不可用时兜底
 - **LLM fallback** → 最低置信度(0.3)，最后手段
-- 当前 stub：关键词匹配为主
+- 生产路径：`nodes.py` 中 `IntentClassifier()` 默认启用 BERT（`auto_load=True`）
 
 Intent 回环：`intent_node → supervisor_node` 为**静态边**，意图识别后必回 supervisor 二次规划。
 
@@ -1593,22 +1671,22 @@ governance_node（末尾节点）
 
 ---
 
-## Phase 4 — Evaluation + Dashboard ⏳ (Step 1: ✅)
+## Phase 4 — Evaluation + Dashboard ✅
+
+> **最新更新（2026-08-04）**: trace_provider 已实现，`--run-real` 可运行真实 Agent 工作流收集 trace。
+> Intent 评测：3500 条用例，BERT 推理，**3484/3500 passed（99.5%）**。
 
 ### 第一步：评测体系 (governance/evaluation/) ✅
 
 ```
-✅ metrics.py   → RAG指标（Faithfulness, Answer Relevance, Context Recall，~630行）
-                  + Agent指标（Task Success Rate, Tool Accuracy, Latency, Step Count）
-                  + 双模式评分：LLM语义评估 + 规则bigram启发式
-✅ evaluator.py → 评测引擎（加载trace → 计算指标 → 生成JSON/Markdown/Console报告，~490行）
-                  + EvaluationEngine编排器 + evaluate_from_traces/cases/db
-                  + 版本对比 + 数据库持久化
-✅ benchmark.py  → Golden Dataset加载器（cases/*.json，~350行）
-                  + BenchmarkRunner批量评测 + 版本对比 + 报告生成
-✅ runner.py     → CI/CD评测流水线（CLI: run/compare/list，~370行）
-                  + EvalRunner + ReportWriter（JSON/Markdown/Console）
-                  + fail-threshold阈值门禁 + 结果持久化
+✅ metrics.py          → RAG指标（Faithfulness, Answer Relevance, Context Recall，~630行）
+                         + Agent指标（Task Success Rate, Tool Accuracy, Latency, Step Count）
+                         + 双模式评分：LLM语义评估 + 规则bigram启发式
+✅ evaluator.py        → 评测引擎（~490行）+ 3条评测路径（cases/traces/db）+ 版本对比
+✅ benchmark.py        → Golden Dataset加载器 + BenchmarkRunner 批量评测（~350行）
+✅ runner.py           → CI/CD评测流水线（CLI: run/compare/list + DB持久化，~900行）
+✅ trace_provider.py   → 真实trace提供者（BERT意图 + LangGraph全流程双路径）
+✅ llm_adapter.py      → LLM Judge适配器（BaseChatModel → (prompt)→str 回调）
 ```
 
 ### 第二步：治理基础设施 (governance/) ✅

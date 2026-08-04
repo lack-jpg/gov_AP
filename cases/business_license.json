@@ -1,31 +1,651 @@
 [
   {
-    "_description": "business_license.json - Business license application workflow test cases",
+    "_description": "Business license application workflow test cases",
     "_author": "le",
-    "_date": "2026/8/2",
-    "_version": "0.2",
-    "_task": "Test cases for restaurant business license application workflow",
+    "_date": "2026/8/4",
+    "_version": "0.3",
+    "_task": "Business license application workflow test cases",
+    "_count": 48,
     "cases": [
       {
-        "id": "case_001",
-        "query": "我要开一家餐馆，需要什么",
-        "expected_intent": "restaurant_license",
-        "expected_tools": ["search_policy"],
-        "expected_answer": ["营业执照", "食品经营许可证"]
-      },
-      {
-        "id": "case_002",
-        "query": "办理个体户营业执照需要什么材料",
+        "id": "case_0001",
+        "query": "申请工商执照需要什么步骤",
         "expected_intent": "business_license",
-        "expected_tools": ["search_policy", "check_material"],
-        "expected_answer": ["营业执照", "身份证明"]
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
       },
       {
-        "id": "case_003",
-        "query": "注册公司需要哪些手续",
+        "id": "case_0002",
+        "query": "营业执照可以代办吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "case_0003",
+        "query": "申请电子营业执照需要什么证明",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "case_0004",
+        "query": "营业执照地址变更需要重新办理吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "case_0005",
+        "query": "营业执照的经营期限怎么填",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "case_0006",
+        "query": "营业执照号码可以改吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "case_0007",
+        "query": "申请个体户执照需要什么条件",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "case_0008",
+        "query": "变更工商执照需要什么文件",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "case_0009",
+        "query": "年检营业执照需要什么材料",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "case_0010",
+        "query": "分公司需要单独办营业执照吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "case_0011",
+        "query": "营业执照办理地点是工商局吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "case_0012",
+        "query": "年检企业执照需要什么证件",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "case_0013",
+        "query": "年检电子营业执照需要什么证件",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "case_0014",
+        "query": "跨省迁移营业执照怎么办理",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "case_0015",
+        "query": "注销工商执照需要什么步骤",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "case_0016",
+        "query": "个体工商户营业执照可以转让吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "case_0017",
+        "query": "餐饮店装修有特殊要求吗",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "食品经营许可证",
+          "营业执照"
+        ]
+      },
+      {
+        "id": "case_0018",
+        "query": "开办小吃店需要什么手续",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "健康证",
+          "食品经营许可"
+        ]
+      },
+      {
+        "id": "case_0019",
+        "query": "开办奶茶店需要什么门槛",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "餐饮服务许可证"
+        ]
+      },
+      {
+        "id": "case_0020",
+        "query": "开办西餐厅需要什么门槛",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "卫生许可证",
+          "食品经营许可证"
+        ]
+      },
+      {
+        "id": "case_0021",
+        "query": "餐饮店噪音扰民被投诉会影响许可证吗",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "食品经营许可证",
+          "营业执照"
+        ]
+      },
+      {
+        "id": "case_0022",
+        "query": "卖早餐需要办餐饮许可证吗",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "餐饮服务许可证"
+        ]
+      },
+      {
+        "id": "case_0023",
+        "query": "开办火锅店需要什么许可证",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "食品经营许可证",
+          "营业执照"
+        ]
+      },
+      {
+        "id": "case_0024",
+        "query": "餐饮店员工的健康证需要提前办吗",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "餐饮服务许可证"
+        ]
+      },
+      {
+        "id": "case_0025",
+        "query": "开办饭店需要什么审批流程",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "卫生许可证",
+          "食品经营许可证"
+        ]
+      },
+      {
+        "id": "case_0026",
+        "query": "餐饮店网上订餐需要额外资质吗",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "卫生许可证",
+          "食品经营许可证"
+        ]
+      },
+      {
+        "id": "case_0027",
+        "query": "开办寿司店需要什么材料",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "餐饮服务许可证"
+        ]
+      },
+      {
+        "id": "case_0028",
+        "query": "开办麻辣烫店需要什么资质",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "健康证",
+          "食品经营许可"
+        ]
+      },
+      {
+        "id": "case_0029",
+        "query": "开办咖啡厅需要什么手续",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "食品经营许可证",
+          "营业执照"
+        ]
+      },
+      {
+        "id": "case_0030",
+        "query": "餐饮店试营业期间需要办证吗",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "食品经营许可证",
+          "营业执照"
+        ]
+      },
+      {
+        "id": "case_0031",
+        "query": "开办披萨店需要什么条件",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "健康证",
+          "食品经营许可"
+        ]
+      },
+      {
+        "id": "case_0032",
+        "query": "开办烧烤店需要什么证照",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "食品经营许可证",
+          "营业执照"
+        ]
+      },
+      {
+        "id": "case_0033",
+        "query": "注册股份有限公司需要什么费用",
         "expected_intent": "business_register",
-        "expected_tools": ["search_policy"],
-        "expected_answer": ["公司章程", "营业执照"]
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "case_0034",
+        "query": "成立贸易公司需要什么手续",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "case_0035",
+        "query": "成立文化公司需要什么费用",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "case_0036",
+        "query": "成立有限责任公司需要什么手续",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "case_0037",
+        "query": "注册公司代办和自己办哪个划算",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "case_0038",
+        "query": "一个人可以注册公司吗",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "case_0039",
+        "query": "没有办公地址可以注册公司吗",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "case_0040",
+        "query": "注册公司需要法人亲自到场吗",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "case_0041",
+        "query": "成立外贸公司需要什么条件",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "case_0042",
+        "query": "注册贸易公司需要什么手续",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "case_0043",
+        "query": "公司印章需要刻哪些",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "case_0044",
+        "query": "公司章程怎么写",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "case_0045",
+        "query": "成立教育公司需要什么费用",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material"
+        ],
+        "expected_answer": [
+          "公司章程",
+          "法人身份证"
+        ]
+      },
+      {
+        "id": "case_0046",
+        "query": "合伙企业注册和公司注册流程一样吗",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "公司章程",
+          "法人身份证"
+        ]
+      },
+      {
+        "id": "case_0047",
+        "query": "公司银行开户需要什么材料",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "case_0048",
+        "query": "注册科技公司需要什么条件",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
       }
     ]
   }

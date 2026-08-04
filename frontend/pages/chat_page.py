@@ -1,5 +1,5 @@
 """
-frontend.pages.1_智能对话 - 多 Agent 协同对话演示
+frontend.pages.chat_page - 多 Agent 协同对话演示
 
 通过 FastAPI 后端 /api/chat 调用完整 Agent 工作流：
 Supervisor → Intent → Policy/Material → Workflow → Governance → 回答
@@ -17,7 +17,7 @@ import api_client  # noqa: E402
 
 setup_paths()
 
-st.set_page_config(page_title="智能对话", page_icon="💬", layout="wide")
+
 st.title("💬 智能对话")
 st.caption("多 Agent 协同处理：**Supervisor → Intent → Policy/Material → Workflow → Governance → 回答**")
 
@@ -39,8 +39,9 @@ query = st.text_area(
 )
 
 # ── 后端状态提示 ──
-if not api_client.health():
-    st.warning("⚠️ 后端 API 未启动（http://localhost:8002），对话功能不可用。请先启动服务。")
+backend_available = api_client.health() is not None
+if not backend_available:
+    st.info("💡 后端 API 未启动，对话将使用**本地 stub 模式**（BERT 意图分类 + 政策模板）。启动后端即可切换为完整 Agent 工作流。")
 
 send = st.button("🚀 发送", type="primary", use_container_width=True)
 
@@ -48,11 +49,23 @@ if send:
     if not query.strip():
         st.warning("请输入问题")
     else:
-        with st.spinner("🔄 多 Agent 协同处理中（真实 LLM + MCP，可能需要 30~90 秒）..."):
-            status, data = api_client.chat(query)
+        if backend_available:
+            spinner_text = "🔄 多 Agent 协同处理中（真实 LLM + MCP，可能需要 30~90 秒）..."
+        else:
+            spinner_text = "🔄 本地 stub 模式处理中（BERT 分类 + 政策模板）..."
+
+        with st.spinner(spinner_text):
+            status, data = api_client.chat_with_fallback(query)
 
         if status == 200:
-            st.success("✅ 处理完成")
+            is_stub = data.get("mode") == "stub"
+
+            if is_stub:
+                st.success("✅ 处理完成（本地 stub 模式）")
+                st.caption("💡 当前为本地演示模式，回答基于内置政策模板。启动后端即可使用完整 Agent 工作流（LLM + RAG + MCP）。")
+            else:
+                st.success("✅ 处理完成")
+
             st.markdown("### 📝 回答")
             st.markdown(data.get("answer", "") or "（未生成回答）")
 
@@ -76,7 +89,8 @@ if send:
 
             trace_id = data.get("trace_id")
             if trace_id:
-                st.caption(f"🔍 trace_id: `{trace_id}`")
+                mode_tag = " [stub]" if is_stub else ""
+                st.caption(f"🔍 trace_id: `{trace_id}`{mode_tag}")
         else:
             st.error(f"❌ 请求失败: {data.get('error', status)}")
             if status == 0:

@@ -1,10 +1,10 @@
 """
-frontend.app - 政务多智能体协同与治理平台 — Streamlit 主页
+frontend.app - Streamlit 导航入口
 
 启动方式:
     streamlit run frontend/app.py
 
-页面导航: 左侧 sidebar 选择能力演示页
+页面导航由 st.navigation() 显式定义，不依赖数字前缀文件名。
 """
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ import sys
 import streamlit as st
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import api_client  # noqa: E402
 
 st.set_page_config(
     page_title="政务多智能体协同平台",
@@ -23,100 +22,16 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ============================================================
-# 头部
-# ============================================================
-st.title("🏛️ 政务多智能体协同与治理平台")
-st.caption("Government Agent Platform — LangGraph · MCP · A2A · AgentOps · RAG")
-st.divider()
-
-# ============================================================
-# 系统健康
-# ============================================================
-st.subheader("🩺 系统健康")
-
-health = api_client.health()
-col_h1, col_h2 = st.columns(2)
-with col_h1:
-    if health:
-        st.success(f"✅ API 服务正常 — {health.get('app')} **v{health.get('version')}**")
-    else:
-        st.warning("⚠️ API 服务未启动（http://localhost:8002）\n\n"
-                   "请运行 `docker compose up -d` 或 `uvicorn backend.main:app --port 8002`")
-
-overview = api_client.dashboard_overview()
-if overview:
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("总请求数", overview.get("total_requests", 0))
-    m2.metric("成功率", f"{overview.get('success_rate', 0) * 100:.1f}%")
-    m3.metric("平均耗时", f"{overview.get('avg_latency_ms', 0):.0f} ms")
-    m4.metric("活跃 Agent", overview.get("active_agents", 0))
-    m5.metric("MCP 调用", overview.get("tool_call_count", 0))
-
-st.divider()
-
-# ============================================================
-# 架构展示
-# ============================================================
-st.subheader("🧠 系统架构")
-st.markdown("**一条请求的旅程：** `用户请求 → 任务理解 → 多Agent协作 → 工具调用 → 流程执行 → 结果评估 → 持续优化`")
-
-st.markdown(
-    """
-```
-                    ┌──────────────────────┐
-                    │   FastAPI Gateway     │
-                    └──────────┬───────────┘
-                               ▼
-                    ┌──────────────────────┐
-                    │  Supervisor Agent     │  (LangGraph StateGraph)
-                    │  任务拆解 / Agent路由  │
-                    └──────────┬───────────┘
-                               ▼
-              ┌────────────────┼────────────────┐
-              ▼                ▼                ▼
-        ┌───────────┐   ┌───────────┐   ┌────────────┐
-        │ Intent    │   │ Policy    │   │ Material   │
-        │ Agent     │   │ Agent     │   │ Agent      │
-        │ 意图识别   │   │ RAG检索    │   │ 材料审核    │
-        └───────────┘   └───────────┘   └────────────┘
-              └────────────────┬────────────────┘
-                               ▼
-                    ┌──────────────────────┐
-                    │   Workflow Agent      │  →  A2A 跨域协同
-                    └──────────┬───────────┘
-                               ▼
-                    ┌──────────────────────┐
-                    │   Governance Agent    │  安全护栏 / PII / 风险
-                    └──────────┬───────────┘
-                               ▼
-                           回答用户
-"""
-)
-st.divider()
-
-# ============================================================
-# 平台能力
-# ============================================================
-st.subheader("🚀 平台能力一览")
-
-capabilities = [
-    ("💬", "智能对话", "多 Agent 协同回答", "Supervisor → Intent → Policy/Material → Workflow → Governance", "1_智能对话"),
-    ("🎯", "意图识别", "三级分类链", "BERT 模型 → 关键词匹配 → LLM 兜底，输出标签+置信度", "2_意图识别"),
-    ("📚", "政策检索", "RAG 混合检索", "Milvus 向量检索 + BM25 稀疏检索 + Reranker 精排 + LLM 生成", "3_政策检索"),
-    ("📋", "材料审核", "规则校验", "按业务类型校验材料完整性，别名匹配 + 温馨提示", "4_材料审核"),
-    ("🤝", "跨域协同", "A2A 外部 Agent", "通过 A2A 协议调用不动产/公积金等外部系统", "5_跨域协同"),
-    ("🛡️", "安全治理", "Guardrail 护栏", "PII 脱敏、Prompt 注入检测、敏感词过滤、输出安全", "6_安全治理"),
-    ("📊", "运维看板", "AgentOps 监控", "Agent 运行统计、执行成功率、评测报告", "7_运维看板"),
+pages = [
+    st.Page("pages/home_page.py", title="首页", icon="🏠", default=True),
+    st.Page("pages/chat_page.py", title="智能对话", icon="💬"),
+    st.Page("pages/intent_page.py", title="意图识别", icon="🎯"),
+    st.Page("pages/policy_page.py", title="政策检索", icon="📚"),
+    st.Page("pages/material_page.py", title="材料审核", icon="📋"),
+    st.Page("pages/a2a_page.py", title="跨域协同", icon="🤝"),
+    st.Page("pages/governance_page.py", title="安全治理", icon="🛡️"),
+    st.Page("pages/dashboard_page.py", title="运维看板", icon="📊"),
 ]
 
-for icon, name, tag, desc, page in capabilities:
-    with st.container(border=True):
-        c1, c2 = st.columns([1, 6])
-        c1.markdown(f"### {icon}")
-        c2.markdown(f"**{name}**  ·  `{tag}`")
-        c2.caption(desc)
-        c2.caption(f"👉 前往侧边栏 **{page}** 体验")
-
-st.divider()
-st.caption("🔧 技术栈: Python 3.12 · FastAPI · LangGraph · MCP · A2A · PostgreSQL 16 · Redis 7 · Milvus 2.5")
+pg = st.navigation(pages)
+pg.run()

@@ -1,5 +1,5 @@
 """
-frontend.pages.7_运维看板 - AgentOps 运维看板
+frontend.pages.dashboard_page - AgentOps 运维看板
 
 Agent 运行统计（从后端 /api/dashboard/overview）+ 评测报告（/api/evaluation/report）
 """
@@ -16,7 +16,7 @@ import api_client  # noqa: E402
 
 setup_paths()
 
-st.set_page_config(page_title="运维看板", page_icon="📊", layout="wide")
+
 st.title("📊 运维看板（AgentOps）")
 st.caption("Agent 运行统计 · 成功率 · 评测报告")
 

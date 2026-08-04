@@ -1,5 +1,5 @@
 """
-frontend.pages.6_安全治理 - Guardrail 安全护栏演示
+frontend.pages.governance_page - Guardrail 安全护栏演示
 
 PII 检测脱敏 + Prompt 注入检测 + 敏感词过滤 + 输出安全
 """
@@ -15,12 +15,30 @@ from common import setup_paths  # noqa: E402
 
 setup_paths()
 
-from governance.pii import detect_pii, mask_pii  # noqa: E402
-from governance.guardrail import GuardrailRunner  # noqa: E402
+try:
+    from governance.pii import detect_pii, mask_pii  # noqa: E402
+    from governance.guardrail import GuardrailRunner  # noqa: E402
+    _HAS_LOCAL_MODULES = True
+except ImportError:
+    detect_pii = None  # type: ignore[assignment]
+    mask_pii = None  # type: ignore[assignment]
+    GuardrailRunner = None  # type: ignore[assignment]
+    _HAS_LOCAL_MODULES = False
 
-st.set_page_config(page_title="安全治理", page_icon="🛡️", layout="wide")
+
 st.title("🛡️ 安全治理（Guardrail）")
 st.caption("PII 检测脱敏 · Prompt 注入检测 · 敏感词过滤 · 输出安全")
+
+if not _HAS_LOCAL_MODULES:
+    st.warning(
+        "⚠️ 此功能依赖项目本地模块（`governance/`），当前 Docker 容器中未包含。\n\n"
+        "请本地运行以获得完整体验：\n"
+        "```bash\n"
+        "pip install -r requirements/requirements.txt\n"
+        "streamlit run frontend/app.py\n"
+        "```\n\n"
+        "💡 提示：安全护栏在 **智能对话** 页的后端 Agent 工作流中已完整集成（输入/输出检测 + PII 脱敏），Docker 中可通过对话页体验。"
+    )
 
 EXAMPLES = [
     "我的手机号是 13812345678，身份证 110101199001011234，帮我查一下订单",
@@ -38,9 +56,11 @@ text = st.text_area(
     placeholder="输入要检测的文本",
 )
 
-if st.button("🛡️ 安全检测", type="primary", use_container_width=True):
+if st.button("🛡️ 安全检测", type="primary", use_container_width=True, disabled=not _HAS_LOCAL_MODULES):
     if not text.strip():
         st.warning("请输入文本")
+    elif not _HAS_LOCAL_MODULES:
+        st.warning("模块未安装，无法执行安全检测")
     else:
         st.divider()
 

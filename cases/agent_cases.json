@@ -1,31 +1,785 @@
 [
   {
-    "_description": "agent_cases.json - Multi-Agent task success and tool accuracy golden dataset",
+    "_description": "Multi-Agent task success and tool accuracy golden dataset",
     "_author": "le",
-    "_date": "2026/8/2",
-    "_version": "0.2",
-    "_task": "Golden dataset for Multi-Agent task success and tool accuracy evaluation",
+    "_date": "2026/8/4",
+    "_version": "0.3",
+    "_task": "Multi-Agent task success and tool accuracy golden dataset",
+    "_count": 60,
     "cases": [
       {
-        "id": "agent_001",
-        "query": "我要开一家川菜馆，需要哪些手续和材料",
+        "id": "agent_0001",
+        "query": "营业执照可以代办吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "agent_0002",
+        "query": "申请营业执照需要什么资质",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "agent_0003",
+        "query": "营业执照变更法人需要本人到场吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "agent_0004",
+        "query": "营业执照被吊销了还能恢复吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "agent_0005",
+        "query": "网店需要办营业执照吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "agent_0006",
+        "query": "个体工商户营业执照可以转让吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "agent_0007",
+        "query": "没有食品经营许可证可以试营业吗",
         "expected_intent": "restaurant_license",
-        "expected_tools": ["search_policy", "check_material", "create_case"],
-        "expected_answer": ["食品经营许可证", "营业执照"]
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "卫生许可证",
+          "食品经营许可证"
+        ]
       },
       {
-        "id": "agent_002",
-        "query": "新办企业注册流程和所需材料",
+        "id": "agent_0008",
+        "query": "开办咖啡厅需要什么证照",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "健康证",
+          "食品经营许可"
+        ]
+      },
+      {
+        "id": "agent_0009",
+        "query": "食品经营许可证的有效期是多久",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "食品经营许可证",
+          "营业执照"
+        ]
+      },
+      {
+        "id": "agent_0010",
+        "query": "食品经营许可证和餐饮服务许可证是一个东西吗",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "食品经营许可证",
+          "营业执照"
+        ]
+      },
+      {
+        "id": "agent_0011",
+        "query": "开办餐馆需要什么资质",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "健康证",
+          "食品经营许可"
+        ]
+      },
+      {
+        "id": "agent_0012",
+        "query": "餐饮店员工的健康证需要提前办吗",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "食品经营许可证",
+          "营业执照"
+        ]
+      },
+      {
+        "id": "agent_0013",
+        "query": "公司注册后多久要做税务登记",
         "expected_intent": "business_register",
-        "expected_tools": ["search_policy", "check_material", "create_case"],
-        "expected_answer": ["公司章程"]
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
       },
       {
-        "id": "agent_003",
-        "query": "查询公积金账户余额",
+        "id": "agent_0014",
+        "query": "注册公司代办和自己办哪个划算",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "公司章程",
+          "法人身份证"
+        ]
+      },
+      {
+        "id": "agent_0015",
+        "query": "公司经营范围变更怎么操作",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "agent_0016",
+        "query": "合伙企业注册和公司注册流程一样吗",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "agent_0017",
+        "query": "公司印章需要刻哪些",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "agent_0018",
+        "query": "注册咨询公司需要什么条件",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "公司章程",
+          "法人身份证"
+        ]
+      },
+      {
+        "id": "agent_0019",
+        "query": "离职后公积金怎么处理最好",
         "expected_intent": "fund_query",
-        "expected_tools": ["search_policy"],
-        "expected_answer": ["公积金"]
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "贷款",
+          "利率"
+        ]
+      },
+      {
+        "id": "agent_0020",
+        "query": "公积金贷款买房后还能提取吗",
+        "expected_intent": "fund_query",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "公积金",
+          "提取条件"
+        ]
+      },
+      {
+        "id": "agent_0021",
+        "query": "贷款住房公积金需要什么条件",
+        "expected_intent": "fund_query",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "贷款额度",
+          "缴纳年限"
+        ]
+      },
+      {
+        "id": "agent_0022",
+        "query": "公积金账户销户提取需要什么条件",
+        "expected_intent": "fund_query",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "贷款",
+          "利率"
+        ]
+      },
+      {
+        "id": "agent_0023",
+        "query": "提取公积金余额需要什么额度",
+        "expected_intent": "fund_query",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "贷款额度",
+          "缴纳年限"
+        ]
+      },
+      {
+        "id": "agent_0024",
+        "query": "公积金断缴了之前的余额还在吗",
+        "expected_intent": "fund_query",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "公积金",
+          "提取条件"
+        ]
+      },
+      {
+        "id": "agent_0025",
+        "query": "夫妻离婚房产过户需要什么",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "契税",
+          "网签合同"
+        ]
+      },
+      {
+        "id": "agent_0026",
+        "query": "不动产登记中心周末上班吗",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "不动产登记",
+          "工作日"
+        ]
+      },
+      {
+        "id": "agent_0027",
+        "query": "房产过户中发现有抵押怎么办",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "房产证",
+          "过户流程"
+        ]
+      },
+      {
+        "id": "agent_0028",
+        "query": "房产赠与和买卖哪个税少",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "不动产登记",
+          "工作日"
+        ]
+      },
+      {
+        "id": "agent_0029",
+        "query": "登记房产需要什么材料",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "不动产登记",
+          "工作日"
+        ]
+      },
+      {
+        "id": "agent_0030",
+        "query": "过户商铺需要什么条件",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "不动产登记",
+          "工作日"
+        ]
+      },
+      {
+        "id": "agent_0031",
+        "query": "医保报销和商业保险可以叠加吗",
+        "expected_intent": "medical_insurance",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "异地就医",
+          "备案"
+        ]
+      },
+      {
+        "id": "agent_0032",
+        "query": "医保缴费基数是怎么定的",
+        "expected_intent": "medical_insurance",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "门诊",
+          "住院",
+          "医保目录"
+        ]
+      },
+      {
+        "id": "agent_0033",
+        "query": "职工医保和居民医保的报销比例差多少",
+        "expected_intent": "medical_insurance",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "医保",
+          "报销比例"
+        ]
+      },
+      {
+        "id": "agent_0034",
+        "query": "办理医疗保险需要什么标准",
+        "expected_intent": "medical_insurance",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "医保",
+          "报销比例"
+        ]
+      },
+      {
+        "id": "agent_0035",
+        "query": "医保报销有上限吗",
+        "expected_intent": "medical_insurance",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "异地就医",
+          "备案"
+        ]
+      },
+      {
+        "id": "agent_0036",
+        "query": "医保卡丢了被盗刷怎么办",
+        "expected_intent": "medical_insurance",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "异地就医",
+          "备案"
+        ]
+      },
+      {
+        "id": "agent_0037",
+        "query": "社保可以一次性缴清吗",
+        "expected_intent": "social_security",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "养老保险",
+          "缴费年限"
+        ]
+      },
+      {
+        "id": "agent_0038",
+        "query": "灵活就业人员能领取失业金吗",
+        "expected_intent": "social_security",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "社保",
+          "基数"
+        ]
+      },
+      {
+        "id": "agent_0039",
+        "query": "社保跨省转移需要什么手续",
+        "expected_intent": "social_security",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "社保卡",
+          "激活"
+        ]
+      },
+      {
+        "id": "agent_0040",
+        "query": "办理社会保险需要什么条件",
+        "expected_intent": "social_security",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "社保卡",
+          "激活"
+        ]
+      },
+      {
+        "id": "agent_0041",
+        "query": "社保最低缴费基数是多少",
+        "expected_intent": "social_security",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "社保卡",
+          "激活"
+        ]
+      },
+      {
+        "id": "agent_0042",
+        "query": "退休年龄延迟社保怎么交",
+        "expected_intent": "social_security",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "社保",
+          "基数"
+        ]
+      },
+      {
+        "id": "agent_0043",
+        "query": "发票开错了可以作废重开吗",
+        "expected_intent": "tax_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "企业所得税",
+          "汇算清缴"
+        ]
+      },
+      {
+        "id": "agent_0044",
+        "query": "税务申报逾期罚款多少",
+        "expected_intent": "tax_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "企业所得税",
+          "汇算清缴"
+        ]
+      },
+      {
+        "id": "agent_0045",
+        "query": "公司买车能抵多少税",
+        "expected_intent": "tax_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "个税",
+          "专项扣除"
+        ]
+      },
+      {
+        "id": "agent_0046",
+        "query": "发票丢失了怎么处理",
+        "expected_intent": "tax_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "个税",
+          "专项扣除"
+        ]
+      },
+      {
+        "id": "agent_0047",
+        "query": "公司注销需要先清税吗",
+        "expected_intent": "tax_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "企业所得税",
+          "汇算清缴"
+        ]
+      },
+      {
+        "id": "agent_0048",
+        "query": "申报个人所得税需要什么税率",
+        "expected_intent": "tax_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "企业所得税",
+          "汇算清缴"
+        ]
+      },
+      {
+        "id": "agent_0049",
+        "query": "放管服改革对企业有什么影响",
+        "expected_intent": "policy_query",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "税收",
+          "优惠"
+        ]
+      },
+      {
+        "id": "agent_0050",
+        "query": "新能源汽车有什么补贴政策",
+        "expected_intent": "policy_query",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "创业",
+          "补贴"
+        ]
+      },
+      {
+        "id": "agent_0051",
+        "query": "中小企业融资有什么扶持政策",
+        "expected_intent": "policy_query",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "营商环境",
+          "改革"
+        ]
+      },
+      {
+        "id": "agent_0052",
+        "query": "查询补贴政策需要什么要求",
+        "expected_intent": "policy_query",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "营商环境",
+          "改革"
+        ]
+      },
+      {
+        "id": "agent_0053",
+        "query": "查询惠企政策需要什么时间",
+        "expected_intent": "policy_query",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "税收",
+          "优惠"
+        ]
+      },
+      {
+        "id": "agent_0054",
+        "query": "疫情期间的扶持政策还继续吗",
+        "expected_intent": "policy_query",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "税收",
+          "优惠"
+        ]
+      },
+      {
+        "id": "agent_0055",
+        "query": "什么是机器学习",
+        "expected_intent": "other",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "无法回答",
+          "请咨询"
+        ]
+      },
+      {
+        "id": "agent_0056",
+        "query": "今年世界杯什么时候开始",
+        "expected_intent": "other",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "无法回答",
+          "请咨询"
+        ]
+      },
+      {
+        "id": "agent_0057",
+        "query": "帮我写一份工作总结",
+        "expected_intent": "other",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "无法回答",
+          "请咨询"
+        ]
+      },
+      {
+        "id": "agent_0058",
+        "query": "最近有什么好听的歌",
+        "expected_intent": "other",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "无法回答",
+          "请咨询"
+        ]
+      },
+      {
+        "id": "agent_0059",
+        "query": "能帮我做一个PPT吗",
+        "expected_intent": "other",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "无法回答",
+          "请咨询"
+        ]
+      },
+      {
+        "id": "agent_0060",
+        "query": "你好，请问在吗",
+        "expected_intent": "other",
+        "expected_tools": [
+          "search_policy"
+        ],
+        "expected_answer": [
+          "无法回答",
+          "请咨询"
+        ]
       }
     ]
   }

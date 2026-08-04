@@ -284,8 +284,15 @@ class IntentClassifier:
 
     @staticmethod
     def _resolve_path() -> Optional[str]:
-        """从环境变量解析本地模型路径，存在则返回"""
+        """从环境变量解析本地模型路径（相对于项目根目录），存在则返回"""
         path = os.environ.get("INTENT_MODEL_PATH", "models/intent/bert-intent")
+        # 相对路径 → 基于 classifier.py 位置推导项目根目录的绝对路径
+        if not os.path.isabs(path):
+            # classifier.py 位于 <project_root>/agents/intent/classifier.py
+            project_root = os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            )
+            path = os.path.join(project_root, path)
         if os.path.isdir(path):
             return path
         return None

@@ -1,5 +1,5 @@
 """
-frontend.pages.2_意图识别 - 意图分类演示
+frontend.pages.intent_page - 意图分类演示
 
 三级分类链：BERT 模型 → 关键词匹配 → LLM 兜底
 """
@@ -15,11 +15,26 @@ from common import setup_paths, run_async  # noqa: E402
 
 setup_paths()
 
-from agents.intent.classifier import IntentClassifier  # noqa: E402
+try:
+    from agents.intent.classifier import IntentClassifier  # noqa: E402
+    _HAS_LOCAL_MODULES = True
+except ImportError:
+    IntentClassifier = None  # type: ignore[assignment]
+    _HAS_LOCAL_MODULES = False
 
-st.set_page_config(page_title="意图识别", page_icon="🎯", layout="wide")
+
 st.title("🎯 意图识别")
 st.caption("三级分类链：**BERT 模型 → 关键词匹配 → LLM 兜底**")
+
+if not _HAS_LOCAL_MODULES:
+    st.warning(
+        "⚠️ 此功能依赖项目本地模块（`agents/`），当前 Docker 容器中未包含。\n\n"
+        "请本地运行以获得完整体验：\n"
+        "```bash\n"
+        "pip install -r requirements/requirements.txt\n"
+        "streamlit run frontend/app.py\n"
+        "```"
+    )
 
 # 支持的业务意图
 LABELS = {
@@ -52,12 +67,14 @@ text = st.text_input(
     placeholder="例如：我想开一家川菜馆",
 )
 
-if st.button("🎯 识别意图", type="primary", use_container_width=True):
+if st.button("🎯 识别意图", type="primary", use_container_width=True, disabled=not _HAS_LOCAL_MODULES):
     if not text.strip():
         st.warning("请输入文本")
+    elif not _HAS_LOCAL_MODULES:
+        st.warning("模块未安装，无法执行意图识别")
     else:
         with st.spinner("识别中..."):
-            classifier = IntentClassifier(auto_load=False)
+            classifier = IntentClassifier()  # auto_load=True，使用本地微调 BERT 模型
             result = run_async(classifier.classify(text))
 
         st.divider()

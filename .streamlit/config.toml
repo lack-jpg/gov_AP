@@ -1,12 +1,12 @@
 # =====================================================
 # .streamlit/config.toml - Streamlit 前端配置
-# 端口对齐项目 FRONTEND_PORT (12315)
+# 端口对齐项目 FRONTEND_PORT (12345)
 #
 # 若修改 .env 中的 FRONTEND_PORT，请同步更新此处 port。
 # =====================================================
 
 [server]
-port = 12315
+port = 12345
 headless = true
 # 禁止浏览器自动打开（服务器/容器环境友好）
 runOnSave = false

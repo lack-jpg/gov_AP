@@ -1,24 +1,694 @@
 [
   {
-    "_description": "workflow.json - End-to-end business workflow execution test cases",
+    "_description": "End-to-end business workflow execution test cases",
     "_author": "le",
-    "_date": "2026/8/2",
-    "_version": "0.2",
-    "_task": "Test cases for end-to-end business workflow execution",
+    "_date": "2026/8/4",
+    "_version": "0.3",
+    "_task": "End-to-end business workflow execution test cases",
+    "_count": 50,
     "cases": [
       {
-        "id": "wf_001",
-        "query": "我想开一家火锅店，帮我办手续",
+        "id": "wf_0001",
+        "query": "餐饮店网上订餐需要额外资质吗",
         "expected_intent": "restaurant_license",
-        "expected_tools": ["search_policy", "check_material", "create_case"],
-        "expected_answer": ["营业执照", "食品经营许可证"]
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "卫生许可证",
+          "食品经营许可证"
+        ]
       },
       {
-        "id": "wf_002",
-        "query": "查询公积金并申请贷款",
+        "id": "wf_0002",
+        "query": "卖早餐需要办餐饮许可证吗",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "食品经营许可证",
+          "营业执照"
+        ]
+      },
+      {
+        "id": "wf_0003",
+        "query": "食品经营许可证和餐饮服务许可证是一个东西吗",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "食品经营许可证",
+          "营业执照"
+        ]
+      },
+      {
+        "id": "wf_0004",
+        "query": "开办火锅店需要什么许可证",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "食品经营许可证",
+          "营业执照"
+        ]
+      },
+      {
+        "id": "wf_0005",
+        "query": "开办酒楼需要什么审批流程",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "餐饮服务许可证"
+        ]
+      },
+      {
+        "id": "wf_0006",
+        "query": "餐饮店装修有特殊要求吗",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "卫生许可证",
+          "食品经营许可证"
+        ]
+      },
+      {
+        "id": "wf_0007",
+        "query": "餐饮店转让时许可证可以过户吗",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "卫生许可证",
+          "食品经营许可证"
+        ]
+      },
+      {
+        "id": "wf_0008",
+        "query": "开办自助餐厅需要什么证照",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "餐饮服务许可证"
+        ]
+      },
+      {
+        "id": "wf_0009",
+        "query": "开办西餐厅需要什么条件",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "卫生许可证",
+          "食品经营许可证"
+        ]
+      },
+      {
+        "id": "wf_0010",
+        "query": "餐饮店经营面积和证照有关系吗",
+        "expected_intent": "restaurant_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "健康证",
+          "食品经营许可"
+        ]
+      },
+      {
+        "id": "wf_0011",
+        "query": "电子营业执照和纸质版有同等效力吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "wf_0012",
+        "query": "营业执照到期前多久换证",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "wf_0013",
+        "query": "住宅地址可以注册营业执照吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "wf_0014",
+        "query": "申请工商执照需要什么文件",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "wf_0015",
+        "query": "开一家小店需要办理营业执照吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "wf_0016",
+        "query": "个体户营业执照和公司营业执照有什么区别",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "wf_0017",
+        "query": "营业执照地址变更需要重新办理吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "wf_0018",
+        "query": "营业执照可以代办吗",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "wf_0019",
+        "query": "注销营业执照需要什么步骤",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "经营场所证明",
+          "身份证",
+          "照片"
+        ]
+      },
+      {
+        "id": "wf_0020",
+        "query": "营业执照变更经营范围要多少钱",
+        "expected_intent": "business_license",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "营业执照",
+          "身份证明"
+        ]
+      },
+      {
+        "id": "wf_0021",
+        "query": "注册公司需要法人亲自到场吗",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "wf_0022",
+        "query": "注册科技公司需要什么资金",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "wf_0023",
+        "query": "注册教育公司需要什么费用",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "wf_0024",
+        "query": "注册有限责任公司需要什么步骤",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "wf_0025",
+        "query": "公司注册后多久可以开发票",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "wf_0026",
+        "query": "公司注册后还需要办哪些手续",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "wf_0027",
+        "query": "注册公司需要验资吗",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "wf_0028",
+        "query": "一个人可以注册公司吗",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "公司名称预核准",
+          "经营范围",
+          "注册资本"
+        ]
+      },
+      {
+        "id": "wf_0029",
+        "query": "注册合伙企业需要什么条件",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "wf_0030",
+        "query": "注册公司对注册资金有什么要求",
+        "expected_intent": "business_register",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "注册地址证明",
+          "股东身份证明"
+        ]
+      },
+      {
+        "id": "wf_0031",
+        "query": "离职后公积金怎么处理最好",
         "expected_intent": "fund_query",
-        "expected_tools": ["search_policy", "create_case"],
-        "expected_answer": ["公积金"]
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "贷款",
+          "利率"
+        ]
+      },
+      {
+        "id": "wf_0032",
+        "query": "公积金租房提取需要什么材料",
+        "expected_intent": "fund_query",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "贷款额度",
+          "缴纳年限"
+        ]
+      },
+      {
+        "id": "wf_0033",
+        "query": "公积金贷款和商贷可以一起用吗",
+        "expected_intent": "fund_query",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "贷款",
+          "利率"
+        ]
+      },
+      {
+        "id": "wf_0034",
+        "query": "公积金账户可以在手机上查询吗",
+        "expected_intent": "fund_query",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "公积金",
+          "提取条件"
+        ]
+      },
+      {
+        "id": "wf_0035",
+        "query": "公积金账户的利息是多少",
+        "expected_intent": "fund_query",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "贷款",
+          "利率"
+        ]
+      },
+      {
+        "id": "wf_0036",
+        "query": "公积金还可以用来做什么",
+        "expected_intent": "fund_query",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "贷款额度",
+          "缴纳年限"
+        ]
+      },
+      {
+        "id": "wf_0037",
+        "query": "查询公积金需要什么规定",
+        "expected_intent": "fund_query",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "贷款",
+          "利率"
+        ]
+      },
+      {
+        "id": "wf_0038",
+        "query": "贷款住房公积金需要什么额度",
+        "expected_intent": "fund_query",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "贷款额度",
+          "缴纳年限"
+        ]
+      },
+      {
+        "id": "wf_0039",
+        "query": "公积金缴存基数可以自己调吗",
+        "expected_intent": "fund_query",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "贷款",
+          "利率"
+        ]
+      },
+      {
+        "id": "wf_0040",
+        "query": "公积金异地转移接续怎么办理",
+        "expected_intent": "fund_query",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "贷款",
+          "利率"
+        ]
+      },
+      {
+        "id": "wf_0041",
+        "query": "过户新房需要什么材料",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "不动产登记",
+          "工作日"
+        ]
+      },
+      {
+        "id": "wf_0042",
+        "query": "登记二手房需要什么期限",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "不动产登记",
+          "工作日"
+        ]
+      },
+      {
+        "id": "wf_0043",
+        "query": "二手房网签是什么流程",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "不动产登记",
+          "工作日"
+        ]
+      },
+      {
+        "id": "wf_0044",
+        "query": "房产证上有两个人名字怎么过户",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "契税",
+          "网签合同"
+        ]
+      },
+      {
+        "id": "wf_0045",
+        "query": "小产权房能办不动产证吗",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "契税",
+          "网签合同"
+        ]
+      },
+      {
+        "id": "wf_0046",
+        "query": "产权异议登记是什么有什么用",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "房产证",
+          "过户流程"
+        ]
+      },
+      {
+        "id": "wf_0047",
+        "query": "房产过户税费怎么计算",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "不动产登记",
+          "工作日"
+        ]
+      },
+      {
+        "id": "wf_0048",
+        "query": "登记房屋需要什么条件",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "check_material",
+          "create_case"
+        ],
+        "expected_answer": [
+          "不动产登记",
+          "工作日"
+        ]
+      },
+      {
+        "id": "wf_0049",
+        "query": "不动产证丢失了怎么补办",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "不动产登记",
+          "工作日"
+        ]
+      },
+      {
+        "id": "wf_0050",
+        "query": "不动产抵押登记需要什么材料",
+        "expected_intent": "property_service",
+        "expected_tools": [
+          "search_policy",
+          "create_case"
+        ],
+        "expected_answer": [
+          "房产证",
+          "过户流程"
+        ]
       }
     ]
   }

@@ -171,7 +171,7 @@ async def intent_node(
             from agents.intent.classifier import IntentClassifier
             from agents.intent.agent import IntentAgent
 
-            classifier = IntentClassifier(auto_load=False)
+            classifier = IntentClassifier()  # auto_load=True，使用本地微调 BERT 模型
             try:
                 agent = IntentAgent(classifier=classifier, llm=llm)
                 result = await agent.classify(user_query)

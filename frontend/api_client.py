@@ -7,12 +7,14 @@ frontend.api_client - FastAPI 后端 API 客户端（httpx）
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Optional
 
 import httpx
 
 # 后端 API 地址（FastAPI 服务，默认 8002）
-BASE_URL = "http://localhost:8002"
+# 容器部署时设置环境变量 API_BASE_URL=http://api:8002
+BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8002")
 
 
 def _get(path: str, params: Optional[dict] = None, timeout: float = 10.0) -> Optional[dict]:
@@ -53,6 +55,35 @@ def chat(user_query: str, user_id: str = "demo_user") -> tuple[int, dict]:
         return r.status_code, {"error": r.text[:300]}
     except Exception as e:
         return 0, {"error": str(e)}
+
+
+def chat_with_fallback(user_query: str, user_id: str = "demo_user") -> tuple[int, dict]:
+    """
+    多 Agent 对话（自动降级：API → 本地 stub）。
+
+    优先调用后端 /api/chat；后端不可用时自动降级为本地 stub 模式，
+    使用本地 BERT 意图分类 + stub 政策模板，保证演示可用。
+
+    Returns:
+        (status_code, response_dict)
+        - 200: 后端正常响应 或 stub 降级成功（response 含 mode="stub"）
+        - 0:  后端不可用且 stub 也失败
+    """
+    # 1. 尝试后端 API
+    if health():
+        return chat(user_query, user_id)
+
+    # 2. 降级：本地 stub 模式
+    try:
+        import asyncio
+        from stub_chat import run_stub_chat
+
+        result = asyncio.run(run_stub_chat(user_query, user_id))
+        return 200, result
+    except ImportError as e:
+        return 0, {"error": f"后端不可用，本地 stub 模块加载失败: {e}"}
+    except Exception as e:
+        return 0, {"error": f"后端不可用，本地 stub 执行失败: {e}"}
 
 
 def dashboard_overview() -> Optional[dict]:

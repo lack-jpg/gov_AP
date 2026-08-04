@@ -327,6 +327,7 @@ class EvaluationEngine:
                     record.actual_intent = self._extract_intent_from_traces(record.traces)
                     record.actual_tools = self._extract_tools_from_traces(record.traces)
                     record.actual_answer = self._extract_answer_from_traces(record.traces)
+                    record.contexts = self._extract_contexts_from_traces(record.traces)
 
             # Intent 匹配
             if record.expected_intent and record.actual_intent:
