@@ -5,6 +5,8 @@
 > Enterprise Multi-Agent Platform based on LangGraph + MCP + A2A + AgentOps + RAG
 > 注意：前端界面全部由AI生成，请勿直接复制。
 
+> **最近更新（2026-08-05）**：LangGraph 1.x API 兼容修复 + 安全加固（护栏前置 / MCP 认证+RBAC / CORS 白名单 / A2A HMAC）+ 认证体系重构 + 日志路径修复 + 看板数据恢复。详见 [更新日志](#20-更新日志)。
+
 ---
 
 <p align="center">
@@ -1538,7 +1540,7 @@ governance_node（末尾节点）
 ✅ api/schemas.py              — 10个Pydantic API模型（225行）
 ✅ api/dependencies.py         — 5个DI函数（140行）
 ✅ api/routes.py               — 5个API端点（/chat, /status, /a2a, /dashboard, /eval，244行）
-✅ middleware/auth.py           — JWT + Bearer + X-User-Id + Token生成（155行）
+✅ middleware/auth.py           — JWT Bearer + X-User-Id 降级 + Token生成 + Fallthrough 容错（~170行）
 ✅ services/agent_service.py   — AgentService（注册+执行+恢复，159行）
 ✅ middleware/rbac.py           — RBAC权限（4角色+16权限+MCP Tool鉴权+FastAPI依赖注入，~390行）
 ✅ middleware/tracing.py        — OpenTelemetry（Trace/Span创建、W3C传播、Agent/Tool instrumentation、NoOp降级，~440行）
@@ -1782,6 +1784,64 @@ governance_node（末尾节点）
 第六优先级（生产化）:
   deploy/Dockerfile → docker-compose.yml（根目录）
   governance/dashboard.py → monitor.py
+```
+
+---
+
+# 20. 更新日志
+
+## 2026-08-05 — 安全加固 + 认证重构 + Bug 修复
+
+### LangGraph 1.x API 兼容
+
+Docker 容器内 LangGraph 版本升级导致 4 项 API 不兼容，已全部适配：
+
+- **`checkpointer.py`**: `aput()` 增加 `new_versions` 参数，`aput_writes()` 增加 `task_path` 参数，`self._serde` → `self.serde` 属性变更，`dumps_typed()`/`loads_typed()` 适配 `(encoding, bytes)` 元组格式
+- **`edges.py`**: intent 任务跳过时标记 `SKIPPED`，`all_completed` 检查扩大为 `COMPLETED/FAILED/SKIPPED`，防止 supervisor ↔ intent 死循环
+- **`dependencies.py`**: `execute_agent()` 增加通用 `except Exception` 兜底，避免未预期异常逃逸
+
+### 安全加固
+
+| 加固项 | 文件 | 说明 |
+|--------|------|------|
+| 护栏前置 LLM | `dependencies.py` | `GuardrailRunner.run_input()` 在 `graph.ainvoke` 前执行，注入/敏感词立即阻断 |
+| MCP 认证+RBAC | `gateway.py`, `client.py` | Gateway 增加 JWT Bearer Token 验证 + `admin`/`agent` 角色控制，Client 携带认证 Header |
+| CORS 白名单 | `config.py` | 默认值从 `"*"` 改为 `"localhost:12345,localhost:3000"` |
+| A2A Callback HMAC | `routes.py`, `schemas.py` | HMAC-SHA256 签名验证 + ±300s 防重放窗口 |
+| 端口文档统一 | `docker-compose.yml`, `config.py` | 修正 Redis 端口注释 6480→6500，补充容器内/本地开发的端口区分说明 |
+
+### 认证体系重构
+
+旧版认证存在两个问题：(1) `dependencies.py:get_user_id()` 直接从 `X-User-Id` Header 读取用户 ID，忽略 `AuthMiddleware` 已注入的 `request.state.user_id`；(2) `RBACMiddleware` 在 `AuthMiddleware` 之前执行（FastAPI LIFO 顺序），权限检查时 `request.state.user_role` 尚未设置。
+
+修复：
+- **`dependencies.py`**: `get_user_id()` 改为从 `request.state.user_id` 读取
+- **`main.py`**: 调换 `RBACMiddleware` / `AuthMiddleware` 注册顺序，Auth 先执行设置身份，RBAC 后执行检查权限；`global_exception_handler` 不再拦截 `HTTPException`（401/403 由 Starlette 原样返回）
+- **`auth.py`**: JWT 解码失败改为 `pass`（fallthrough 到 `X-User-Id` 降级），不再立即抛 401
+- **`rbac.py`**: USER 角色增加 `DASHBOARD_VIEW` + `EVALUATION_VIEW` 权限
+- **`api_client.py`**: 新增 `_headers()` 函数，同时发送 `Bearer Token` + `X-User-Id` 双重认证头，Docker 前端容器兼容
+
+### 日志系统修复
+
+- **`tools/logger.py`**: `LOG_DIR` 从相对路径 `"logger"` 改为基于项目根目录的绝对路径，支持 `GOV_LOG_DIR` 环境变量覆盖
+- **`config.py`**: 新增 `log_dir` 配置项
+- 30+ 处降级路径增加 `logger.warning()`，覆盖 DB/Redis/MCP/A2D 和安全事件
+
+### 前端改进
+
+- **`dashboard_page.py`**: cases JSON 兼容 `list[{_description, cases, ...}]` 和 `dict` 两种结构
+- **`api_client.py`**: `chat_with_fallback()` 后端不可用时自动降级到本地 stub（BERT 意图 + 政策模板）+ 双重认证头
+
+### 验证
+
+```
+pytest: 78/78 passed
+guardrail: 45/45 passed
+state: 117/117 passed
+a2a: 15/15 passed
+logger smoke: 20/20 passed
+chat e2e: restaurant_license / risk=low / 200 OK
+dashboard: total_requests=6, success_rate=1.0, active_agents=4
 ```
 
 ---

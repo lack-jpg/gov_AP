@@ -116,9 +116,11 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.TOOL_WORKFLOW_STATUS,
     },
     Role.USER: {
-        # 普通用户只能对话和查询状态
+        # 普通用户：对话、查询状态、查看看板和评测报告
         Permission.CHAT_SEND,
         Permission.AGENT_STATUS,
+        Permission.DASHBOARD_VIEW,
+        Permission.EVALUATION_VIEW,
         # MCP Tool — 用户通过 Agent 间接使用，受限于 Agent 调用链
         Permission.TOOL_POLICY_SEARCH,
         Permission.TOOL_MATERIAL_CHECK,

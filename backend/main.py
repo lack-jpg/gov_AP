@@ -127,32 +127,37 @@ def create_app() -> FastAPI:
     except Exception:
         pass
 
-    # ── 认证中间件（JWT Bearer Token → X-User-Id 注入） ──
-    try:
-        from backend.middleware.auth import AuthMiddleware
-        app.add_middleware(AuthMiddleware)
-    except Exception:
-        pass
-
-    # ── 权限中间件（RBAC 角色/权限校验） ──
+    # ── 权限中间件（RBAC 角色/权限校验 — 依赖 AuthMiddleware 注入的 user_role） ──
     try:
         from backend.middleware.rbac import RBACMiddleware
         app.add_middleware(RBACMiddleware)
     except Exception:
         pass
 
+    # ── 认证中间件（JWT Bearer Token → request.state 注入 — 必须在 RBAC 之前执行） ──
+    try:
+        from backend.middleware.auth import AuthMiddleware
+        app.add_middleware(AuthMiddleware)
+    except Exception:
+        pass
+
     # ── 请求日志中间件（trace_id注入 + 请求/响应日志） ──
     app.add_middleware(RequestLoggingMiddleware)
 
-    # ── 全局异常处理 ──
+    # ── 全局异常处理（不拦截 HTTPException — 由 Starlette 原样返回） ──
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         """
         全局异常处理器。
 
-        不泄露内部异常详情（traceback仅记录到日志文件）。
-        返回统一的错误响应格式。
+        仅处理真正的未预期异常（非 HTTPException），避免泄露内部错误详情。
+        HTTPException（401/403/404 等）由 Starlette 原样返回给客户端。
         """
+        # HTTPException 是 Starlette 有意抛出的，不应被全局 handler 屏蔽
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+        if isinstance(exc, StarletteHTTPException):
+            raise exc
+
         logger = get_logger("backend.exception_handler")
         trace_id = get_current_trace_id() or getattr(
             getattr(request, "state", None), "trace_id", "unknown"

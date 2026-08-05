@@ -11,10 +11,10 @@ import sys
 import streamlit as st
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common import setup_paths  # noqa: E402
+from frontend.common import setup_paths  # noqa: E402
 
 setup_paths()
-import api_client  # noqa: E402
+from frontend import api_client  # noqa: E402
 
 # ============================================================
 # 头部

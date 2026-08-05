@@ -45,7 +45,9 @@ from backend.config import Settings
 # 日志输出目录
 # ============================================================
 
-LOG_DIR = "logger"
+# 绝对路径，避免因启动 CWD 不同导致日志写入未知位置
+# 可通过环境变量 GOV_LOG_DIR 覆盖（如 Docker 挂载 /var/log/gov_ap/）
+LOG_DIR = os.environ.get("GOV_LOG_DIR") or os.path.join(_project_root, "logger")
 
 
 # ============================================================
@@ -201,7 +203,9 @@ def setup_logging(settings: Settings) -> None:
     Args:
         settings: 应用配置（包含 log_level 等）
     """
-    os.makedirs(LOG_DIR, exist_ok=True)
+    # 优先使用 settings.log_dir（.env GOV_LOG_DIR），其次用模块级 LOG_DIR
+    log_dir = getattr(settings, "log_dir", "") or LOG_DIR
+    os.makedirs(log_dir, exist_ok=True)
 
     level = settings.log_level.upper()
 
@@ -220,7 +224,7 @@ def setup_logging(settings: Settings) -> None:
 
     # ── 运行日志 ──
     _loguru_logger.add(
-        os.path.join(LOG_DIR, "app_{time:YYYY-MM-DD}.log"),
+        os.path.join(log_dir, "app_{time:YYYY-MM-DD}.log"),
         format=_file_format,
         level="INFO",
         rotation="00:00",
@@ -231,7 +235,7 @@ def setup_logging(settings: Settings) -> None:
 
     # ── 错误日志 ──
     _loguru_logger.add(
-        os.path.join(LOG_DIR, "error_{time:YYYY-MM-DD}.log"),
+        os.path.join(log_dir, "error_{time:YYYY-MM-DD}.log"),
         format=_error_file_format,
         level="ERROR",
         rotation="00:00",
@@ -244,7 +248,7 @@ def setup_logging(settings: Settings) -> None:
 
     _loguru_logger.info(
         "日志系统初始化完成 level={} debug={} dir={}",
-        level, settings.debug, LOG_DIR,
+        level, settings.debug, log_dir,
     )
 
 

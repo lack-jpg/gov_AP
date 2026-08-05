@@ -11,8 +11,8 @@ import sys
 import streamlit as st
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common import setup_paths  # noqa: E402
-import api_client  # noqa: E402
+from frontend.common import setup_paths  # noqa: E402
+from frontend import api_client  # noqa: E402
 
 setup_paths()
 
@@ -83,15 +83,54 @@ st.divider()
 # 评测数据集
 # ============================================================
 st.subheader("🗂️ 评测数据集")
-datasets = [
-    ("intent_cases", "意图分类", "10 条"),
-    ("rag_cases", "RAG 检索", "5 条"),
-    ("agent_cases", "多 Agent 任务", "3 条"),
-    ("security_cases", "安全治理", "3 条"),
-    ("business_license", "营业执照场景", "3 条"),
-    ("policy_query", "政策查询", "3 条"),
-    ("workflow", "流程执行", "2 条"),
+
+# 从 cases/ 目录动态读取实际用例数量
+import json as _json
+import os as _os
+
+_cases_dir = _os.path.join(
+    _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))),
+    "cases",
+)
+_dataset_meta = [
+    ("intent_cases", "意图分类"),
+    ("rag_cases", "RAG 检索"),
+    ("agent_cases", "多 Agent 任务"),
+    ("security_cases", "安全治理"),
+    ("business_license", "营业执照场景"),
+    ("policy_query", "政策查询"),
+    ("workflow", "流程执行"),
 ]
-for name, desc, count in datasets:
-    st.markdown(f"- **`{name}.json`** — {desc}（{count}）")
-st.caption("数据集位于 `cases/` 目录，格式兼容 GoldenDataset loader 与评测引擎")
+
+dataset_loaded = 0
+for name, desc in _dataset_meta:
+    filepath = _os.path.join(_cases_dir, f"{name}.json")
+    count_str = "?"
+    try:
+        if _os.path.exists(filepath):
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = _json.load(f)
+            # cases/ JSON 结构兼容：顶层可能是 list（如 [{_description, cases, ...}]）
+            # 也可能是直接 dict（如 {"cases": [...]}）
+            if isinstance(data, list):
+                # 取第一个元素，或遍历合并所有 cases
+                all_cases: list = []
+                for item in data:
+                    if isinstance(item, dict):
+                        all_cases.extend(item.get("cases", []))
+                count_val = len(all_cases)
+            elif isinstance(data, dict):
+                cases = data.get("cases", [])
+                count_val = len(cases) if isinstance(cases, list) else data.get("_count", data.get("case_count", "?"))
+            else:
+                count_val = "?"
+            count_str = f"{count_val} 条"
+            dataset_loaded += 1
+    except Exception:
+        count_str = "读取失败"
+    st.markdown(f"- **`{name}.json`** — {desc}（{count_str}）")
+
+if dataset_loaded > 0:
+    st.caption(f"数据集位于 `cases/` 目录，格式兼容 GoldenDataset loader 与评测引擎（已加载 {dataset_loaded}/{len(_dataset_meta)} 个）")
+else:
+    st.caption("数据集位于 `cases/` 目录，格式兼容 GoldenDataset loader 与评测引擎")

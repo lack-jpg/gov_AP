@@ -82,22 +82,21 @@ async def supervisor_node(
     if get_current_trace() is None:
         start_trace(user_query=state.get("user_query", ""))
 
-    # === 意图到达后重新规划 ===
-    # intent_node 执行完会无条件回到 supervisor_node（edges.py:161），
-    # 此时 intent 已更新但 task_plan 可能还是用 intent="unknown" 生成的旧计划。
-    # 检测这种情况并触发 replan。
-    intent = state.get("intent", "")
-    task_plan = state.get("task_plan", [])
-    prev_node = state.get("current_node", "")
-    if intent and task_plan and prev_node == NodeName.INTENT.value:
-        logger.info(
-            "意图已识别: {}，触发 re-plan（原 plan 基于 intent=unknown 生成）",
-            intent,
-        )
-        state = await supervisor.handle_intent_result(state, intent)
-
     _start = time.perf_counter()
     try:
+        # === 意图到达后重新规划 ===
+        # intent_node 执行完会无条件回到 supervisor_node（edges.py:161），
+        # 此时 intent 已更新但 task_plan 可能还是用 intent="unknown" 生成的旧计划。
+        # 检测这种情况并触发 replan。
+        intent = state.get("intent", "")
+        task_plan = state.get("task_plan", [])
+        prev_node = state.get("current_node", "")
+        if intent and task_plan and prev_node == NodeName.INTENT.value:
+            logger.info(
+                "意图已识别: {}，触发 re-plan（原 plan 基于 intent=unknown 生成）",
+                intent,
+            )
+            state = await supervisor.handle_intent_result(state, intent)
         async with AgentTracer.span(
             agent_name=AgentName.SUPERVISOR.value,
             kind=SpanKind.AGENT,

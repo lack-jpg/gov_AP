@@ -131,6 +131,7 @@ class PostgresCheckpointer(BaseCheckpointSaver):
         config: dict,
         checkpoint: Checkpoint,
         metadata: CheckpointMetadata,
+        new_versions: Optional[dict] = None,
     ) -> dict:
         """
         保存 checkpoint。
@@ -139,6 +140,7 @@ class PostgresCheckpointer(BaseCheckpointSaver):
             config: LangGraph config（含 thread_id, checkpoint_id）
             checkpoint: LangGraph Checkpoint 对象（含 channel_values, channel_versions）
             metadata: Checkpoint 元数据（含 source, step, writes）
+            new_versions: LangGraph 1.x 新增的 channel versions 参数
 
         Returns:
             更新后的 config（含新的 checkpoint_id）
@@ -149,9 +151,9 @@ class PostgresCheckpointer(BaseCheckpointSaver):
         if not thread_id or not checkpoint_id:
             raise ValueError("thread_id and checkpoint_id are required in config")
 
-        # 序列化
-        checkpoint_json = self._serde.dumps_typed(checkpoint)
-        metadata_json = self._serde.dumps_typed(metadata)
+        # 序列化（LangGraph 1.x: dumps_typed 返回 (encoding, bytes)）
+        checkpoint_json = self._serialize_typed(checkpoint)
+        metadata_json = self._serialize_typed(metadata)
 
         parent_checkpoint_id = config.get("configurable", {}).get(
             "checkpoint_id", ""
@@ -180,6 +182,7 @@ class PostgresCheckpointer(BaseCheckpointSaver):
         config: dict,
         writes: list[tuple[str, Any]],
         task_id: str,
+        task_path: str = "",
     ) -> None:
         """
         保存待执行的 writes（用于错误恢复和 A2A 重试）。
@@ -188,6 +191,7 @@ class PostgresCheckpointer(BaseCheckpointSaver):
             config: LangGraph config
             writes: 待执行的 writes 列表 [(channel, value), ...]
             task_id: 任务 ID
+            task_path: LangGraph 1.x 新增的任务路径参数
         """
         thread_id = config.get("configurable", {}).get("thread_id", "")
         checkpoint_id = config.get("configurable", {}).get("checkpoint_id", "")
@@ -325,13 +329,10 @@ class PostgresCheckpointer(BaseCheckpointSaver):
 
     def _row_to_tuple(self, row: _CheckpointRow) -> CheckpointTuple:
         """将数据库行转换为 LangGraph CheckpointTuple"""
-        checkpoint = self._serde.loads_typed(
-            json.loads(row.checkpoint_json) if isinstance(row.checkpoint_json, str) else row.checkpoint_json
-        )
-        metadata = {}
-        if row.metadata_json:
-            raw = json.loads(row.metadata_json) if isinstance(row.metadata_json, str) else row.metadata_json
-            metadata = self._serde.loads_typed(raw)
+        checkpoint = self._deserialize_typed(row.checkpoint_json)
+        metadata = self._deserialize_typed(row.metadata_json) if row.metadata_json else {}
+        if not isinstance(metadata, dict):
+            metadata = {}
 
         parent_config = None
         if row.parent_checkpoint_id:
@@ -353,6 +354,30 @@ class PostgresCheckpointer(BaseCheckpointSaver):
             metadata=metadata,
             parent_config=parent_config,
         )
+
+    # ── 序列化兼容（LangGraph 1.x: dumps_typed → (str, bytes), loads_typed ← (str, bytes)）──
+
+    def _serialize_typed(self, obj: Any) -> str:
+        """将对象序列化为数据库 JSON 字符串（兼容 msgpack 二进制格式）。"""
+        result = self.serde.dumps_typed(obj)
+        if isinstance(result, tuple) and len(result) == 2:
+            encoding, data = result
+            import base64
+            return json.dumps({"enc": encoding, "data": base64.b64encode(data).decode("ascii")})
+        # 旧版返回字符串，直接使用
+        return json.dumps(result) if not isinstance(result, str) else result
+
+    def _deserialize_typed(self, raw: str | None) -> Any:
+        """从数据库 JSON 字符串反序列化为 Python 对象。"""
+        if raw is None:
+            return {}
+        parsed = json.loads(raw) if isinstance(raw, str) else raw
+        if isinstance(parsed, dict) and "enc" in parsed and "data" in parsed:
+            import base64
+            data_bytes = base64.b64decode(parsed["data"])
+            return self.serde.loads_typed((parsed["enc"], data_bytes))
+        # 旧版格式：直接就是序列化后的数据
+        return self.serde.loads_typed(parsed)
 
 
 # ============================================================

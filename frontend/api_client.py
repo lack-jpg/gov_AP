@@ -30,13 +30,26 @@ def _get_demo_token() -> str:
     try:
         from backend.middleware.auth import create_access_token
         _DEMO_TOKEN = create_access_token(user_id="demo_user", role="user")
-    except ImportError:
-        # 无法导入后端模块时（如 Docker 前端），回退生成简单 Token
+    except Exception:
+        # 无法导入或创建 JWT Token 时（如 Docker 前端、配置缺失），回退生成简单 Token
         import hashlib
         import time
         payload = f"demo_user:{int(time.time())}"
         _DEMO_TOKEN = f"demo_{hashlib.sha256(payload.encode()).hexdigest()[:32]}"
     return _DEMO_TOKEN
+
+
+def _headers() -> dict[str, str]:
+    """构建认证请求头（Bearer Token + X-User-Id 双重兜底）。
+
+    Docker 前端容器无法导入 backend.middleware.auth，会生成非 JWT 的假 Token。
+    后端 AuthMiddleware 的 JWT 校验失败后会 fallthrough 到 X-User-Id 降级路径。
+    """
+    return {
+        "Authorization": f"Bearer {_get_demo_token()}",
+        "X-User-Id": "demo_user",
+        "X-User-Role": "user",
+    }
 
 
 def _get(path: str, params: Optional[dict] = None, timeout: float = 10.0) -> Optional[dict]:
@@ -45,7 +58,7 @@ def _get(path: str, params: Optional[dict] = None, timeout: float = 10.0) -> Opt
         r = httpx.get(
             f"{BASE_URL}{path}",
             params=params,
-            headers={"Authorization": f"Bearer {_get_demo_token()}"},
+            headers=_headers(),
             timeout=timeout,
         )
         return r.json() if r.status_code == 200 else None
@@ -69,7 +82,7 @@ def chat(user_query: str, user_id: str = "demo_user") -> tuple[int, dict]:
         r = httpx.post(
             f"{BASE_URL}/api/chat",
             json={"user_query": user_query, "user_id": user_id},
-            headers={"Authorization": f"Bearer {_get_demo_token()}"},
+            headers=_headers(),
             timeout=180,  # 真实 LLM + MCP 调用可能较慢
         )
         if r.status_code == 200:

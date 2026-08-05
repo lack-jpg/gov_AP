@@ -41,6 +41,14 @@ class Settings(BaseSettings):
         default="INFO",
         description="日志级别: DEBUG | INFO | WARNING | ERROR",
     )
+    log_dir: str = Field(
+        default="",
+        alias="GOV_LOG_DIR",
+        description=(
+            "日志输出目录（绝对路径）。为空时自动使用项目根下的 logger/ 目录。"
+            "Docker 部署时可设为 /var/log/gov_ap/ 等挂载路径。"
+        ),
+    )
 
     # ── 服务端口 ──
     host: str = Field(

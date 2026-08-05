@@ -60,6 +60,10 @@ def route_after_supervisor(state: AgentState) -> str:
 
             # 按agent字段路由
             if agent == AgentName.INTENT.value or task_type == "classify_intent":
+                # 意图已识别 → 标记为 skipped 并跳过（避免 supervisor ↔ intent 死循环）
+                if intent:
+                    task["status"] = TaskStatus.SKIPPED.value
+                    continue
                 return NodeName.INTENT.value
             elif agent == AgentName.POLICY.value:
                 return NodeName.POLICY.value
@@ -170,7 +174,7 @@ def route_after_workflow(state: AgentState) -> str:
     # 检查是否全部完成
     task_plan = state.get("task_plan", [])
     all_completed = all(
-        t.get("status", "") == TaskStatus.COMPLETED.value
+        t.get("status", "") in (TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.SKIPPED.value)
         for t in task_plan
     ) if task_plan else True
 

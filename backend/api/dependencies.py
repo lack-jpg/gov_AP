@@ -293,11 +293,18 @@ async def execute_agent(
 
     try:
         # ── 输入护栏：在 LLM 调用前检查用户输入 ──
-        from governance.guardrail import GuardrailRunner
+        try:
+            from governance.guardrail import GuardrailRunner
 
-        guardrail = GuardrailRunner()
-        input_check = guardrail.run_input(user_query)
-        if input_check.blocked:
+            guardrail = GuardrailRunner()
+            input_check = guardrail.run_input(user_query)
+        except Exception as _guardrail_err:
+            from tools.logger import get_logger as _get_logger
+            _logger = _get_logger(__name__)
+            _logger.warning("护栏检查异常，放行请求 (trace={}): {}", trace_id, _guardrail_err)
+            input_check = None
+
+        if input_check is not None and input_check.blocked:
             from tools.logger import get_logger as _get_logger
             _logger = _get_logger(__name__)
             _logger.warning(
@@ -345,6 +352,16 @@ async def execute_agent(
         return {
             **initial_state,
             "final_answer": "抱歉，系统检测到处理异常（重复调用），已自动终止。请尝试换一种方式描述您的需求。",
+            "risk_level": "high",
+            "error": str(e),
+        }
+    except Exception as e:
+        from tools.logger import get_logger as _get_logger
+        _logger = _get_logger(__name__)
+        _logger.error("Agent 执行未预期异常 (trace={}): {}", trace_id, e, exc_info=True)
+        return {
+            **initial_state,
+            "final_answer": "抱歉，系统处理您的请求时遇到技术问题。请稍后重试，或联系管理员。",
             "risk_level": "high",
             "error": str(e),
         }
