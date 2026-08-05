@@ -3,6 +3,7 @@
 # 政务多智能体协同与治理平台
 
 > Enterprise Multi-Agent Platform based on LangGraph + MCP + A2A + AgentOps + RAG
+
 > 注意：前端界面全部由AI生成，请勿直接复制。
 
 > **最近更新（2026-08-05）**：LangGraph 1.x API 兼容修复 + 安全加固（护栏前置 / MCP 认证+RBAC / CORS 白名单 / A2A HMAC）+ 认证体系重构 + 日志路径修复 + 看板数据恢复。详见 [更新日志](#20-更新日志)。
