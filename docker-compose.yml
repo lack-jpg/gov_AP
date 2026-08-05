@@ -65,6 +65,7 @@ services:
     volumes:
       - ./models:/app/models
       - ./data:/app/data
+      - ./logger:/app/logger          # 日志输出到宿主机，方便查看和采集
     depends_on:
       postgres:
         condition: service_healthy
@@ -167,7 +168,7 @@ services:
     restart: unless-stopped
     ports:
       - "${MILVUS_PORT:-19532}:19530"
-      - "9091:9091"
+      # Milvus 健康检查端口仅容器内使用，不映射到宿主机（避免 Windows 端口冲突）
     command: ["milvus", "run", "standalone"]
     environment:
       ETCD_USE_EMBED: "true"
