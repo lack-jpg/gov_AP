@@ -17,6 +17,10 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, AsyncIterator, Iterator
 
+from tools.logger import get_logger as _trace_get_logger
+
+_trace_logger = _trace_get_logger(__name__)
+
 
 # ============================================================
 # Span 类型枚举
@@ -269,8 +273,9 @@ class TraceRecorder:
                     session.add(trace)
                 await session.commit()
             return len(spans)
-        except Exception:
+        except Exception as e:
             # DB 不可达时，span 已保留在内存中，下次可重试
+            _trace_logger.warning("Trace flush to DB 失败（span 保留在内存）: {}", e)
             return 0
 
     def clear(self) -> None:

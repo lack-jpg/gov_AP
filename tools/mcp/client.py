@@ -54,11 +54,19 @@ class MCPClient:
         self,
         gateway_url: str = "http://localhost:12300",
         timeout: float = 30.0,
+        auth_token: str = "",
     ):
         self._gateway_url = gateway_url.rstrip("/")
         self._timeout = timeout
+        self._auth_token = auth_token  # JWT Bearer Token for Gateway auth
         self._client: Optional[httpx.AsyncClient] = None
         self._tool_cache: dict[str, list[dict]] = {}
+
+    def _auth_headers(self) -> dict[str, str]:
+        """构建认证请求头"""
+        if self._auth_token:
+            return {"Authorization": f"Bearer {self._auth_token}"}
+        return {}
 
     async def __aenter__(self):
         self._client = httpx.AsyncClient(timeout=self._timeout)
@@ -95,6 +103,7 @@ class MCPClient:
             resp = await client.post(
                 f"{self._gateway_url}/api/tools/list",
                 json={"server_name": server_name},
+                headers=self._auth_headers(),
             )
             resp.raise_for_status()
             data = resp.json()
@@ -190,6 +199,7 @@ class MCPClient:
                 "tool_name": tool_name,
                 "arguments": arguments,
             },
+            headers=self._auth_headers(),
         )
         resp.raise_for_status()
         data = resp.json()

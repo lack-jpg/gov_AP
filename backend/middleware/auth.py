@@ -148,18 +148,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     detail="无效的 JWT Token",
                 )
 
-        # 降级：X-User-Id Header（简化模式）
-        x_user_id = request.headers.get("X-User-Id", "")
-        if x_user_id:
-            request.state.user_id = x_user_id
-            request.state.user_role = request.headers.get("X-User-Role", "user")
-            request.state.user_tenant = request.headers.get("X-Tenant-Id", "default")
-            return await call_next(request)
-
         # 无认证
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="请提供认证信息",
+            detail="请提供认证信息 (Authorization: Bearer <token>)",
         )
 
 

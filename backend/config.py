@@ -141,7 +141,10 @@ class Settings(BaseSettings):
     postgres_port: int = Field(
         default=5658,
         alias="POSTGRES_PORT",
-        description="PostgreSQL端口（默认 5434，避免与本地 5432 冲突）",
+        description=(
+            "PostgreSQL端口。本地开发用宿主端口 5658（docker compose 映射），"
+            "容器内运行时设为 5432（服务名 postgres）"
+        ),
     )
     postgres_user: str = Field(
         default="gov_agent",
@@ -184,7 +187,10 @@ class Settings(BaseSettings):
     redis_port: int = Field(
         default=6500,
         alias="REDIS_PORT",
-        description="Redis端口（默认 6500，避开 Windows 保留端口区间）",
+        description=(
+            "Redis端口。本地开发用宿主端口 6500（docker compose 映射），"
+            "容器内运行时设为 6379（服务名 redis）"
+        ),
     )
     redis_password: str = Field(
         default="",
@@ -208,7 +214,10 @@ class Settings(BaseSettings):
     milvus_port: int = Field(
         default=19532,
         alias="MILVUS_PORT",
-        description="Milvus端口（默认 19532，避免与本地 19530 冲突）",
+        description=(
+            "Milvus端口。本地开发用宿主端口 19532（docker compose 映射），"
+            "容器内运行时设为 19530（服务名 milvus）"
+        ),
     )
 
     # ── Agent Runtime ──
@@ -240,6 +249,11 @@ class Settings(BaseSettings):
         default="http://localhost:12200/api/a2a/callback",
         alias="A2A_CALLBACK_URL",
         description="A2A Callback接收地址（12200 起，外部Agent完成回调）",
+    )
+    a2a_hmac_secret: str = Field(
+        default="",
+        alias="A2A_HMAC_SECRET",
+        description="A2A 回调 HMAC 共享密钥，外部 Agent 凭此签名回调请求",
     )
 
     # ── JWT ──
@@ -279,8 +293,8 @@ class Settings(BaseSettings):
 
     # ── CORS ──
     cors_origins: str = Field(
-        default="*",
-        description="允许的CORS origins，多个用逗号分隔",
+        default="http://localhost:12345,http://localhost:3000",
+        description="允许的CORS origins，多个用逗号分隔。默认仅允许开发常用端口",
     )
 
     def get_cors_origins(self) -> list[str]:

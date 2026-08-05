@@ -63,6 +63,14 @@ class A2ACallbackRequest(BaseModel):
         default=None,
         description="任务失败时的错误信息",
     )
+    signature: str = Field(
+        default="",
+        description="HMAC-SHA256 签名 = HMAC(task_id|status|timestamp, secret)",
+    )
+    timestamp: int = Field(
+        default=0,
+        description="请求时间戳（秒级 Unix timestamp），用于防重放，窗口 ±300s",
+    )
 
 
 class EvaluationRequest(BaseModel):

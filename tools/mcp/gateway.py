@@ -3,8 +3,8 @@ mcp.gateway - MCP Gateway: unified auth, routing, audit for all MCP calls
 
 Author: le
 Date: 2026/7/30
-Version: 0.2
-Task: Implement MCP Gateway with routing and audit logging (RBAC + rate-limit in Phase 3)
+Version: 0.3
+Task: Implement MCP Gateway with routing, JWT auth, RBAC, and audit logging
 """
 from __future__ import annotations
 
@@ -12,12 +12,93 @@ import time
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from tools.logger import get_logger, log_mcp_call
 
 logger = get_logger(__name__)
+
+
+# ============================================================
+# JWT 认证依赖（Gateway 内联，避免循环导入 backend.middleware）
+# ============================================================
+
+
+async def _verify_gateway_token(request: Request) -> dict:
+    """
+    验证 MCP Gateway 请求的 JWT Bearer Token。
+
+    通过配置中的 JWT secret 校验 Token，返回 payload。
+    不做 DB 查询，仅做 JWT 签名校验 + 基本字段提取。
+
+    Returns:
+        {"user_id": str, "role": str, "tenant_id": str}
+
+    Raises:
+        HTTPException 401: Token 缺失或无效
+    """
+    from jose import JWTError, jwt
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="MCP Gateway 需要认证 (Authorization: Bearer <token>)",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = auth_header[7:]
+    try:
+        from backend.config import get_settings
+        settings = get_settings()
+        payload = jwt.decode(
+            token, settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+        )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的 JWT Token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token 缺少用户标识",
+        )
+
+    return {
+        "user_id": user_id,
+        "role": payload.get("role", "user"),
+        "tenant_id": payload.get("tenant_id", "default"),
+    }
+
+
+def _require_role(*allowed_roles: str):
+    """
+    RBAC 依赖工厂：要求用户拥有指定角色之一。
+
+    用法:
+        @router.post("/tools/call")
+        async def call_tool(request, user=Depends(_require_role("admin", "agent"))):
+    """
+
+    async def _check(user: dict = Depends(_verify_gateway_token)) -> dict:
+        if user["role"] not in allowed_roles:
+            logger.warning(
+                "MCP Gateway RBAC 拒绝: user={} role={} required={}",
+                user["user_id"], user["role"], allowed_roles,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"角色 {user['role']} 无权调用 MCP 工具 (需要 {', '.join(allowed_roles)})",
+            )
+        return user
+
+    return _check
 
 
 # ============================================================
@@ -103,7 +184,10 @@ class MCPGateway:
         router = APIRouter(prefix="/api")
 
         @router.post("/tools/list")
-        async def list_tools(request: ListToolsRequest):
+        async def list_tools(
+            request: ListToolsRequest,
+            user: dict = Depends(_verify_gateway_token),
+        ):
             """聚合所有或指定 Server 的工具列表"""
             server_name = request.server_name
             url = self.SERVER_URLS.get(server_name)
@@ -120,8 +204,11 @@ class MCPGateway:
                 raise HTTPException(502, f"Server {server_name} unreachable")
 
         @router.post("/tools/call")
-        async def call_tool(request: CallToolRequest):
-            """转发工具调用到对应 MCP Server"""
+        async def call_tool(
+            request: CallToolRequest,
+            user: dict = Depends(_require_role("admin", "agent")),
+        ):
+            """转发工具调用到对应 MCP Server（需 admin/agent 角色）"""
             server_name = request.server_name
             tool_name = request.tool_name
             url = self.SERVER_URLS.get(server_name)
@@ -179,8 +266,9 @@ class MCPGateway:
                 try:
                     resp = await client.get(f"{url}/health", timeout=5.0)
                     servers_status[name] = "healthy" if resp.status_code == 200 else "unhealthy"
-                except Exception:
+                except Exception as e:
                     servers_status[name] = "unreachable"
+                    logger.warning("MCP Server {} ({}) 不可达: {}", name, url, e)
 
             all_healthy = all(v == "healthy" for v in servers_status.values())
             return {

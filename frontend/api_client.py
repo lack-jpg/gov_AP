@@ -3,7 +3,7 @@ frontend.api_client - FastAPI 后端 API 客户端（httpx）
 
 作者: le
 日期: 2026/8/2
-版本: 0.1
+版本: 0.2
 """
 from __future__ import annotations
 
@@ -16,6 +16,28 @@ import httpx
 # 容器部署时设置环境变量 API_BASE_URL=http://api:8002
 BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8002")
 
+# ── Demo Token ──
+# 开发/演示用 JWT Token（避免硬编码 X-User-Id / X-User-Role Header）。
+# 生产环境应使用真实的用户登录流程获取 Token。
+_DEMO_TOKEN: str | None = None
+
+
+def _get_demo_token() -> str:
+    """获取或创建演示用 JWT Token"""
+    global _DEMO_TOKEN
+    if _DEMO_TOKEN is not None:
+        return _DEMO_TOKEN
+    try:
+        from backend.middleware.auth import create_access_token
+        _DEMO_TOKEN = create_access_token(user_id="demo_user", role="user")
+    except ImportError:
+        # 无法导入后端模块时（如 Docker 前端），回退生成简单 Token
+        import hashlib
+        import time
+        payload = f"demo_user:{int(time.time())}"
+        _DEMO_TOKEN = f"demo_{hashlib.sha256(payload.encode()).hexdigest()[:32]}"
+    return _DEMO_TOKEN
+
 
 def _get(path: str, params: Optional[dict] = None, timeout: float = 10.0) -> Optional[dict]:
     """GET 请求（错误时返回 None）"""
@@ -23,7 +45,7 @@ def _get(path: str, params: Optional[dict] = None, timeout: float = 10.0) -> Opt
         r = httpx.get(
             f"{BASE_URL}{path}",
             params=params,
-            headers={"X-User-Id": "admin", "X-User-Role": "admin"},
+            headers={"Authorization": f"Bearer {_get_demo_token()}"},
             timeout=timeout,
         )
         return r.json() if r.status_code == 200 else None
@@ -47,7 +69,7 @@ def chat(user_query: str, user_id: str = "demo_user") -> tuple[int, dict]:
         r = httpx.post(
             f"{BASE_URL}/api/chat",
             json={"user_query": user_query, "user_id": user_id},
-            headers={"X-User-Id": user_id},
+            headers={"Authorization": f"Bearer {_get_demo_token()}"},
             timeout=180,  # 真实 LLM + MCP 调用可能较慢
         )
         if r.status_code == 200:

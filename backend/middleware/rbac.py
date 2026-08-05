@@ -408,10 +408,12 @@ class RBACMiddleware(BaseHTTPMiddleware):
         # ── 检查用户角色 ──
         user_role_str = getattr(request.state, "user_role", None)
 
-        # 如果 AuthMiddleware 未设置 role（可能走的是 X-User-Id 模式）
         if user_role_str is None:
-            # 尝试从 Header 读取
-            user_role_str = request.headers.get("X-User-Role", "user")
+            logger.warning("RBAC: request.state.user_role 未设置 — path={}", path)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="未认证，请提供有效的 Bearer Token",
+            )
 
         try:
             user_role = Role(user_role_str)

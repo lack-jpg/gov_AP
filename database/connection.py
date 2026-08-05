@@ -160,11 +160,15 @@ async def init_db() -> None:
     try:
         await run_alembic_upgrade()
         return
-    except Exception:
+    except Exception as e:
         # Alembic 不可用 → 回退 create_all（不会删除已有数据）
+        from tools.logger import get_logger as _get_logger
+        _logger = _get_logger(__name__)
+        _logger.warning("Alembic 迁移不可用，回退到 create_all: {}", e)
         engine = get_engine()
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        _logger.warning("表已通过 create_all 创建（非迁移模式，生产环境建议配置 Alembic）")
 
 
 async def close_db() -> None:

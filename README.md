@@ -343,11 +343,11 @@ Agent
 
 ↓
 
-MCP Client
+MCP Client (Bearer Token)
 
 ↓
 
-MCP Gateway
+MCP Gateway (JWT 认证 + RBAC)
 
 ↓
 
@@ -358,6 +358,8 @@ MCP Server
 Business Service
 
 ```
+
+> **安全加固（2026-08-05）**：MCP Gateway 增加 JWT Bearer Token 验证 + RBAC 角色控制（`admin`/`agent` 角色方可调用工具），Client 自动携带认证 Header。
 
 ---
 
@@ -450,9 +452,10 @@ Async Task
 
 +
 
-Callback
-
+Callback (HMAC 签名验证)
 ```
+
+> **安全加固（2026-08-05）**：A2A 回调端点增加 HMAC-SHA256 签名验证 + ±300s 时间窗口防重放，防止伪造回调注入。外部 Agent 需使用共享密钥签名请求。
 
 任务生命周期：
 
@@ -495,6 +498,8 @@ Completed
 ---
 
 ## Guardrail安全
+
+> **安全加固（2026-08-05）**：护栏前置到 LLM 前执行，注入/严重敏感词在到达 LLM 之前即被阻断。CORS 默认白名单模式（`localhost:12345,localhost:3000`），可通过 `.env` 配置。
 
 支持：
 
@@ -919,6 +924,8 @@ huggingface-cli download BAAI/bge-reranker-v2-m3 --local-dir models/reranker/bge
 
 这是功能最完整、最推荐的运行方式：
 
+> **注意**：Docker 容器内 `localhost` 指向容器自身。如需容器内 API 访问宿主机 LLM 服务，请设置 `LLM_API_URL=http://host.docker.internal:8000/v1`（Docker Desktop）或宿主机实际 IP。
+
 **第一步：启动 Docker 后端服务**
 
 ```bash
@@ -1209,10 +1216,11 @@ Evaluation
 
 ## 16.2 请求接入
 
-1. **JWT 认证**：解析 `Authorization: Bearer <token>` → 提取 `user_id` + `role`；支持 `X-User-Id` 旁路（开发模式）
-2. **RBAC 鉴权**：4角色（admin/operator/auditor/user）× 16权限，MCP Tool 级别鉴权
-3. **TraceId 生成**：UUID7（时间排序 + 全局唯一），注入 `RequestLoggingMiddleware` → 全链路日志携带
-4. **State 初始化**：`create_initial_state(user_query, trace_id)` → 24字段 TypedDict，trace_id/user_query 覆写，空列表追加字段初始化
+1. **JWT 认证**：解析 `Authorization: Bearer <token>` → 提取 `user_id` + `role`（强制 Bearer Token，无旁路）
+2. **RBAC 鉴权**：4角色（admin/operator/auditor/user）× 16权限，MCP Tool 级别鉴权 + Gateway 层 JWT 验证
+3. **输入护栏前置**：在 LLM 调用前通过 `GuardrailRunner.run_input()` 检测注入/敏感词，命中即阻断（不消耗 Token）
+4. **TraceId 生成**：UUID7（时间排序 + 全局唯一），注入 `RequestLoggingMiddleware` → 全链路日志携带
+5. **State 初始化**：`create_initial_state(user_query, trace_id)` → 24字段 TypedDict，trace_id/user_query 覆写，空列表追加字段初始化
 
 ## 16.3 意图识别与任务规划
 
@@ -1291,11 +1299,12 @@ result = await _a2a_stub_call(skill, input_data)  # 本地 Mock Agent
 
 ## 16.6 安全护栏与最终回答
 
-`governance_node`（每次执行必过）：
-1. **输入护栏** — `GuardrailRunner.run_input(user_query)`：PII 检测 + Prompt Injection（12种模式）+ 敏感词（10个）
-2. **输出护栏** — `GuardrailRunner.run_output(final_answer)`：错误泄露 + 密钥泄露（5种模式）+ Prompt 泄露（4种模式）
+**护栏双层防护**（输入前置 + 输出后置）：
+
+1. **输入护栏（LLM 前）** — `execute_agent()` 中 `GuardrailRunner.run_input(user_query)` 在 `graph.ainvoke` **之前**执行：PII 检测 + Prompt Injection（12种模式）+ 敏感词（10个）。命中即阻断，LLM 不接收恶意输入。
+2. **输出护栏（governance_node）** — `GuardrailRunner.run_output(final_answer)`：错误泄露 + 密钥泄露（5种模式）+ Prompt 泄露（4种模式）
 3. **PII 自动脱敏** — 手机 `138****1234`、身份证 `110***********1234`、邮箱 `u***@domain.com`、银行卡
-4. **阻断决策** — injection → blocked + risk_level=HIGH；密钥泄露 → blocked + risk_level=HIGH/CRITICAL
+4. **阻断决策** — 输入 injection → 立即阻断（不消耗 Token）；密钥泄露 → blocked + risk_level=HIGH/CRITICAL
 5. **Trace 收口** — `end_trace()` 将全链路 span 写入 TraceRecorder
 
 `route_after_governance`：
@@ -1695,7 +1704,8 @@ governance_node（末尾节点）
 
 ## Phase 4 — Evaluation + Dashboard ✅
 
-> **最新更新（2026-08-04）**: trace_provider 已实现，`--run-real` 可运行真实 Agent 工作流收集 trace。
+> **最新更新（2026-08-05）**: 安全加固完成 — 护栏前置 LLM、MCP 认证+RBAC、CORS 白名单、A2A Callback HMAC、30+ 处 logger.warning、端口文档统一。
+> **上一更新（2026-08-04）**: trace_provider 已实现，`--run-real` 可运行真实 Agent 工作流收集 trace。
 > Intent 评测：3500 条用例，BERT 推理，**3484/3500 passed（99.5%）**。
 
 ### 第一步：评测体系 (governance/evaluation/) ✅

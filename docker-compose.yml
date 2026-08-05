@@ -9,13 +9,16 @@
 # 密码从同目录 .env 读取（POSTGRES_PASSWORD / REDIS_PASSWORD），
 # 不再硬编码。
 #
-# 端口约定（宿主端口）:
+# 端口约定（宿主端口，通过 .env / ${VAR:-default} 可覆盖）:
 #   Frontend    12345
 #   API         8002
 #   MCP Gateway 12300 | Servers 12301-12303
-#   PostgreSQL  5658  (Hyper-V excludes 5358-5457; use 5658 instead)
-#   Redis       6480  (6380-6479 blocked by Windows)
-#   Milvus      19532 (标准 19530 + 2)
+#   PostgreSQL  5658  (避开 Hyper-V 保留区间 5358-5457)
+#   Redis       6500  (避开 Windows 保留端口区间 6380-6479)
+#   Milvus      19532 (标准端口 19530 + 2，避免本地冲突)
+#
+# 重要：容器内服务间通信使用内部端口（PostgreSQL:5432, Redis:6379, Milvus:19530）
+#        config.py 中的默认端口用于本地开发环境（直连宿主机）
 #
 # Usage:
 #   docker compose config        # 校验配置
@@ -40,7 +43,9 @@ services:
     environment:
       APP_PORT: 8002
       # LLM（从 .env 注入，密钥不写入镜像）
-      LLM_API_URL: ${LLM_API_URL:-http://localhost:8000/v1}
+      # 注意：容器内 localhost 指向容器自身！Docker Desktop 访问宿主机应用 host.docker.internal
+      # 或设置环境变量 LLM_API_URL=http://192.168.x.x:8000/v1 指向宿主机/LLM 服务 IP
+      LLM_API_URL: ${LLM_API_URL:-http://host.docker.internal:8000/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-qwen2.5-14b-instruct}
       # 容器间通过服务名通信

@@ -82,7 +82,7 @@ class NodeName(str, Enum):
     WORKFLOW = "workflow_node"
     GOVERNANCE = "governance_node"
     PLANNER = "planner_node"
-    A2A_CHECK = "a2a_check_node"
+    A2A_CHECK = "a2a_node"
 
 
 # ============================================================

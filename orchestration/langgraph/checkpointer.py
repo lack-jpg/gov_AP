@@ -26,6 +26,9 @@ from database.connection import get_session_factory
 
 logger = logging.getLogger(__name__)
 
+from tools.logger import get_logger as _cp_get_logger
+_cp_logger = _cp_get_logger(__name__)
+
 
 # ============================================================
 # Custom PostgreSQL Checkpointer
@@ -198,7 +201,8 @@ class PostgresCheckpointer(BaseCheckpointSaver):
                     meta["pending_writes"] = writes
                     row.metadata_json = json.dumps(meta, default=str)
                     await session.commit()
-                except (json.JSONDecodeError, TypeError):
+                except (json.JSONDecodeError, TypeError) as e:
+                    _cp_logger.warning("checkpointer: 解析 metadata JSON 失败: {}", e)
                     pass
 
     async def adelete_thread(self, thread_id: str) -> None:
@@ -257,7 +261,8 @@ class PostgresCheckpointer(BaseCheckpointSaver):
                     meta["a2a_task_id"] = a2a_task_id
                     row.metadata_json = json.dumps(meta, default=str)
                     await session.commit()
-                except (json.JSONDecodeError, TypeError):
+                except (json.JSONDecodeError, TypeError) as e:
+                    _cp_logger.warning("checkpointer: 解析 metadata JSON 失败: {}", e)
                     pass
 
     async def resume_from_a2a(

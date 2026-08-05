@@ -305,17 +305,60 @@ async def a2a_callback(
     A2A Callback端点。
 
     外部Agent完成任务后回调此端点：
-    1. 根据task_id找到原LangGraph checkpoint
-    2. 注入external_result到State
-    3. 恢复LangGraph执行
+    1. HMAC 签名验证（防伪造回调）
+    2. 根据task_id找到原LangGraph checkpoint
+    3. 注入external_result到State
+    4. 恢复LangGraph执行
 
     Args:
-        request: 回调请求体（task_id, status, artifact, error_message）
+        request: 回调请求体（task_id, status, artifact, error_message, signature, timestamp）
         settings: 应用配置
 
     Returns:
         A2ACallbackResponse
     """
+    # ── HMAC 签名验证 ──
+    import hashlib
+    import hmac
+    import time as _time
+
+    if settings.a2a_hmac_secret:
+        now_ts = int(_time.time())
+        req_ts = request.timestamp
+
+        # 时间窗口校验（±300 秒防重放）
+        if abs(now_ts - req_ts) > 300:
+            logger.warning(
+                "A2A callback 时间戳过期: task_id={task_id} req_ts={req_ts} now={now}",
+                task_id=request.task_id, req_ts=req_ts, now=now_ts,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="请求时间戳过期，请重新签名",
+            )
+
+        # 计算期望签名
+        sign_payload = f"{request.task_id}|{request.status}|{request.timestamp}"
+        expected_sig = hmac.new(
+            settings.a2a_hmac_secret.encode("utf-8"),
+            sign_payload.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+        if not hmac.compare_digest(expected_sig, request.signature):
+            logger.warning(
+                "A2A callback 签名验证失败: task_id={task_id}",
+                task_id=request.task_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="HMAC 签名验证失败",
+            )
+    else:
+        logger.warning(
+            "A2A HMAC secret 未配置，跳过回调签名验证（不安全的配置）"
+        )
+
     task_id = request.task_id
 
     try:

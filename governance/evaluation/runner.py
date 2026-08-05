@@ -457,7 +457,7 @@ Examples:
 # ============================================================
 
 
-def _save_benchmark_to_db(result: RunnerResult) -> None:
+async def _save_benchmark_to_db(result: RunnerResult) -> None:
     """将 Benchmark 中各数据集的 EvaluationResult 写入 evaluation 表"""
     b = result.benchmark
     if not b or not b.datasets:
@@ -465,10 +465,7 @@ def _save_benchmark_to_db(result: RunnerResult) -> None:
         return
 
     try:
-        from database.connection import (
-            get_session_factory,
-            create_engine_and_session_factory,
-        )
+        from database.connection import get_session_factory
         from backend.config import get_settings
         from governance.evaluation.evaluator import EvaluationEngine
 
@@ -476,18 +473,25 @@ def _save_benchmark_to_db(result: RunnerResult) -> None:
         try:
             session_factory = get_session_factory()
         except Exception:
-            session_factory = create_engine_and_session_factory(settings.postgres_url)
+            # 如果惰性单例尚未初始化（如 CLI 直接运行），手动创建
+            from database.connection import create_engine, create_session_factory
+            engine = create_engine(settings)
+            session_factory = create_session_factory(engine)
 
         saved = 0
         for ds_name, eval_result in b.datasets.items():
             if not eval_result:
                 continue
             try:
-                EvaluationEngine.save_result(eval_result, session_factory)
-                saved += 1
-                print(f"  ✅ {ds_name}: {eval_result.total_cases} cases, "
-                      f"{eval_result.passed_cases} passed, "
-                      f"score={eval_result.overall_score:.2%}")
+                engine = EvaluationEngine()
+                ok = await engine.save_result(eval_result, session_factory)
+                if ok:
+                    saved += 1
+                    print(f"  ✅ {ds_name}: {eval_result.total_cases} cases, "
+                          f"{eval_result.passed_cases} passed, "
+                          f"score={eval_result.overall_score:.2%}")
+                else:
+                    print(f"  ❌ {ds_name}: DB save returned False")
             except Exception as e:
                 print(f"  ❌ {ds_name}: DB save failed — {e}")
 
@@ -550,7 +554,7 @@ async def handle_run(args: argparse.Namespace) -> int:
 
     # 保存结果到数据库
     if args.save_to_db:
-        _save_benchmark_to_db(result)
+        await _save_benchmark_to_db(result)
         print("Evaluation results saved to database.")
 
     return 0 if result.success else 1

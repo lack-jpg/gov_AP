@@ -23,17 +23,16 @@ from backend.config import Settings, get_settings
 
 
 async def get_user_id(
-    x_user_id: Optional[str] = Header(default=None, alias="X-User-Id"),
-    x_user_role: Optional[str] = Header(default=None, alias="X-User-Role"),
+    request: Request,
 ) -> str:
     """
-    从HTTP Header提取用户ID。
+    获取当前认证用户ID。
 
-    生产环境应替换为JWT验证逻辑（参考 backend/middleware/auth.py）。
+    依赖 AuthMiddleware 已通过 JWT Bearer Token 验证身份并将
+    user_id 注入到 request.state。未认证时返回 401。
 
     Args:
-        x_user_id: 用户ID（Header: X-User-Id）
-        x_user_role: 用户角色（Header: X-User-Role）
+        request: FastAPI Request对象
 
     Returns:
         用户ID
@@ -41,12 +40,13 @@ async def get_user_id(
     Raises:
         HTTPException: 未认证时返回401
     """
-    if not x_user_id:
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing X-User-Id header",
+            detail="请提供认证凭证 (Authorization: Bearer <token>)",
         )
-    return x_user_id
+    return user_id
 
 
 # ============================================================
@@ -292,6 +292,28 @@ async def execute_agent(
     }
 
     try:
+        # ── 输入护栏：在 LLM 调用前检查用户输入 ──
+        from governance.guardrail import GuardrailRunner
+
+        guardrail = GuardrailRunner()
+        input_check = guardrail.run_input(user_query)
+        if input_check.blocked:
+            from tools.logger import get_logger as _get_logger
+            _logger = _get_logger(__name__)
+            _logger.warning(
+                "护栏阻断输入 (trace={}, reason={})",
+                trace_id, input_check.block_reason,
+            )
+            return {
+                **initial_state,
+                "final_answer": (
+                    "抱歉，您的输入包含不安全内容，系统已自动拦截。"
+                    "请修改后重试，或联系人工客服获取帮助。"
+                ),
+                "risk_level": "high",
+                "safety_check": input_check.to_dict(),
+            }
+
         runtime = create_runtime_from_settings(settings)
         result = await runtime.execute_with_safeguards(graph, initial_state, graph_config=config)
         return result
