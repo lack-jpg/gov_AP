@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a237e;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#283593;stop-opacity:1"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#42a5f5;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#1565c0;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 背景圆 -->
+  <circle cx="100" cy="100" r="96" fill="url(#bg)" stroke="#3949ab" stroke-width="2"/>
+
+  <!-- 外圈光环 -->
+  <circle cx="100" cy="100" r="88" fill="none" stroke="#5c6bc0" stroke-width="0.5" opacity="0.5"/>
+  <circle cx="100" cy="100" r="80" fill="none" stroke="#5c6bc0" stroke-width="0.3" opacity="0.3"/>
+
+  <!-- 盾牌图标（政务/安全象征） -->
+  <path d="M100 42 L140 58 L140 100 C140 130 118 148 100 158 C82 148 60 130 60 100 L60 58 Z"
+        fill="url(#shield)" stroke="#90caf9" stroke-width="1.5" opacity="0.95"/>
+
+  <!-- 盾牌内 AI 节点图案 -->
+  <!-- 中心节点 -->
+  <circle cx="100" cy="88" r="10" fill="#ffffff" opacity="0.95"/>
+  <!-- 连接线 -->
+  <line x1="100" y1="78" x2="100" y2="68" stroke="#ffffff" stroke-width="2" opacity="0.7"/>
+  <line x1="88" y1="95" x2="78" y2="105" stroke="#ffffff" stroke-width="1.5" opacity="0.6"/>
+  <line x1="112" y1="95" x2="122" y2="105" stroke="#ffffff" stroke-width="1.5" opacity="0.6"/>
+  <!-- 子节点 -->
+  <circle cx="100" cy="64" r="6" fill="#bbdefb" opacity="0.85"/>
+  <circle cx="75" cy="108" r="5" fill="#bbdefb" opacity="0.75"/>
+  <circle cx="125" cy="108" r="5" fill="#bbdefb" opacity="0.75"/>
+  <!-- 底部节点 -->
+  <line x1="75" y1="113" x2="75" y2="130" stroke="#ffffff" stroke-width="1.2" opacity="0.5"/>
+  <line x1="125" y1="113" x2="125" y2="130" stroke="#ffffff" stroke-width="1.2" opacity="0.5"/>
+  <line x1="100" y1="74" x2="75" y2="108" stroke="#ffffff" stroke-width="0.8" opacity="0.4"/>
+  <line x1="100" y1="74" x2="125" y2="108" stroke="#ffffff" stroke-width="0.8" opacity="0.4"/>
+  <circle cx="75" cy="134" r="4" fill="#e3f2fd" opacity="0.65"/>
+  <circle cx="125" cy="134" r="4" fill="#e3f2fd" opacity="0.65"/>
+
+  <!-- 底部文字 -->
+  <text x="100" y="185" text-anchor="middle" font-family="Arial, sans-serif" font-size="14"
+        font-weight="bold" fill="#90caf9" letter-spacing="3">GAP</text>
+</svg>

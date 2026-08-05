@@ -35,6 +35,7 @@ STRUCTURE.md
 CLAUDE.md
 example.py
 docs/
+!docs/images/
 *.env.local
 
 # OS
