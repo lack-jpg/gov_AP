@@ -11,7 +11,7 @@
 
 <p align="center">
 
-<img src="./docs/images/logo.png" width="160">
+<img src="./docs/images/logo.svg" width="160" alt="GAP Logo">
 
 </p>
 
