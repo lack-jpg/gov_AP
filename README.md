@@ -915,25 +915,37 @@ huggingface-cli download BAAI/bge-reranker-v2-m3 --local-dir models/reranker/bge
 
 ## 启动
 
-**开发模式（无需 Docker）：**
+### 推荐方式：Docker 后端 + 本地前端
+
+这是功能最完整、最推荐的运行方式：
+
+**第一步：启动 Docker 后端服务**
 
 ```bash
-# 1. 启动 MCP 基础设施（可选，不启动则自动降级到 stub 模式）
-python tools/mcp/start_servers.py --no-gateway   # 仅启动 3 个 MCP Server
-# 或分别启动:
-python tools/mcp/servers/policy_server/server.py     # :12301
-python tools/mcp/servers/material_server/server.py   # :12302
-python tools/mcp/servers/workflow_server/server.py   # :12303
-python tools/mcp/gateway.py                          # :12300 (Gateway)
-
-# 2. 启动主 API 服务
-uvicorn backend.main:app --host 0.0.0.0 --port 8002 --reload
+# 启动后端基础设施（API + MCP + PostgreSQL + Redis + Milvus）
+docker compose up -d api
 ```
 
-**Docker 部署：**
+**第二步：启动本地前端**
 
 ```bash
-# 构建并启动全部服务（API + 前端 + MCP + PostgreSQL + Redis + Milvus）
+# 本地运行完整 8 页前端（需 Python 依赖）
+pip install -r requirements/requirements.txt
+streamlit run frontend/app.py
+```
+
+访问 http://localhost:12345 即可使用全部 8 个功能页。
+
+> **架构说明**：Docker 负责后端引擎（Agent 工作流 + RAG 检索 + 数据库），本地 Streamlit 负责前端展示。前后端分离，各司其职。
+
+---
+
+### 备选方式
+
+**纯 Docker 部署（轻量前端，3 页可用）：**
+
+```bash
+# 构建并启动全部服务
 docker compose up -d
 
 # 仅重建前端（代码更新后）
@@ -941,19 +953,29 @@ docker compose build --no-cache frontend
 docker compose up -d frontend
 ```
 
-**前端界面：**
+访问 http://localhost:12345，首页/智能对话/运维看板 3 页可用，其余 5 页显示本地运行指引。
 
-| 访问方式 | URL | 说明 |
-|----------|-----|------|
-| Docker | http://localhost:12345 | 轻量容器（仅 streamlit + httpx），部分页面需本地运行 |
-| 本地开发 | http://localhost:12345 | `streamlit run frontend/app.py`，全部 8 页功能完整 |
+**纯本地开发（无 Docker）：**
 
-**Docker 前端页面可用性：**
+```bash
+# 1. 启动 MCP 基础设施（可选，不启动则自动降级到 stub 模式）
+python tools/mcp/start_servers.py --no-gateway
 
-| 页面 | Docker | 本地 | 说明 |
-|------|--------|------|------|
+# 2. 启动主 API 服务
+uvicorn backend.main:app --host 0.0.0.0 --port 8002 --reload
+
+# 3. 启动前端
+streamlit run frontend/app.py
+```
+
+---
+
+### 前端页面可用性
+
+| 页面 | Docker 前端 | 本地前端 | 说明 |
+|------|:----------:|:------:|------|
 | 🏠 首页 | ✅ | ✅ | API 健康检查 + 看板概览 |
-| 💬 智能对话 | ✅ | ✅ | API 优先 + stub 降级（后端离线时本地 BERT + 模板） |
+| 💬 智能对话 | ✅ | ✅ | API 优先 → stub 降级（后端离线时本地 BERT + 模板） |
 | 📊 运维看板 | ✅ | ✅ | 纯 API 数据展示 |
 | 🎯 意图识别 | ⚠️ | ✅ | 需 `agents/` 模块，Docker 中显示本地运行指引 |
 | 📚 政策检索 | ⚠️ | ✅ | 需 `agents/policy/` + langchain，Docker 中显示本地运行指引 |
@@ -963,7 +985,7 @@ docker compose up -d frontend
 
 > 💡 **设计原则**：Docker 前端镜像保持轻量（~200MB），仅包含 streamlit + httpx。依赖项目模块（agents/governance/tools）的页面在 Docker 中优雅降级为提示信息，引导用户本地运行 `streamlit run frontend/app.py` 获得完整体验。安全护栏（PII 脱敏、注入检测）在 Docker 中通过后端 Agent 工作流完整集成。
 
-**MCP 架构说明：**
+### MCP 架构说明
 
 ```
 Agent (LangGraph Node)
