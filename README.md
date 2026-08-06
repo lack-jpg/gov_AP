@@ -6,7 +6,7 @@
 
 > 注意：前端界面全部由AI生成，请勿直接复制。
 
-> **最近更新（2026-08-05）**：LangGraph 1.x API 兼容修复 + 安全加固（护栏前置 / MCP 认证+RBAC / CORS 白名单 / A2A HMAC）+ 认证体系重构 + 日志路径修复 + 看板数据恢复。详见 [更新日志](#20-更新日志)。
+> **最近更新（2026-08-06）**：前端视觉升级（浅色政务蓝主题 + 共享 UI 组件库 `frontend/ui.py` + 8 页重构 + `design-system/` 设计规范）+ Docker API 容器启动修复（bind mount 权限）+ 评测报告文件回退（`evaluation_results/`）。详见 [更新日志](#20-更新日志)。
 
 ---
 
@@ -529,6 +529,7 @@ gov_AP/
 ├── example.py                        # 文件头模板
 ├── docker-compose.yml                # Docker编排（根目录，docker compose up 直接可用）
 ├── .dockerignore                     # Docker构建上下文排除
+├── .streamlit/config.toml            # Streamlit 主题/端口配置（浅色政务蓝主题）
 │
 ├── agents/                           # Agent层 — 6个专业Agent
 │   ├── __init__.py                   # Agent注册中心
@@ -654,6 +655,7 @@ gov_AP/
 │   ├── app.py                        # 导航入口（st.navigation + 8 st.Page）
 │   ├── common.py                     # 公共工具（路径设置 + 异步执行）
 │   ├── api_client.py                 # 后端 API 客户端（httpx，含 chat_with_fallback 降级）
+│   ├── ui.py                         # 共享 UI 组件库（主题CSS/页头/指标卡/状态徽章/证据卡等）
 │   ├── stub_chat.py                  # 本地 stub 对话（BERT 意图分类 + 政策模板 + PII 脱敏）
 │   └── pages/                        # 8 个功能页面
 │       ├── home_page.py              # 首页总览
@@ -681,6 +683,7 @@ gov_AP/
 │
 ├── deploy/                           # 部署配置
 │   ├── Dockerfile                    # API + MCP Server Docker 镜像
+│   ├── docker-entrypoint.sh          # API 容器入口（root 授权 bind mount → setpriv 降权 appuser）
 │   ├── Dockerfile.frontend           # Streamlit 前端 Docker 镜像（轻量，仅 streamlit + httpx）
 │   └── k8s/                          # Kubernetes
 │       ├── backend.yaml              # 后端Deployment
@@ -702,6 +705,9 @@ gov_AP/
 │   ├── requirements-dev.txt          # 开发工具
 │   ├── requirements-gpu.txt          # GPU推理
 │   └── requirements-ocr.txt          # OCR能力
+│
+├── design-system/                    # UI 设计规范
+│   └── default/MASTER.md             # 配色/字体/间距/组件规格/反模式
 │
 └── docs/                             # 设计文档
     ├── ARCHITECTURE.md               # 系统架构
@@ -1656,6 +1662,36 @@ governance_node（末尾节点）
 ---
 
 # 20. 更新日志
+
+## 2026-08-06 — 前端视觉升级 + Docker 容器启动修复 + 评测报告文件回退
+
+### 前端视觉升级（浅色专业政务风）
+
+基于 `/ui-ux-pro-max` 生成的政务设计系统（`design-system/default/MASTER.md`），三层改造让 8 页前端形成统一视觉语言：
+
+| 改动 | 文件 | 说明 |
+| --- | --- | --- |
+| Streamlit 主题 | `.streamlit/config.toml` | 新增 `[theme]`：政务蓝 `#1E40AF` 主色 / 背景 `#F6F8FB` / 次背景 `#EFF6FF` / 正文 `#1F2A44` |
+| 共享 UI 组件库 | `frontend/ui.py`（新增） | `inject_theme_css()` 全局主题 + `page_header` / `metric_card` / `status_badge` / `evidence_card` / `architecture_diagram` 等 11 个组件，全部基于 Streamlit 原生 API + 内联 CSS，零新增依赖 |
+| 全局主题注入 | `frontend/app.py` | `set_page_config` 后调用 `ui.inject_theme_css()` |
+| 逐页重构 | `frontend/pages/*.py`（8 页） | 统一页头/指标卡语义色/状态徽章/证据卡；首页 ASCII 架构图升级为 HTML 流程图；示例问题改 `st.pills`；去掉零散 emoji 装饰 |
+| 设计规范 | `design-system/default/MASTER.md`（新增） | 配色/字体/间距/组件规格/反模式，供后续页面遵循 |
+
+### Docker API 容器启动修复
+
+**根因**：Windows Docker Desktop 把宿主机目录 bind mount 进容器后显示为 root 所有（`drwxr-xr-x`），非 root 用户（appuser, uid=1000）写不进 → loguru 创建日志文件 `PermissionError` → uvicorn lifespan 启动异常反复重启。
+
+| 改动 | 文件 | 说明 |
+| --- | --- | --- |
+| 容器入口脚本 | `deploy/docker-entrypoint.sh`（新增） | root 启动 → `chown` 授权 `/app/{logger,data,models,evaluation_results}` → `setpriv` 降权为 appuser 执行 uvicorn（业务进程仍非 root） |
+| Dockerfile | `deploy/Dockerfile` | 移除 `USER appuser`，改为 ENTRYPOINT 降权模式；入口脚本 `export HOME=/home/appuser` 修复 asyncpg 读 `/root/.postgresql` 的权限错误 |
+| Compose 挂载 | `docker-compose.yml` | api 服务挂载 `./evaluation_results:/app/evaluation_results`（评测报告文件回退读取） |
+
+### 评测报告文件回退
+
+`/api/evaluation/report/{version}` 原先只读 PostgreSQL `evaluation` 表；benchmark runner 的 `--save-result`（写文件）与 `--save-to-db`（写库）是独立开关，只写了文件时 API 会返回 404/错误。
+
+- **`backend/api/routes.py`**: 新增 `_load_benchmark_report_file()`，DB 无记录或 DB 不可用时回退读取 `evaluation_results/*.json`（按 JSON 内 `version` 字段匹配、取最新、按 dataset 用例数加权聚合），保证已有评测文件也能在看板展示。
 
 ## 2026-08-05 — 安全加固 + 认证重构 + Bug 修复
 

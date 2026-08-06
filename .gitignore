@@ -38,6 +38,10 @@ docs/
 !docs/images/
 *.env.local
 
+# 评测结果 / 调试脚本（生成数据不入库）
+evaluation_results/
+_test_*.py
+
 # OS
 .DS_Store
 Thumbs.db
