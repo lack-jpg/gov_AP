@@ -97,7 +97,6 @@ Multi-Agent
 Agent Governance
 +
 Evaluation Platform
-
 ```
 
 ---
@@ -108,14 +107,14 @@ Evaluation Platform
 
 平台包含多个领域Agent：
 
-| Agent            | 职责     |
-| ---------------- | ------ |
-| Supervisor Agent | 全局任务规划 |
+| Agent            | 职责                                       |
+| ---------------- | ---------------------------------------- |
+| Supervisor Agent | 全局任务规划                                   |
 | Intent Agent     | 用户意图识别（BERT 微调模型 + 关键词兜底 + LLM fallback） |
-| Policy Agent     | 政策知识检索 |
-| Material Agent   | 材料审核   |
-| Workflow Agent   | 流程执行   |
-| Governance Agent | 安全治理   |
+| Policy Agent     | 政策知识检索                                   |
+| Material Agent   | 材料审核                                     |
+| Workflow Agent   | 流程执行                                     |
+| Governance Agent | 安全治理                                     |
 
 ---
 
@@ -123,86 +122,39 @@ Evaluation Platform
 
 ```
                          User
-
                           |
-
                           v
-
-
                   API Gateway
-
                     FastAPI
-
                           |
-
                           v
-
-
              +---------------------+
-
              | Supervisor Agent    |
-
              | LangGraph Runtime   |
-
              +---------------------+
-
                           |
-
         +-----------------+----------------+
-
         |                 |                |
-
-        v                 v                v
-
-
+        v                 v                |
  Intent Agent       Policy Agent    Material Agent
-
-
         |                 |                |
-
         +-----------------+----------------+
-
                           |
-
                           v
-
-
                  Workflow Agent
-
-
                           |
-
                           v
-
-
               +----------------+
-
               | MCP Gateway    |
-
               +----------------+
-
                  |      |      |
-
                  v      v      v
-
-
              Policy  Material Workflow
-
              MCP     MCP      MCP
-
              Server  Server   Server
-
-
-
                           |
-
                           v
-
-
                   Business System
-
-
-
 ```
 
 ---
@@ -219,19 +171,16 @@ L6  AgentOps治理层
     Guardrail
     Prompt Management
 
-
 L5  A2A跨域协同层
 
     Agent Communication
     Async Task
     Callback
 
-
 L4  MCP工具能力层
 
     Tool Discovery
     Tool Calling
-
 
 L3  专业Agent层
 
@@ -239,11 +188,9 @@ L3  专业Agent层
     Material
     Workflow
 
-
 L2  Agent编排层
 
     LangGraph
-
 
 L1  接入层
 
@@ -270,45 +217,25 @@ Checkpoint
 
 ```
 START
-
  |
-
 Supervisor
-
  |
-
 Intent Recognition
-
  |
-
 Task Planning
-
  |
-
 +----------------+
-
 |                |
-
 Policy        Material
-
 Agent         Agent
-
 |                |
-
 +----------------+
-
         |
-
  Workflow Agent
-
         |
-
  Governance
-
         |
-
        END
-
 ```
 
 ---
@@ -321,13 +248,9 @@ Agent         Agent
 
 ```python
 agent
-
 ↓
-
 import function
-
 ↓
-
 API
 ```
 
@@ -343,23 +266,14 @@ API
 
 ```
 Agent
-
 ↓
-
 MCP Client (Bearer Token)
-
 ↓
-
 MCP Gateway (JWT 认证 + RBAC)
-
 ↓
-
 MCP Server
-
 ↓
-
 Business Service
-
 ```
 
 > **安全加固（2026-08-05）**：MCP Gateway 增加 JWT Bearer Token 验证 + RBAC 角色控制（`admin`/`agent` 角色方可调用工具），Client 自动携带认证 Header。
@@ -374,7 +288,6 @@ Business Service
 
 ```
 search_policy
-
 get_policy_detail
 ```
 
@@ -392,7 +305,6 @@ get_policy_detail
 
 ```
 extract_entity
-
 check_material
 ```
 
@@ -410,7 +322,6 @@ check_material
 
 ```
 create_case
-
 query_status
 ```
 
@@ -429,32 +340,21 @@ query_status
 
 ```
 营业执照办理
-
 ↓
-
 市场监管Agent
-
 ↓
-
 消防Agent
-
 ↓
-
 不动产Agent
-
 ```
 
 采用：
 
 ```
 A2A Connector
-
 +
-
 Async Task
-
 +
-
 Callback (HMAC 签名验证)
 ```
 
@@ -464,19 +364,12 @@ Callback (HMAC 签名验证)
 
 ```
 Created
-
  ↓
-
 Running
-
  ↓
-
 Waiting
-
  ↓
-
 Completed
-
 ```
 
 ---
@@ -495,7 +388,6 @@ Completed
  "latency":"",
  "token_usage":""
 }
-
 ```
 
 ---
@@ -581,10 +473,10 @@ python -m governance.evaluation.runner compare --versions v0.1,v0.2
 
 指标：
 
-| 指标               | 说明    | 评分方式 |
-| ---------------- | ----- |------|
+| 指标               | 说明    | 评分方式                          |
+| ---------------- | ----- | ----------------------------- |
 | Faithfulness     | 回答真实性 | 规则（bigram Jaccard）/ LLM Judge |
-| Answer Relevance | 答案相关性 | 规则（token overlap）/ LLM Judge |
+| Answer Relevance | 答案相关性 | 规则（token overlap）/ LLM Judge  |
 | Context Recall   | 上下文召回 | 规则（bigram overlap）/ LLM Judge |
 
 ---
@@ -610,15 +502,10 @@ python -m governance.evaluation.runner compare --versions v0.1,v0.2
 
 ```
 Prompt Registry
-
        |
-
 Version Control
-
        |
-
 Runtime Loading
-
 ```
 
 避免：
@@ -881,16 +768,16 @@ python >=3.12
 
 为避免与本地服务冲突，所有端口偏离标准端口：
 
-| 服务 | 端口 | 说明 |
-|------|------|------|
-| Frontend | **12345** | Streamlit 前端界面 |
-| FastAPI | **8002** | 后端 API（8000 + 2） |
-| MCP Gateway | **12300** | 后续 Server 依次 +1 |
-| A2A Callback | **12200** | 后续 Connector 依次 +1 |
-| PostgreSQL | **5658** | 避开 Hyper-V 保留段 |
-| Redis | **6500** | 避开 Windows 保留端口区间 |
-| Milvus | **19532** | 19530 + 2 |
-| OpenTelemetry | **4319** | 4317 + 2 |
+| 服务            | 端口        | 说明                 |
+| ------------- | --------- | ------------------ |
+| Frontend      | **12345** | Streamlit 前端界面     |
+| FastAPI       | **8002**  | 后端 API（8000 + 2）   |
+| MCP Gateway   | **12300** | 后续 Server 依次 +1    |
+| A2A Callback  | **12200** | 后续 Connector 依次 +1 |
+| PostgreSQL    | **5658**  | 避开 Hyper-V 保留段     |
+| Redis         | **6500**  | 避开 Windows 保留端口区间  |
+| Milvus        | **19532** | 19530 + 2          |
+| OpenTelemetry | **4319**  | 4317 + 2           |
 
 ---
 
@@ -982,16 +869,16 @@ streamlit run frontend/app.py
 
 ### 前端页面可用性
 
-| 页面 | Docker 前端 | 本地前端 | 说明 |
-|------|:----------:|:------:|------|
-| 🏠 首页 | ✅ | ✅ | API 健康检查 + 看板概览 |
-| 💬 智能对话 | ✅ | ✅ | API 优先 → stub 降级（后端离线时本地 BERT + 模板） |
-| 📊 运维看板 | ✅ | ✅ | 纯 API 数据展示 |
-| 🎯 意图识别 | ⚠️ | ✅ | 需 `agents/` 模块，Docker 中显示本地运行指引 |
-| 📚 政策检索 | ⚠️ | ✅ | 需 `agents/policy/` + langchain，Docker 中显示本地运行指引 |
-| 📋 材料审核 | ⚠️ | ✅ | 需 `agents/material/`，Docker 中显示本地运行指引 |
-| 🤝 跨域协同 | ⚠️ | ✅ | 需 `tools/a2a/`，Docker 中显示本地运行指引 |
-| 🛡️ 安全治理 | ⚠️ | ✅ | 需 `governance/`，Docker 中显示本地运行指引 |
+| 页面       | Docker 前端 | 本地前端 | 说明                                              |
+| -------- |:---------:|:----:| ----------------------------------------------- |
+| 🏠 首页    | ✅         | ✅    | API 健康检查 + 看板概览                                 |
+| 💬 智能对话  | ✅         | ✅    | API 优先 → stub 降级（后端离线时本地 BERT + 模板）             |
+| 📊 运维看板  | ✅         | ✅    | 纯 API 数据展示                                      |
+| 🎯 意图识别  | ⚠️        | ✅    | 需 `agents/` 模块，Docker 中显示本地运行指引                 |
+| 📚 政策检索  | ⚠️        | ✅    | 需 `agents/policy/` + langchain，Docker 中显示本地运行指引 |
+| 📋 材料审核  | ⚠️        | ✅    | 需 `agents/material/`，Docker 中显示本地运行指引           |
+| 🤝 跨域协同  | ⚠️        | ✅    | 需 `tools/a2a/`，Docker 中显示本地运行指引                 |
+| 🛡️ 安全治理 | ⚠️        | ✅    | 需 `governance/`，Docker 中显示本地运行指引                |
 
 > 💡 **设计原则**：Docker 前端镜像保持轻量（~200MB），仅包含 streamlit + httpx。依赖项目模块（agents/governance/tools）的页面在 Docker 中优雅降级为提示信息，引导用户本地运行 `streamlit run frontend/app.py` 获得完整体验。安全护栏（PII 脱敏、注入检测）在 Docker 中通过后端 Agent 工作流完整集成。
 
@@ -1025,45 +912,23 @@ Agent (LangGraph Node)
 
 ```
 Intent Agent
-
 ↓
-
 识别:
-
 business_license
-
-
 ↓
-
 Policy Agent
-
 ↓
-
 查询政策
-
-
 ↓
-
 Material Agent
-
 ↓
-
 检查材料
-
-
 ↓
-
 Workflow Agent
-
 ↓
-
 生成办理流程
-
-
 ↓
-
 返回结果
-
 ```
 
 ---
@@ -1082,17 +947,11 @@ LLM + Prompt
 
 ```
 Agent Runtime
-
 +
-
 Tool Ecosystem
-
 +
-
 Governance
-
 +
-
 Evaluation
 ```
 
@@ -1124,23 +983,14 @@ Evaluation
 
 ```
 执行
-
 ↓
-
 记录
-
 ↓
-
 评估
-
 ↓
-
 优化
-
 ↓
-
 迭代
-
 ```
 
 ---
@@ -1198,11 +1048,11 @@ Evaluation
               │         (有A2A需求)   (无A2A需求)
               │              │           │
               │              ▼           │
-              │         a2a_node        │
-              │           │  │          │
-              │     (异步)│  │(同步)    │
-              │      挂起 │  直接      │
-              │      →END  │  返回     │
+              │         a2a_node         │
+              │           │  │           │
+              │      (异步)│  │(同步)     │
+              │       挂起 │  直接        │
+              │      →END │  返回        │
               │              │          │
               │              └────┬─────┘
               │                   ▼
@@ -1247,6 +1097,7 @@ supervisor_node 进入
 ```
 
 Intent 节点：
+
 - **BERT 模型推理**（已微调，`models/intent/bert-intent/`，10 标签 99.5% 准确率）→ 高置信度(>0.7)直接返回
 - **关键词匹配**（18条规则）→ 中置信度(0.5-0.7)，BERT 不可用时兜底
 - **LLM fallback** → 最低置信度(0.3)，最后手段
@@ -1256,13 +1107,14 @@ Intent 回环：`intent_node → supervisor_node` 为**静态边**，意图识�
 
 ## 16.4 专业 Agent 执行
 
-| 节点 | Agent | MCP Server | 工具 | 降级行为 |
-|------|-------|------------|------|----------|
-| `policy_node` | PolicyAgent | `policy_server:12301` | `search_policy`, `get_policy_detail` | stub 模板回答（预置5种导向回答） |
-| `material_node` | MaterialAgent | `material_server:12302` | `extract_entity`, `check_material` | `passed=True` + 提示 stub 模式 |
-| `workflow_node` | WorkflowAgent | `workflow_server:12303` | `create_case`, `query_status` | `CASE_{uuid}` 模拟办件号 |
+| 节点              | Agent         | MCP Server              | 工具                                   | 降级行为                       |
+| --------------- | ------------- | ----------------------- | ------------------------------------ | -------------------------- |
+| `policy_node`   | PolicyAgent   | `policy_server:12301`   | `search_policy`, `get_policy_detail` | stub 模板回答（预置5种导向回答）        |
+| `material_node` | MaterialAgent | `material_server:12302` | `extract_entity`, `check_material`   | `passed=True` + 提示 stub 模式 |
+| `workflow_node` | WorkflowAgent | `workflow_server:12303` | `create_case`, `query_status`        | `CASE_{uuid}` 模拟办件号        |
 
 每节点执行后：
+
 - `task_plan` 中对应 PENDING 任务 → `status: COMPLETED`
 - MCP 调用记录写入 `mcp_history`（含 trace_id / server_name / tool_name / latency_ms / status）
 - 异常捕获 → `state["error"]` 设置 → `route_after_specialist` 判断是否回 supervisor 重试（retry_count < 3）
@@ -1270,10 +1122,12 @@ Intent 回环：`intent_node → supervisor_node` 为**静态边**，意图识�
 ## 16.5 A2A 跨域协同
 
 当 workflow 完成后，`_needs_a2a(intent, user_query)` 检测：
+
 - 关键词：房产/不动产/房屋/产权/公积金/住房基金
 - 意图：`property_service` / `fund_query`
 
 **异步模式（真实外部 Agent）**：
+
 ```python
 # a2a_node 中
 result = await a2a_connector.send_task(skill="query_property", ...)
@@ -1284,6 +1138,7 @@ await checkpointer.suspend_for_a2a(thread_id, ..., a2a_task_id)
 ```
 
 **回调恢复**：
+
 ```
 外部 Agent 完成 → POST /api/a2a/callback { task_id, status, artifact }
   → A2ACallbackHandler.process_callback()
@@ -1295,6 +1150,7 @@ await checkpointer.suspend_for_a2a(thread_id, ..., a2a_task_id)
 ```
 
 **同步模式（stub fallback）**：
+
 ```python
 result = await _a2a_stub_call(skill, input_data)  # 本地 Mock Agent
 # 直接继续流程，无需挂起
@@ -1311,6 +1167,7 @@ result = await _a2a_stub_call(skill, input_data)  # 本地 Mock Agent
 5. **Trace 收口** — `end_trace()` 将全链路 span 写入 TraceRecorder
 
 `route_after_governance`：
+
 - `blocked=True` → END（安全阻断）
 - `error` 且 `retry_count < 3` → supervisor_node（重试）
 - 否则 → END（正常结束）
@@ -1319,16 +1176,16 @@ result = await _a2a_stub_call(skill, input_data)  # 本地 Mock Agent
 
 三级降级链：
 
-| 层级 | 降级对象 | 触发条件 | 降级行为 |
-|------|----------|----------|----------|
-| L1 基础设施 | PostgreSQL | 连接失败 | 内存模式运行（TraceRecorder / MetricsCollector 内存存储） |
-| L1 基础设施 | Redis | 连接失败 | 无缓存模式（跳过 rate limit / session 缓存） |
-| L1 基础设施 | Milvus | 连接失败 | BM25 关键词检索（纯内存 TF-IDF） |
-| L2 模型层 | LLM API | 无 API Key / 超时 | 规则模板回答（模板引擎 + 关键词匹配） |
-| L2 模型层 | BERT | 模型未加载 | 关键词匹配 fallback（18条规则） |
-| L2 模型层 | PaddleOCR | pip 未安装 | stub 文本生成（"模拟营业执照内容..."） |
-| L3 协议层 | MCP Server | HTTP 不可达 | stub 模板回答（预置政策/材料/办件数据） |
-| L3 协议层 | A2A Connector | 外部 Agent 不可达 | 本地 Mock Agent（模拟房产/公积金数据） |
+| 层级      | 降级对象          | 触发条件           | 降级行为                                          |
+| ------- | ------------- | -------------- | --------------------------------------------- |
+| L1 基础设施 | PostgreSQL    | 连接失败           | 内存模式运行（TraceRecorder / MetricsCollector 内存存储） |
+| L1 基础设施 | Redis         | 连接失败           | 无缓存模式（跳过 rate limit / session 缓存）             |
+| L1 基础设施 | Milvus        | 连接失败           | BM25 关键词检索（纯内存 TF-IDF）                        |
+| L2 模型层  | LLM API       | 无 API Key / 超时 | 规则模板回答（模板引擎 + 关键词匹配）                          |
+| L2 模型层  | BERT          | 模型未加载          | 关键词匹配 fallback（18条规则）                         |
+| L2 模型层  | PaddleOCR     | pip 未安装        | stub 文本生成（"模拟营业执照内容..."）                      |
+| L3 协议层  | MCP Server    | HTTP 不可达       | stub 模板回答（预置政策/材料/办件数据）                       |
+| L3 协议层  | A2A Connector | 外部 Agent 不可达   | 本地 Mock Agent（模拟房产/公积金数据）                     |
 
 ---
 
@@ -1338,37 +1195,38 @@ result = await _a2a_stub_call(skill, input_data)  # 本地 Mock Agent
 
 `build_graph()` 在 `orchestration/langgraph/graph.py` 中构建 StateGraph：
 
-| 组件 | 数量 | 详情 |
-|------|------|------|
-| 节点 | **7** | supervisor / intent / policy / material / workflow / a2a / governance |
-| 静态边 | **2** | `START → supervisor_node`、`intent_node → supervisor_node` |
+| 组件  | 数量      | 详情                                                                                                                                    |
+| --- | ------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 节点  | **7**   | supervisor / intent / policy / material / workflow / a2a / governance                                                                 |
+| 静态边 | **2**   | `START → supervisor_node`、`intent_node → supervisor_node`                                                                             |
 | 条件边 | **6** 组 | route_after_supervisor / route_after_specialist ×2(policy+material) / route_after_workflow / route_after_a2a / route_after_governance |
 
 依赖注入一览：
 
-| 参数 | 类型 | 注入节点 | stub 行为 |
-|------|------|----------|-----------|
-| `llm` | `BaseChatModel` | 全部 7 节点 | 纯 stub 模式（关键词+规则） |
-| `mcp_client` | `MCPClient` | policy / material / workflow | stub 模板回答 |
-| `a2a_connector` | `A2AConnector` | a2a | 本地 Mock Agent |
-| `checkpointer` | `BaseCheckpointSaver` | a2a（挂起/恢复） | 无持久化（不支持 A2A 异步） |
-| `supervisor` | `SupervisorAgent` | supervisor | 自动用 llm 构建 |
+| 参数              | 类型                    | 注入节点                         | stub 行为           |
+| --------------- | --------------------- | ---------------------------- | ----------------- |
+| `llm`           | `BaseChatModel`       | 全部 7 节点                      | 纯 stub 模式（关键词+规则） |
+| `mcp_client`    | `MCPClient`           | policy / material / workflow | stub 模板回答         |
+| `a2a_connector` | `A2AConnector`        | a2a                          | 本地 Mock Agent     |
+| `checkpointer`  | `BaseCheckpointSaver` | a2a（挂起/恢复）                   | 无持久化（不支持 A2A 异步）  |
+| `supervisor`    | `SupervisorAgent`     | supervisor                   | 自动用 llm 构建        |
 
 所有节点通过 `async def _xxx_wrapper(state)` 闭包注入依赖后在 `graph.add_node()` 注册。
 
 ## 17.2 Node 执行流
 
-| 节点 | 底层 Agent | 核心行为 | 注入依赖 | MCP / 降级 |
-|------|-----------|----------|----------|------------|
-| `supervisor_node` | SupervisorAgent | `orchestrate(state)` → Planner 生成 task_plan → Router 决策 | llm, supervisor | 无 MCP、关键词 fallback |
-| `intent_node` | IntentAgent | BERT → 关键词 → LLM 三级分类 | llm | stub 关键词匹配 |
-| `policy_node` | PolicyAgent | MCP `search_policy` → Milvus+BM25 | llm, mcp_client | stub 模板回答 |
-| `material_node` | MaterialAgent | MCP `check_material` → OCR+NED | llm, mcp_client | `passed=True` |
-| `workflow_node` | WorkflowAgent | MCP `create_case` → 办件号 | llm, mcp_client | `CASE_{uuid}` |
-| `a2a_node` | A2AConnector | `send_task` → 挂起 OR `_a2a_stub_call` | a2a_connector, checkpointer | 本地 Mock |
-| `governance_node` | GuardrailRunner | PII + 注入 + 敏感词 + 输出过滤 | 无 | 异常时自动放行 |
+| 节点                | 底层 Agent        | 核心行为                                                    | 注入依赖                        | MCP / 降级           |
+| ----------------- | --------------- | ------------------------------------------------------- | --------------------------- | ------------------ |
+| `supervisor_node` | SupervisorAgent | `orchestrate(state)` → Planner 生成 task_plan → Router 决策 | llm, supervisor             | 无 MCP、关键词 fallback |
+| `intent_node`     | IntentAgent     | BERT → 关键词 → LLM 三级分类                                   | llm                         | stub 关键词匹配         |
+| `policy_node`     | PolicyAgent     | MCP `search_policy` → Milvus+BM25                       | llm, mcp_client             | stub 模板回答          |
+| `material_node`   | MaterialAgent   | MCP `check_material` → OCR+NED                          | llm, mcp_client             | `passed=True`      |
+| `workflow_node`   | WorkflowAgent   | MCP `create_case` → 办件号                                 | llm, mcp_client             | `CASE_{uuid}`      |
+| `a2a_node`        | A2AConnector    | `send_task` → 挂起 OR `_a2a_stub_call`                    | a2a_connector, checkpointer | 本地 Mock            |
+| `governance_node` | GuardrailRunner | PII + 注入 + 敏感词 + 输出过滤                                   | 无                           | 异常时自动放行            |
 
 每个节点执行前：
+
 1. `update_current_agent(state, AgentName.X)` — 设置当前 Agent
 2. `transition_to(state, NodeName.X)` — 记录当前节点
 3. `start_trace()` 守卫（仅 supervisor 首次进入）
@@ -1377,15 +1235,16 @@ result = await _a2a_stub_call(skill, input_data)  # 本地 Mock Agent
 
 ## 17.3 Edge 条件路由
 
-| 路由函数 | 判定依据 | 可能目标 |
-|----------|----------|----------|
+| 路由函数                     | 判定依据                                                                                 | 可能目标                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
 | `route_after_supervisor` | task_plan 状态：无 intent → intent；有 PENDING → 按 agent；全完成 → supervisor(合成) 或 governance | intent / policy / material / workflow / governance / supervisor |
-| `route_after_specialist` | 先检查 error/risk，再复用 `route_after_supervisor` | 同上全量 + supervisor(重试) |
-| `route_after_workflow` | waiting_task_id → END(挂起)；`_needs_a2a()` → a2a；全完成 → governance | a2a / governance / supervisor / END |
-| `route_after_a2a` | waiting_task_id → END；有 error → supervisor；否则 → governance | governance / supervisor / END |
-| `route_after_governance` | blocked → END；waiting → END；error 且 retry<3 → supervisor；否则 END | supervisor / END |
+| `route_after_specialist` | 先检查 error/risk，再复用 `route_after_supervisor`                                          | 同上全量 + supervisor(重试)                                           |
+| `route_after_workflow`   | waiting_task_id → END(挂起)；`_needs_a2a()` → a2a；全完成 → governance                      | a2a / governance / supervisor / END                             |
+| `route_after_a2a`        | waiting_task_id → END；有 error → supervisor；否则 → governance                           | governance / supervisor / END                                   |
+| `route_after_governance` | blocked → END；waiting → END；error 且 retry<3 → supervisor；否则 END                      | supervisor / END                                                |
 
 关键规则：
+
 - **任务状态机驱动**：`task_plan` 中每个 Task 的 `status: PENDING → COMPLETED/FAILED`
 - **意图回环**：intent 识别后必回 supervisor 二次规划（静态边保证）
 - **提前进入治理**：`risk_level=high/critical` 时跳过后续任务，直接 governance
@@ -1396,6 +1255,7 @@ result = await _a2a_stub_call(skill, input_data)  # 本地 Mock Agent
 `AgentState`（TypedDict，24字段）分两类更新策略：
 
 **覆盖更新（标量字段）**：
+
 ```
 trace_id / user_query / intent / current_agent / current_node
 final_answer / risk_level / safety_check / execution_metrics
@@ -1404,6 +1264,7 @@ error / retry_count
 ```
 
 **追加更新（列表字段 + Annotated reducer）**：
+
 ```
 task_plan     → _task_plan_reducer（按 id 合并）
 messages      → operator.add
@@ -1415,6 +1276,7 @@ error_history → append
 ```
 
 3个自定义 reducer：
+
 - `_task_plan_reducer`：按 `task["id"]` 合并（新 id 追加，已有 id 覆盖）
 - `_tool_calls_reducer`：按 `tool_call_id` 去重合并
 - `_append_reducer`：通用追加
@@ -1442,11 +1304,13 @@ governance_node（末尾节点）
 ```
 
 **Trace 层级结构**：
+
 - `start_trace()` 建立 root trace（contextvars 协程安全传播）
 - 每个 `AgentTracer.span()` 自动创建子 span（`parent_span_id` 自动继承）
 - `end_trace()` 将全链路 span 写入 `TraceRecorder`（内存，可选 `flush_to_db()`）
 
 **Metrics 指标收集**：
+
 - `record_agent_call()` → Counter + Gauge + Histogram（agent/latency/tokens/steps）
 - `record_tool_call()` → Counter + Histogram（tool 维度）
 - `record_guardrail_block()` → Counter（按 guard_type + severity）
@@ -1607,6 +1471,7 @@ governance_node（末尾节点）
 ### Material MCP Server + Agent 补全 — 6/6 完成
 
 **Agent 层**:
+
 ```
 ✅ agents/material/prompts.py  — 材料审核 + 实体抽取Prompt模板
 ✅ agents/material/ocr.py      — OCREngine（stub: 图片magic bytes检测 + 模拟文本生成）
@@ -1615,6 +1480,7 @@ governance_node（末尾节点）
 ```
 
 **MCP Server**:
+
 ```
 ✅ tools/mcp/servers/material_server/tools.py  — extract_entity（OCR→实体抽取）+ check_material（Validator调用）
 ✅ tools/mcp/servers/material_server/server.py — FastAPI MCP Server（:12302）
@@ -1803,19 +1669,20 @@ Docker 容器内 LangGraph 版本升级导致 4 项 API 不兼容，已全部适
 
 ### 安全加固
 
-| 加固项 | 文件 | 说明 |
-|--------|------|------|
-| 护栏前置 LLM | `dependencies.py` | `GuardrailRunner.run_input()` 在 `graph.ainvoke` 前执行，注入/敏感词立即阻断 |
-| MCP 认证+RBAC | `gateway.py`, `client.py` | Gateway 增加 JWT Bearer Token 验证 + `admin`/`agent` 角色控制，Client 携带认证 Header |
-| CORS 白名单 | `config.py` | 默认值从 `"*"` 改为 `"localhost:12345,localhost:3000"` |
-| A2A Callback HMAC | `routes.py`, `schemas.py` | HMAC-SHA256 签名验证 + ±300s 防重放窗口 |
-| 端口文档统一 | `docker-compose.yml`, `config.py` | 修正 Redis 端口注释 6480→6500，补充容器内/本地开发的端口区分说明 |
+| 加固项               | 文件                                | 说明                                                                       |
+| ----------------- | --------------------------------- | ------------------------------------------------------------------------ |
+| 护栏前置 LLM          | `dependencies.py`                 | `GuardrailRunner.run_input()` 在 `graph.ainvoke` 前执行，注入/敏感词立即阻断           |
+| MCP 认证+RBAC       | `gateway.py`, `client.py`         | Gateway 增加 JWT Bearer Token 验证 + `admin`/`agent` 角色控制，Client 携带认证 Header |
+| CORS 白名单          | `config.py`                       | 默认值从 `"*"` 改为 `"localhost:12345,localhost:3000"`                         |
+| A2A Callback HMAC | `routes.py`, `schemas.py`         | HMAC-SHA256 签名验证 + ±300s 防重放窗口                                           |
+| 端口文档统一            | `docker-compose.yml`, `config.py` | 修正 Redis 端口注释 6480→6500，补充容器内/本地开发的端口区分说明                                |
 
 ### 认证体系重构
 
 旧版认证存在两个问题：(1) `dependencies.py:get_user_id()` 直接从 `X-User-Id` Header 读取用户 ID，忽略 `AuthMiddleware` 已注入的 `request.state.user_id`；(2) `RBACMiddleware` 在 `AuthMiddleware` 之前执行（FastAPI LIFO 顺序），权限检查时 `request.state.user_role` 尚未设置。
 
 修复：
+
 - **`dependencies.py`**: `get_user_id()` 改为从 `request.state.user_id` 读取
 - **`main.py`**: 调换 `RBACMiddleware` / `AuthMiddleware` 注册顺序，Auth 先执行设置身份，RBAC 后执行检查权限；`global_exception_handler` 不再拦截 `HTTPException`（401/403 由 Starlette 原样返回）
 - **`auth.py`**: JWT 解码失败改为 `pass`（fallthrough 到 `X-User-Id` 降级），不再立即抛 401
