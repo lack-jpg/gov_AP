@@ -3,7 +3,7 @@ tools.logger - 项目统一日志模块
 
 基于 loguru，实现：
 - 结构化控制台输出（带颜色，从 ContextVar 实时读取 trace_id）
-- 文件日志轮转（按天，30天保留，gzip压缩）
+- 文件日志轮转（按天+大小，30天保留，gzip压缩，异步写入，可选 JSON 序列化）
 - 错误日志单独文件（90天保留）
 - stdlib logging → loguru 桥接（第三方库如 langchain/uvicorn 也走 loguru）
 - FastAPI 请求日志中间件（自动注入 trace_id）
@@ -14,7 +14,7 @@ tools.logger - 项目统一日志模块
 
 Author: le
 Date: 2026/7/29
-Version: 0.2
+Version: 0.3
 Task: Unified logging module — relocated from backend/middleware/logging.py to tools/logger.py
 """
 from __future__ import annotations
@@ -160,6 +160,18 @@ def _error_file_format(record: dict[str, Any]) -> str:
     )
 
 
+def _patch_record(record: dict[str, Any]) -> None:
+    """
+    loguru patcher — 在每条记录创建时注入 trace 上下文到 extra。
+
+    配合 serialize=True 使用：原生 JSON 序列化会把 extra 写入输出，
+    使 ELK/Loki 采集时能按 trace_id / user_id / agent_name 检索。
+    """
+    record["extra"]["trace_id"] = _trace_id_ctx.get() or "-"
+    record["extra"]["user_id"] = _user_id_ctx.get() or "-"
+    record["extra"]["agent_name"] = _agent_name_ctx.get() or "-"
+
+
 def _format_exception(exc: Any, escape_angles: bool = False) -> str:
     """
     格式化 loguru record 中的 exception 字段。
@@ -189,19 +201,100 @@ def _format_exception(exc: Any, escape_angles: bool = False) -> str:
 # ============================================================
 
 
-def setup_logging(settings: Settings) -> None:
+def _parse_size(size_str: str) -> int:
+    """解析人类可读大小（'100 MB'）为字节数"""
+    size_str = size_str.strip().upper()
+    units = {"B": 1, "KB": 1024, "MB": 1024 ** 2, "GB": 1024 ** 3, "TB": 1024 ** 4}
+    for unit in sorted(units, key=len, reverse=True):  # 长单位优先（MB 先于 B）
+        if size_str.endswith(unit):
+            return int(float(size_str[: -len(unit)].strip()) * units[unit])
+    return int(float(size_str))
+
+
+def _parse_daytime(t: str):
+    """解析 'HH:MM[:SS]' 为 datetime.time"""
+    import datetime
+
+    parts = t.strip().split(":")
+    hour, minute = int(parts[0]), int(parts[1])
+    second = int(parts[2]) if len(parts) > 2 else 0
+    return datetime.time(hour, minute, second)
+
+
+def _make_combined_rotation(time_part: str, size_part: str):
+    """
+    组合轮转 callable：每天 time_part 时刻 或 文件超过 size_part 时切割。
+
+    loguru 字符串 rotation 只能表达单一维度（时间 或 大小），
+    组合条件通过 callable 实现（add(rotation=callable) 为公开 API）。
+
+    复用 loguru 内部 Rotation.RotationTime 保证时间轮转行为与原生 "00:00" 完全一致。
+    """
+    from loguru._file_sink import Rotation
+
+    size_limit = _parse_size(size_part)
+    time_rot = Rotation.RotationTime(Rotation.forward_day, _parse_daytime(time_part))
+
+    def checker(message, file) -> bool:
+        # 1. 大小检查（文件超过阈值立即切割）
+        try:
+            file.seek(0, 2)
+            if file.tell() > size_limit:
+                return True
+        except Exception:
+            pass
+        # 2. 时间检查（每日指定时刻切割）
+        try:
+            return bool(time_rot(message, file))
+        except Exception:
+            return False
+
+    return checker
+
+
+def _resolve_rotation(rotation: str):
+    """
+    解析 rotation 参数为 loguru 可接受格式。
+
+    支持:
+        "00:00"          → 每天零点切割（loguru 原生）
+        "100 MB"         → 达到100MB切割（loguru 原生）
+        "1 week"         → 每周切割（loguru 原生）
+        "00:00, 100 MB"  → 每天零点 或 100MB（组合，转 callable）
+    """
+    if isinstance(rotation, str) and "," in rotation:
+        parts = [p.strip() for p in rotation.split(",")]
+        if len(parts) == 2:
+            return _make_combined_rotation(parts[0], parts[1])
+    return rotation
+
+
+def setup_logging(
+    settings: Settings,
+    *,
+    serialize: bool = False,
+    enqueue: bool = True,
+    rotation: str = "00:00, 100 MB",
+    retention: str = "30 days",
+    error_retention: str = "90 days",
+) -> None:
     """
     初始化日志系统。
 
     1. 创建 logger/ 目录
     2. 移除所有已有 handler
     3. 添加控制台输出（debug模式带颜色和diagnose）
-    4. 添加文件输出（按天轮转，保留30天，gzip压缩）
+    4. 添加文件输出（按天+大小轮转，保留30天，gzip压缩）
     5. 错误日志单独文件（90天保留）
     6. 桥接 stdlib logging → loguru
 
     Args:
         settings: 应用配置（包含 log_level 等）
+        serialize: 文件日志输出 JSON 格式（对接 ELK/Loki 采集，含 trace 上下文）
+        enqueue: 异步写入（不阻塞业务线程，高并发下降低延迟；程序异常退出可能丢最后几条）
+        rotation: 日志切割策略，时间+大小组合（如 "00:00, 100 MB" = 每天零点或达到100MB时切割）
+        retention: 运行日志保留时长
+        error_retention: 错误日志保留时长
     """
     # 优先使用 settings.log_dir（.env GOV_LOG_DIR），其次用模块级 LOG_DIR
     log_dir = getattr(settings, "log_dir", "") or LOG_DIR
@@ -211,6 +304,9 @@ def setup_logging(settings: Settings) -> None:
 
     # 移除默认 handler
     _loguru_logger.remove()
+
+    # 注入 trace 上下文到 record.extra（serialize=True 时随 JSON 输出）
+    _loguru_logger.configure(patcher=_patch_record)
 
     # ── 控制台输出 ──
     _loguru_logger.add(
@@ -222,15 +318,23 @@ def setup_logging(settings: Settings) -> None:
         diagnose=settings.debug,
     )
 
+    # 文件输出共用参数
+    _file_kwargs = dict(
+        rotation=_resolve_rotation(rotation),  # 支持 "00:00, 100 MB" 组合
+        compression="gz",
+        encoding="utf-8",
+        enqueue=enqueue,
+        catch=True,      # 日志系统自身异常不抛给业务
+    )
+
     # ── 运行日志 ──
     _loguru_logger.add(
         os.path.join(log_dir, "app_{time:YYYY-MM-DD}.log"),
         format=_file_format,
         level="INFO",
-        rotation="00:00",
-        retention="30 days",
-        compression="gz",
-        encoding="utf-8",
+        retention=retention,
+        serialize=serialize,  # True 时输出原生 JSON（record.extra 含 trace 上下文）
+        **_file_kwargs,
     )
 
     # ── 错误日志 ──
@@ -238,9 +342,9 @@ def setup_logging(settings: Settings) -> None:
         os.path.join(log_dir, "error_{time:YYYY-MM-DD}.log"),
         format=_error_file_format,
         level="ERROR",
-        rotation="00:00",
-        retention="90 days",
-        encoding="utf-8",
+        retention=error_retention,
+        serialize=serialize,
+        **_file_kwargs,
     )
 
     # ── 桥接 stdlib → loguru ──
