@@ -53,14 +53,20 @@ COPY --from=builder /install /usr/local
 # 复制应用代码
 COPY . .
 
+# 入口脚本（以 root 运行 → 授权 bind mount 目录 → 降权为 appuser）
+COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # 非 root 用户（安全）
+# 注：不设置 USER —— 入口脚本以 root 启动，chown 挂载目录后通过
+#     setpriv 降权为 appuser 运行 uvicorn，最终业务进程仍为非 root。
 RUN useradd -m -u 1000 appuser \
     && chown -R appuser:appuser /app
-USER appuser
 
 EXPOSE 8002
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -f http://localhost:8002/health || exit 1
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8002"]

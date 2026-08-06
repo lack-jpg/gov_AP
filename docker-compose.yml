@@ -66,6 +66,7 @@ services:
       - ./models:/app/models
       - ./data:/app/data
       - ./logger:/app/logger          # 日志输出到宿主机，方便查看和采集
+      - ./evaluation_results:/app/evaluation_results  # 评测报告文件回退读取（evaluation_report API）
     depends_on:
       postgres:
         condition: service_healthy

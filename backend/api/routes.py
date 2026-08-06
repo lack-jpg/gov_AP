@@ -9,6 +9,7 @@ Task: Implement all API endpoint routes
 from __future__ import annotations
 
 import json
+import os
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -534,6 +535,101 @@ async def dashboard_overview(
 # ============================================================
 
 
+# ============================================================
+# 评测报告文件回退（evaluation_results/*.json）
+#
+# benchmark runner 支持 --save-result 写文件 / --save-to-db 写库。
+# 若只写了文件（或 DB 被重建/无记录），API 直接返回 404/错误。
+# 这里在 DB 无记录或 DB 不可用时，回退读取 evaluation_results/
+# 下匹配 version 的 benchmark JSON，聚合各 dataset 指标返回。
+# ============================================================
+
+
+def _evaluation_results_dir() -> str:
+    """evaluation_results 目录（项目根下，相对本文件上溯 3 层）"""
+    return os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "evaluation_results",
+    )
+
+
+def _aggregate_benchmark_report(data: dict, version: str) -> dict:
+    """将 benchmark JSON（含多个 dataset）聚合成与 DB Evaluation 记录同构的 dict。
+
+    各指标按 dataset 用例数加权平均；总用例/通过数求和。
+    benchmark dataset 结构:
+        agent: {task_success_rate, tool_accuracy, avg_latency_ms, avg_step_count, total_cases, passed_cases}
+        rag:   {faithfulness, answer_relevance, context_recall}
+    """
+    datasets = data.get("datasets", {})
+    total = 0
+    passed = 0
+    t_success = t_tool = t_faith = t_rel = t_recall = t_lat = t_steps = 0.0
+
+    for ds in datasets.values():
+        if not isinstance(ds, dict):
+            continue
+        agent = ds.get("agent") or {}
+        rag = ds.get("rag") or {}
+        n = int(agent.get("total_cases", 0) or 0)
+        total += n
+        passed += int(ds.get("passed_cases", 0) or 0)
+        t_success += float(agent.get("task_success_rate", 0) or 0) * n
+        t_tool += float(agent.get("tool_accuracy", 0) or 0) * n
+        t_faith += float(rag.get("faithfulness", 0) or 0) * n
+        t_rel += float(rag.get("answer_relevance", 0) or 0) * n
+        t_recall += float(rag.get("context_recall", 0) or 0) * n
+        t_lat += float(agent.get("avg_latency_ms", 0) or 0) * n
+        t_steps += float(agent.get("avg_step_count", 0) or 0) * n
+
+    def _avg(v: float) -> float:
+        return round(v / total, 4) if total else 0.0
+
+    return {
+        "version": version,
+        "task_success_rate": _avg(t_success),
+        "tool_accuracy": _avg(t_tool),
+        "rag_faithfulness": _avg(t_faith),
+        "rag_answer_relevance": _avg(t_rel),
+        "rag_context_recall": _avg(t_recall),
+        "avg_latency_ms": round(_avg(t_lat), 2),
+        "avg_step_count": round(_avg(t_steps), 2),
+        "total_cases": total,
+        "passed_cases": passed,
+        "created_at": str(data.get("created_at", "")),
+        "source": "file",
+    }
+
+
+def _load_benchmark_report_file(version: str) -> dict | None:
+    """从 evaluation_results/ 读取匹配 version 的最新 benchmark JSON 并聚合。
+
+    匹配依据为 JSON 内 version 字段（而非文件名），多个文件取 created_at 最新者。
+    未找到返回 None。
+    """
+    results_dir = _evaluation_results_dir()
+    if not os.path.isdir(results_dir):
+        return None
+
+    candidates: list[tuple[str, dict]] = []
+    for name in os.listdir(results_dir):
+        if not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(results_dir, name), "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            continue
+        if not isinstance(data, dict) or str(data.get("version", "")) != str(version):
+            continue
+        candidates.append((str(data.get("created_at", "")), data))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return _aggregate_benchmark_report(candidates[0][1], version)
+
+
 @router.get(
     "/evaluation/report/{version}",
     summary="获取评测报告",
@@ -576,6 +672,10 @@ async def evaluation_report(
             record = result.scalars().first()
 
         if record is None:
+            # DB 无记录 → 回退读取 evaluation_results/ 下的 benchmark 文件
+            file_report = _load_benchmark_report_file(version)
+            if file_report is not None:
+                return file_report
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=(
@@ -602,6 +702,13 @@ async def evaluation_report(
         raise
     except Exception as e:
         logger.warning("查询评测报告失败 (version={}): {}", version, e)
+        # DB 不可用 → 回退读取 evaluation_results/ 下的 benchmark 文件
+        try:
+            file_report = _load_benchmark_report_file(version)
+            if file_report is not None:
+                return file_report
+        except Exception as fe:
+            logger.warning("评测报告文件回退失败 (version={}): {}", version, fe)
         return {
             "version": version,
             "task_success_rate": 0.0,
