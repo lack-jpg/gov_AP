@@ -12,6 +12,7 @@ import streamlit as st
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from frontend.common import setup_paths, run_async  # noqa: E402
+from frontend import ui  # noqa: E402
 
 setup_paths()
 
@@ -26,9 +27,14 @@ except ImportError:
     A2ATaskRequest = None  # type: ignore[assignment]
     _HAS_LOCAL_MODULES = False
 
-
-st.title("🤝 跨域协同（A2A）")
-st.caption("通过 **A2A 协议**调用外部系统 Agent：本地政务 Agent → 不动产系统 / 公积金系统")
+# ============================================================
+# 页头
+# ============================================================
+ui.page_header(
+    "🤝",
+    "跨域协同（A2A）",
+    "通过 **A2A 协议**调用外部系统 Agent：本地政务 Agent → 不动产系统 / 公积金系统",
+)
 
 if not _HAS_LOCAL_MODULES:
     st.warning(
@@ -48,10 +54,8 @@ agent_type = st.radio(
     horizontal=True,
 )
 
-st.divider()
-
 if "不动产" in agent_type:
-    st.subheader("🏠 不动产查询")
+    ui.section_header("🏠", "不动产查询")
     owner = st.text_input("户主姓名", "张三")
     detail = st.checkbox("同时返回关联公积金余额", value=True)
 
@@ -68,8 +72,7 @@ if "不动产" in agent_type:
                 )
                 resp = run_async(agent.process_task(req))
 
-            st.divider()
-            st.markdown(f"### 查询结果  ·  `{resp.status.value}`")
+            ui.section_header("📊", "查询结果", hint=f"状态：`{resp.status.value}`")
             artifact = resp.artifact or {}
             properties = artifact.get("properties", [])
             st.caption(f"共找到 **{artifact.get('total_count', 0)}** 处不动产")
@@ -90,7 +93,7 @@ if "不动产" in agent_type:
                 st.info(f"🏦 关联公积金余额: **{artifact['housing_fund'][0].get('balance')}** 元")
 
 else:
-    st.subheader("🏦 公积金查询")
+    ui.section_header("🏦", "公积金查询")
     user_id = st.text_input("用户 ID", "001")
     user_name = st.text_input("用户姓名（可选）", "")
     show_detail = st.checkbox("显示提取记录详情", value=False)
@@ -109,8 +112,7 @@ else:
                 )
                 resp = run_async(agent.process_task(req))
 
-            st.divider()
-            st.markdown(f"### 查询结果  ·  `{resp.status.value}`")
+            ui.section_header("📊", "查询结果", hint=f"状态：`{resp.status.value}`")
             artifact = resp.artifact or {}
             accounts = artifact.get("fund_accounts") or artifact.get("fund_details") or []
             st.caption(f"共找到 **{artifact.get('total_count', 0)}** 个公积金账户")
@@ -118,9 +120,12 @@ else:
             for acc in accounts:
                 with st.container(border=True):
                     c1, c2, c3 = st.columns(3)
-                    c1.metric("账户", acc.get("account_no", "-"))
-                    c2.metric("余额", f"{acc.get('balance', 0):,.2f} 元")
-                    c3.metric("状态", acc.get("account_status", "-"))
+                    with c1:
+                        ui.metric_card("账户", acc.get("account_no", "-"), accent="blue")
+                    with c2:
+                        ui.metric_card("余额", f"{acc.get('balance', 0):,.2f} 元", accent="green")
+                    with c3:
+                        ui.metric_card("状态", acc.get("account_status", "-"), accent="gray")
                     st.caption(f"单位: {acc.get('unit_name', '-')} · 缴存比例: {acc.get('unit_ratio', '-')} / {acc.get('personal_ratio', '-')}")
 
                 if show_detail and acc.get("withdrawal_records"):
@@ -131,6 +136,5 @@ else:
             if artifact.get("max_loan_amount"):
                 st.success(f"💰 最高可贷额度: **{artifact['max_loan_amount']:,.0f}** 元（最长 {artifact.get('max_loan_years', '-')} 年）")
 
-st.divider()
 st.caption("💡 说明：以上为 Mock 外部 Agent（`tools/a2a/mock_agents`），生产环境通过 A2A 协议对接真实系统。"
            "本页直接调用本地模块；完整 HTTP 链路见 API 后端的 A2A Connector。")

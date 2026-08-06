@@ -13,3 +13,15 @@ runOnSave = false
 
 [browser]
 gatherUsageStats = false
+
+# =====================================================
+# 主题 — 浅色专业政务风（design-system/default/MASTER.md）
+# 政务蓝 #1E40AF · 服务绿 #16A34A · 背景 #F6F8FB
+# =====================================================
+[theme]
+base = "light"
+primaryColor = "#1E40AF"
+backgroundColor = "#F6F8FB"
+secondaryBackgroundColor = "#EFF6FF"
+textColor = "#1F2A44"
+font = "sans serif"

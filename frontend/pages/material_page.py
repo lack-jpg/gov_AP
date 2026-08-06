@@ -12,6 +12,7 @@ import streamlit as st
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from frontend.common import setup_paths, run_async  # noqa: E402
+from frontend import ui  # noqa: E402
 
 setup_paths()
 
@@ -33,9 +34,10 @@ except ImportError:
 
 _HAS_LOCAL_MODULES = _HAS_VALIDATOR
 
-
-st.title("📋 材料审核")
-st.caption("按业务类型校验材料完整性 · 别名匹配 · 温馨提示")
+# ============================================================
+# 页头
+# ============================================================
+ui.page_header("📋", "材料审核", "按业务类型校验材料完整性 · 别名匹配 · 温馨提示")
 
 if not _HAS_LOCAL_MODULES:
     st.warning(
@@ -75,13 +77,13 @@ else:
         "fund_query": ["身份证", "公积金查询申请表"],
     }
 
-c1, c2 = st.columns(2)
+c1, c2 = st.columns([1, 2])
 with c1:
     bt = st.selectbox("业务类型", list(BUSINESS_TYPES.keys()), format_func=lambda k: BUSINESS_TYPES[k])
 with c2:
-    st.caption("")
-    st.caption("**必需材料清单：**")
-    st.caption(_REQUIRED.get(bt, []))
+    st.markdown("**必需材料清单：**")
+    required = _REQUIRED.get(bt, [])
+    st.markdown(" ".join(ui.pill(r, "gray") for r in required), unsafe_allow_html=True)
 
 materials_str = st.text_area(
     "已提交材料（用逗号或顿号分隔）",
@@ -103,30 +105,35 @@ if st.button("📋 审核材料", type="primary", use_container_width=True, disa
                 validator = MaterialValidator()
                 result = run_async(validator.validate(business_type=bt, materials=materials))
 
-        st.divider()
-        st.markdown("### 审核结果")
+        ui.section_header("📋", "审核结果")
 
         if result.get("passed") if isinstance(result, dict) else result.passed:
-            st.success("✅ **材料齐全，可以继续办理！**")
+            ui.status_card(True, "材料齐全，可以继续办理！")
         else:
             missing_count = len(result.get("missing", [])) if isinstance(result, dict) else len(result.missing)
-            st.error(f"❌ **材料不完整**，缺少 {missing_count} 项")
+            ui.status_card(False, "材料不完整", f"缺少 {missing_count} 项")
 
         missing = result.get("missing", []) if isinstance(result, dict) else result.missing
         warnings_list = result.get("warnings", []) if isinstance(result, dict) else result.warnings
 
-        if missing:
-            st.subheader("❌ 缺失材料")
-            for m in missing:
-                st.markdown(f"- {m}")
-        else:
-            st.subheader("✅ 已提交材料")
-            for m in materials:
-                st.markdown(f"- {m}")
+        col_missing, col_submitted = st.columns(2)
+        with col_missing:
+            if missing:
+                with st.container(border=True):
+                    st.markdown("**❌ 缺失材料**")
+                    for m in missing:
+                        st.markdown(f"- {m}")
+        with col_submitted:
+            if not missing:
+                with st.container(border=True):
+                    st.markdown("**✅ 已提交材料**")
+                    for m in materials:
+                        st.markdown(f"- {m}")
 
         if warnings_list:
-            st.subheader("⚠️ 温馨提示")
-            for w in warnings_list:
-                st.markdown(f"- {w}")
+            with st.container(border=True):
+                st.markdown("**⚠️ 温馨提示**")
+                for w in warnings_list:
+                    st.markdown(f"- {w}")
 
         st.caption(f"已提交 {len(materials)} 项 · 缺失 {len(missing)} 项 · 提示 {len(warnings_list)} 条")

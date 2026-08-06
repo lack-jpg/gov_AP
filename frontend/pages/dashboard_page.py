@@ -13,76 +13,83 @@ import streamlit as st
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from frontend.common import setup_paths  # noqa: E402
 from frontend import api_client  # noqa: E402
+from frontend import ui  # noqa: E402
 
 setup_paths()
 
-
-st.title("📊 运维看板（AgentOps）")
-st.caption("Agent 运行统计 · 成功率 · 评测报告")
-
 # ============================================================
-# 后端连接状态
+# 页头
 # ============================================================
+ui.page_header("📊", "运维看板（AgentOps）", "Agent 运行统计 · 成功率 · 评测报告")
+
+# ── 后端连接状态 ──
 if not api_client.health():
-    st.warning("⚠️ 后端 API 未启动（http://localhost:8002），看板数据不可用。请先启动服务。")
+    ui.status_card(False, "后端 API 未启动", "看板数据不可用（http://localhost:8002）。请先启动服务。")
 else:
-    st.success("✅ 后端已连接")
-
-st.divider()
+    ui.status_card(True, "后端已连接")
 
 # ============================================================
 # 运行概览
 # ============================================================
-st.subheader("📈 运行概览")
+ui.section_header("📈", "运行概览")
 overview = api_client.dashboard_overview()
 
 if overview:
-    m1, m2, m3, m4, m5, m6 = st.columns(6)
-    m1.metric("总请求数", overview.get("total_requests", 0))
-    m2.metric("成功率", f"{overview.get('success_rate', 0) * 100:.1f}%")
-    m3.metric("平均耗时", f"{overview.get('avg_latency_ms', 0):.0f} ms")
-    m4.metric("活跃 Agent", overview.get("active_agents", 0))
-    m5.metric("MCP 调用", overview.get("tool_call_count", 0))
-    m6.metric("A2A 任务", overview.get("a2a_task_count", 0))
+    metric_specs = [
+        ("总请求数", overview.get("total_requests", 0), "blue"),
+        ("成功率", f"{overview.get('success_rate', 0) * 100:.1f}%", "green"),
+        ("平均耗时", f"{overview.get('avg_latency_ms', 0):.0f} ms", "amber"),
+        ("活跃 Agent", overview.get("active_agents", 0), "blue"),
+        ("MCP 调用", overview.get("tool_call_count", 0), "gray"),
+        ("A2A 任务", overview.get("a2a_task_count", 0), "blue"),
+    ]
+    cols = st.columns(6)
+    for col, (label, value, accent) in zip(cols, metric_specs):
+        with col:
+            ui.metric_card(label, value, accent=accent)
 
     if overview.get("total_requests", 0) == 0:
         st.info("💡 暂无请求数据。去 **💬 智能对话** 页发起一次对话后，这里会显示真实统计。")
 else:
-    st.info("暂无运行数据")
-
-st.divider()
+    ui.empty_state("📭", "暂无运行数据", "启动后端并产生请求后，这里会显示真实统计。")
 
 # ============================================================
 # 评测报告
 # ============================================================
-st.subheader("🧪 评测报告")
+ui.section_header("🧪", "评测报告")
 version = st.text_input("评测版本", "v1")
 
 report = api_client.evaluation_report(version)
 
 if report:
-    r1, r2, r3, r4 = st.columns(4)
-    r1.metric("任务成功率", f"{report.get('task_success_rate', 0) * 100:.1f}%")
-    r2.metric("工具准确率", f"{report.get('tool_accuracy', 0) * 100:.1f}%")
-    r3.metric("RAG 真实性", f"{report.get('rag_faithfulness', 0) * 100:.1f}%")
-    r4.metric("答案相关性", f"{report.get('rag_answer_relevance', 0) * 100:.1f}%")
+    cols1 = st.columns(4)
+    for col, (label, value, accent) in zip(cols1, [
+        ("任务成功率", f"{report.get('task_success_rate', 0) * 100:.1f}%", "green"),
+        ("工具准确率", f"{report.get('tool_accuracy', 0) * 100:.1f}%", "blue"),
+        ("RAG 真实性", f"{report.get('rag_faithfulness', 0) * 100:.1f}%", "green"),
+        ("答案相关性", f"{report.get('rag_answer_relevance', 0) * 100:.1f}%", "blue"),
+    ]):
+        with col:
+            ui.metric_card(label, value, accent=accent)
 
-    r5, r6, r7 = st.columns(3)
-    r5.metric("平均耗时", f"{report.get('avg_latency_ms', 0):.0f} ms")
-    r6.metric("平均步数", report.get("avg_step_count", 0))
-    r7.metric("通过/总用例", f"{report.get('passed_cases', 0)}/{report.get('total_cases', 0)}")
+    cols2 = st.columns(3)
+    for col, (label, value, accent) in zip(cols2, [
+        ("平均耗时", f"{report.get('avg_latency_ms', 0):.0f} ms", "amber"),
+        ("平均步数", report.get("avg_step_count", 0), "gray"),
+        ("通过/总用例", f"{report.get('passed_cases', 0)}/{report.get('total_cases', 0)}", "green"),
+    ]):
+        with col:
+            ui.metric_card(label, value, accent=accent)
 
     if report.get("error"):
         st.warning(report["error"])
 else:
     st.info(f"版本 `{version}` 暂无评测报告。\n\n运行评测生成报告：`python -m governance.evaluation.runner run --version {version}`")
 
-st.divider()
-
 # ============================================================
 # 评测数据集
 # ============================================================
-st.subheader("🗂️ 评测数据集")
+ui.section_header("🗂️", "评测数据集")
 
 # 从 cases/ 目录动态读取实际用例数量
 import json as _json
@@ -103,32 +110,37 @@ _dataset_meta = [
 ]
 
 dataset_loaded = 0
-for name, desc in _dataset_meta:
-    filepath = _os.path.join(_cases_dir, f"{name}.json")
-    count_str = "?"
-    try:
-        if _os.path.exists(filepath):
-            with open(filepath, "r", encoding="utf-8") as f:
-                data = _json.load(f)
-            # cases/ JSON 结构兼容：顶层可能是 list（如 [{_description, cases, ...}]）
-            # 也可能是直接 dict（如 {"cases": [...]}）
-            if isinstance(data, list):
-                # 取第一个元素，或遍历合并所有 cases
-                all_cases: list = []
-                for item in data:
-                    if isinstance(item, dict):
-                        all_cases.extend(item.get("cases", []))
-                count_val = len(all_cases)
-            elif isinstance(data, dict):
-                cases = data.get("cases", [])
-                count_val = len(cases) if isinstance(cases, list) else data.get("_count", data.get("case_count", "?"))
-            else:
-                count_val = "?"
-            count_str = f"{count_val} 条"
-            dataset_loaded += 1
-    except Exception:
-        count_str = "读取失败"
-    st.markdown(f"- **`{name}.json`** — {desc}（{count_str}）")
+for i in range(0, len(_dataset_meta), 2):
+    row = _dataset_meta[i : i + 2]
+    cols = st.columns(2)
+    for col, (name, desc) in zip(cols, row):
+        filepath = _os.path.join(_cases_dir, f"{name}.json")
+        count_str = "?"
+        try:
+            if _os.path.exists(filepath):
+                with open(filepath, "r", encoding="utf-8") as f:
+                    data = _json.load(f)
+                # cases/ JSON 结构兼容：顶层可能是 list（如 [{_description, cases, ...}]）
+                # 也可能是直接 dict（如 {"cases": [...]}）
+                if isinstance(data, list):
+                    all_cases: list = []
+                    for item in data:
+                        if isinstance(item, dict):
+                            all_cases.extend(item.get("cases", []))
+                    count_val = len(all_cases)
+                elif isinstance(data, dict):
+                    cases = data.get("cases", [])
+                    count_val = len(cases) if isinstance(cases, list) else data.get("_count", data.get("case_count", "?"))
+                else:
+                    count_val = "?"
+                count_str = f"{count_val} 条"
+                dataset_loaded += 1
+        except Exception:
+            count_str = "读取失败"
+        with col:
+            with st.container(border=True):
+                st.markdown(f"**`{name}.json`**  {ui.pill(desc, 'blue')}", unsafe_allow_html=True)
+                st.caption(f"{count_str}")
 
 if dataset_loaded > 0:
     st.caption(f"数据集位于 `cases/` 目录，格式兼容 GoldenDataset loader 与评测引擎（已加载 {dataset_loaded}/{len(_dataset_meta)} 个）")

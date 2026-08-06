@@ -22,6 +22,11 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# 全局主题 CSS（浅色专业政务风，见 frontend/ui.py）
+from frontend import ui  # noqa: E402
+
+ui.inject_theme_css()
+
 pages = [
     st.Page("pages/home_page.py", title="首页", icon="🏠", default=True),
     st.Page("pages/chat_page.py", title="智能对话", icon="💬"),

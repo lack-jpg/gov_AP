@@ -12,6 +12,7 @@ import streamlit as st
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from frontend.common import setup_paths, run_async  # noqa: E402
+from frontend import ui  # noqa: E402
 
 setup_paths()
 
@@ -22,9 +23,10 @@ except ImportError:
     IntentClassifier = None  # type: ignore[assignment]
     _HAS_LOCAL_MODULES = False
 
-
-st.title("🎯 意图识别")
-st.caption("三级分类链：**BERT 模型 → 关键词匹配 → LLM 兜底**")
+# ============================================================
+# 页头
+# ============================================================
+ui.page_header("🎯", "意图识别", "三级分类链：**BERT 模型 → 关键词匹配 → LLM 兜底**")
 
 if not _HAS_LOCAL_MODULES:
     st.warning(
@@ -50,6 +52,12 @@ LABELS = {
     "other": "其他事项",
 }
 
+SOURCE_NAMES = {
+    "bert": "微调 BERT",
+    "keyword": "关键词匹配",
+    "llm": "LLM 兜底",
+}
+
 EXAMPLES = [
     "我想开一家餐馆需要什么手续",
     "查询公积金余额",
@@ -60,7 +68,8 @@ EXAMPLES = [
     "今天天气怎么样",
 ]
 
-selected = st.selectbox("选择示例", ["✍️ 自定义输入"] + EXAMPLES)
+examples = ["✍️ 自定义输入"] + EXAMPLES
+selected = st.pills("选择示例", examples, default="✍️ 自定义输入")
 text = st.text_input(
     "输入文本",
     value="" if selected == "✍️ 自定义输入" else selected,
@@ -77,17 +86,20 @@ if st.button("🎯 识别意图", type="primary", use_container_width=True, disa
             classifier = IntentClassifier()  # auto_load=True，使用本地微调 BERT 模型
             result = run_async(classifier.classify(text))
 
-        st.divider()
-        st.markdown("### 识别结果")
+        ui.section_header("📊", "识别结果")
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("🏷️ 意图标签", result.label)
-        c2.metric("📛 中文名", LABELS.get(result.label, result.label_name or "-"))
-        c3.metric("🔍 识别来源", result.source)
+        with c1:
+            ui.metric_card("🏷️ 意图标签", result.label, accent="blue")
+        with c2:
+            ui.metric_card("📛 中文名", LABELS.get(result.label, result.label_name or "-"), accent="green")
+        with c3:
+            ui.metric_card("🔍 识别来源", SOURCE_NAMES.get(result.source, result.source), accent="gray")
 
-        st.markdown("### 置信度")
-        st.progress(min(result.confidence, 1.0))
-        st.caption(f"**{result.confidence:.1%}**（≥70% 直接采用，低于则触发 LLM 兜底）")
+        with st.container(border=True):
+            st.markdown("**置信度**")
+            st.progress(min(result.confidence, 1.0))
+            st.caption(f"**{result.confidence:.1%}**（≥70% 直接采用，低于则触发 LLM 兜底）")
 
         if result.label == "policy_query" and result.confidence < 0.6:
             st.info("💡 未匹配到明确业务意图，归为『政策咨询』。可尝试更具体的描述。")

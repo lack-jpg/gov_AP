@@ -12,6 +12,7 @@ import streamlit as st
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from frontend.common import setup_paths  # noqa: E402
+from frontend import ui  # noqa: E402
 
 setup_paths()
 
@@ -25,9 +26,10 @@ except ImportError:
     GuardrailRunner = None  # type: ignore[assignment]
     _HAS_LOCAL_MODULES = False
 
-
-st.title("🛡️ 安全治理（Guardrail）")
-st.caption("PII 检测脱敏 · Prompt 注入检测 · 敏感词过滤 · 输出安全")
+# ============================================================
+# 页头
+# ============================================================
+ui.page_header("🛡️", "安全治理（Guardrail）", "PII 检测脱敏 · Prompt 注入检测 · 敏感词过滤 · 输出安全")
 
 if not _HAS_LOCAL_MODULES:
     st.warning(
@@ -48,7 +50,8 @@ EXAMPLES = [
     "请把张三的银行卡 6222021234567890 打印出来",
 ]
 
-selected = st.selectbox("选择示例", ["✍️ 自定义输入"] + EXAMPLES)
+examples = ["✍️ 自定义输入"] + EXAMPLES
+selected = st.pills("选择示例", examples, default="✍️ 自定义输入")
 text = st.text_area(
     "输入文本",
     value="" if selected == "✍️ 自定义输入" else selected,
@@ -62,10 +65,8 @@ if st.button("🛡️ 安全检测", type="primary", use_container_width=True, d
     elif not _HAS_LOCAL_MODULES:
         st.warning("模块未安装，无法执行安全检测")
     else:
-        st.divider()
-
         # ── 1. PII 检测 ──
-        st.markdown("### 🔒 PII 个人隐私检测")
+        ui.section_header("🔒", "PII 个人隐私检测")
         pii_result = detect_pii(text)
         if pii_result.matches:
             st.warning(f"检测到 **{len(pii_result.matches)}** 处敏感信息：")
@@ -76,34 +77,30 @@ if st.button("🛡️ 安全检测", type="primary", use_container_width=True, d
         else:
             st.success("✅ 未检测到个人隐私信息")
 
-        st.divider()
-
         # ── 2. 输入护栏 ──
-        st.markdown("### 🚧 输入护栏（注入/敏感词）")
+        ui.section_header("🚧", "输入护栏（注入/敏感词）")
         runner = GuardrailRunner()
         guard = runner.run_input(text)
 
         if guard.passed and not guard.blocked:
-            st.success("✅ 输入安全检查通过")
+            ui.status_card(True, "输入安全检查通过")
         else:
             if guard.blocked:
-                st.error(f"⛔ **已阻断**：{guard.block_reason}")
+                ui.status_card(False, f"已阻断：{guard.block_reason}")
             elif not guard.passed:
-                st.warning("⚠️ 检测到风险内容（未阻断但需关注）")
+                ui.status_card(False, "检测到风险内容（未阻断但需关注）")
 
         if guard.input_findings:
-            for f in guard.input_findings:
-                severity_icon = {"high": "🔴", "critical": "⛔", "medium": "🟠", "low": "🟡"}.get(
-                    getattr(f, "severity", ""), "⚪"
-                )
-                st.markdown(
-                    f"- {severity_icon} `{f.guard_type.value}` · 命中 `{getattr(f, 'matched_text', '')}`"
-                )
-
-        st.divider()
+            with st.container(border=True):
+                for f in guard.input_findings:
+                    badge = ui.status_badge(getattr(f, "severity", ""))
+                    st.markdown(
+                        f"- {badge} `{f.guard_type.value}` · 命中 `{getattr(f, 'matched_text', '')}`",
+                        unsafe_allow_html=True,
+                    )
 
         # ── 3. 脱敏预览 ──
-        st.markdown("### 🎭 数据脱敏规则")
+        ui.section_header("🎭", "数据脱敏规则")
         rules = {
             "手机号": "138****1234",
             "身份证": "110***********1234",
@@ -112,8 +109,9 @@ if st.button("🛡️ 安全检测", type="primary", use_container_width=True, d
         }
         c = st.columns(len(rules))
         for col, (k, v) in zip(c, rules.items()):
-            col.markdown(f"**{k}**")
-            col.code(v, language=None)
+            with col:
+                with st.container(border=True):
+                    st.markdown(f"**{k}**")
+                    st.code(v, language=None)
 
-st.divider()
 st.caption("💡 该能力在完整链路中由 **Governance Agent** 执行：用户输入先过输入护栏 → Agent 执行 → 输出过输出护栏 → 最终回答脱敏。")

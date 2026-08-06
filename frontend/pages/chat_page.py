@@ -14,12 +14,18 @@ import streamlit as st
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from frontend.common import setup_paths  # noqa: E402
 from frontend import api_client  # noqa: E402
+from frontend import ui  # noqa: E402
 
 setup_paths()
 
-
-st.title("💬 智能对话")
-st.caption("多 Agent 协同处理：**Supervisor → Intent → Policy/Material → Workflow → Governance → 回答**")
+# ============================================================
+# 页头
+# ============================================================
+ui.page_header(
+    "💬",
+    "智能对话",
+    "多 Agent 协同处理：**Supervisor → Intent → Policy/Material → Workflow → Governance → 回答**",
+)
 
 # ── 示例问题 ──
 EXAMPLES = [
@@ -30,7 +36,8 @@ EXAMPLES = [
     "社保卡怎么办理？",
 ]
 
-selected = st.selectbox("选择示例问题", ["✍️ 自定义输入"] + EXAMPLES)
+examples = ["✍️ 自定义输入"] + EXAMPLES
+selected = st.pills("示例问题", examples, default="✍️ 自定义输入")
 query = st.text_area(
     "请输入您的问题",
     value="" if selected == "✍️ 自定义输入" else selected,
@@ -66,26 +73,42 @@ if send:
             else:
                 st.success("✅ 处理完成")
 
-            st.markdown("### 📝 回答")
-            st.markdown(data.get("answer", "") or "（未生成回答）")
+            # ── 回答 ──
+            ui.section_header("📝", "回答")
+            with st.container(border=True):
+                st.markdown(data.get("answer", "") or "（未生成回答）")
 
-            st.divider()
-            m1, m2, m3, m4 = st.columns(4)
+            # ── 结果指标 ──
             intent = data.get("intent", "-")
             risk = data.get("risk_level", "-")
-            risk_icon = {"low": "🟢", "medium": "🟡", "high": "🔴", "critical": "⛔"}.get(risk, "⚪")
-            m1.metric("🎯 识别意图", intent)
-            m2.metric("🛡️ 风险等级", f"{risk_icon} {risk}")
-            m3.metric("⚙️ 执行步数", data.get("execution_steps", 0))
-            m4.metric("⏱️ 耗时", f"{data.get('elapsed_ms', 0):.0f} ms")
+            risk_accent = {"low": "green", "medium": "amber", "high": "red", "critical": "red"}.get(risk, "gray")
 
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                ui.metric_card("🎯 识别意图", intent, accent="blue")
+            with m2:
+                ui.metric_card("⚙️ 执行步数", data.get("execution_steps", 0), accent="gray")
+            with m3:
+                ui.metric_card("⏱️ 耗时", f"{data.get('elapsed_ms', 0):.0f} ms", accent="amber")
+            with m4:
+                st.markdown(
+                    '<div class="gp-metric">'
+                    '<div class="gp-metric-label">🛡️ 风险等级</div>'
+                    f'<div style="margin-top:6px;">{ui.status_badge(risk)}</div>'
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+
+            # ── 引用证据 ──
             evidence = data.get("evidence") or []
             if evidence:
-                st.subheader("📚 引用证据")
+                ui.section_header("📚", "引用证据")
                 for ev in evidence:
-                    with st.container(border=True):
-                        st.markdown(f"**{ev.get('source', '未知来源')}**  ·  相关度 {ev.get('relevance_score', 0):.2f}")
-                        st.caption(ev.get("excerpt", ""))
+                    ui.evidence_card(
+                        ev.get("source", "未知来源"),
+                        ev.get("relevance_score", 0),
+                        ev.get("excerpt", ""),
+                    )
 
             trace_id = data.get("trace_id")
             if trace_id:
