@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>政务多智能体协同平台 · 完整链路图（LangGraph 状态机 + 业务决策漏斗）</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#ffffff; --ink:#1f2933; --sub:#6b7683;
+    --line:#d7dee8; --brand:#1E40AF; --brand-soft:#e7efff;
+    --green:#059669; --green-soft:#e6f7f0;
+    --amber:#b45309; --amber-soft:#fdf3e3;
+    --red:#dc2626; --red-soft:#fdeaea;
+    --violet:#7c3aed; --violet-soft:#f2eaff;
+    --teal:#0d9488; --teal-soft:#e0f5f3;
+    --slate:#475569; --slate-soft:#eef1f6;
+    --radius:12px; --shadow:0 1px 3px rgba(16,24,40,.08),0 4px 14px rgba(16,24,40,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.75 "Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;}
+  .wrap{max-width:1280px;margin:0 auto;padding:32px 20px 80px}
+
+  header.hero{background:linear-gradient(135deg,#1E40AF,#2563eb 55%,#3b82f6);
+    color:#fff;border-radius:18px;padding:28px 34px;margin-bottom:24px;box-shadow:var(--shadow);}
+  header.hero h1{margin:0 0 6px;font-size:26px}
+  header.hero p{margin:0;opacity:.93;font-size:14.5px}
+  .tags{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
+  .tag{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35);
+    padding:3px 12px;border-radius:999px;font-size:12.5px}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:20px 22px;margin-bottom:22px;box-shadow:var(--shadow);}
+  .card h2{margin:0 0 4px;font-size:20px;display:flex;align-items:center;gap:10px}
+  .card h2 .no{background:var(--brand);color:#fff;width:26px;height:26px;border-radius:7px;
+    display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex:none}
+  .lead{color:var(--sub);font-size:14px;margin:0 0 14px 36px}
+
+  /* ── 业务决策漏斗 ───────────────── */
+  .funnel{border:1px solid var(--line);border-radius:12px;padding:16px 18px;
+    background:#fbfcfe;margin:6px 0 16px}
+  .funnel .f-title{font-size:14px;font-weight:800;color:var(--slate);margin-bottom:12px}
+  .funnel .f-title .no{display:inline-flex;width:20px;height:20px;border-radius:6px;
+    background:var(--brand);color:#fff;align-items:center;justify-content:center;
+    font-size:12px;margin-right:6px}
+  .frow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:7px 0;position:relative}
+  .frow .flabel{font-size:12px;font-weight:700;color:var(--sub);width:118px;flex:none}
+  .fbox{border-radius:9px;padding:7px 12px;font-size:12.5px;line-height:1.45;border:1.5px solid}
+  .fbox.rule{background:var(--slate-soft);border-color:#b6c2d4}
+  .fbox.bert{background:var(--green-soft);border-color:#7dd3b0}
+  .fbox.sup{background:var(--amber-soft);border-color:#f2d19b;flex:1;min-width:280px}
+  .fbox.q{background:var(--brand-soft);border-color:#b6cff7}
+  .fbox b{display:block;font-size:12px;color:var(--ink)}
+  .fbox .dim{color:var(--sub);font-weight:400}
+  .farrow{color:#94a3b8;font-size:12px;white-space:nowrap}
+  .fout{font-size:12.5px;color:var(--green);font-weight:700;border-left:3px solid var(--green);
+    padding-left:8px;line-height:1.5}
+  .fout.low{color:var(--amber);border-color:var(--amber)}
+  .fout.low2{color:var(--red);border-color:var(--red)}
+  .fout .why{display:block;font-size:11px;font-weight:400;color:var(--sub)}
+
+  /* ── 控制栏 ─────────────────────── */
+  .controls{display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:#f0f4fa;
+    border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:6px 0 16px}
+  .controls label{font-size:13.5px;font-weight:600;color:var(--slate)}
+  select{font-size:13.5px;padding:7px 12px;border:1.5px solid #93c5fd;border-radius:8px;background:#fff;
+    min-width:560px;color:var(--ink);cursor:pointer}
+  select optgroup{font-size:12.5px;font-weight:700;color:var(--brand);background:#fff}
+  .pathname{font-size:13px;color:var(--green);font-weight:600;width:100%}
+  .delaytip{font-size:12.5px;color:var(--sub);margin:-4px 0 14px 36px}
+  .delaytip b{color:var(--brand)}
+
+  /* ── SVG 图 ─────────────────────── */
+  .graphbox{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:
+    repeating-linear-gradient(45deg,#fff,#fff 12px,#fbfcfe 12px,#fbfcfe 24px)}
+  svg.graph{width:100%;display:block;min-width:900px}
+  .edge path{fill:none;stroke:#b6c3d4;stroke-width:1.8;marker-end:url(#arr);transition:stroke .25s,stroke-width .25s,opacity .25s}
+  .edge .el{font-size:11px;fill:#64748b;font-weight:600;transition:opacity .25s}
+  .edge.hl path{stroke:#0ea5e9;stroke-width:2.6}
+  .edge.hl .el{fill:#0284c7}
+  .edge.active path{stroke:#dc2626;stroke-width:3.2;stroke-dasharray:7 4;animation:dash 1.2s linear infinite}
+  .edge.active .el{fill:#b91c1c}
+  .edge.dim path{opacity:.15}
+  @keyframes dash{to{stroke-dashoffset:-22}}
+  .nodebox rect{stroke-width:1.8;transition:stroke-width .2s,filter .2s}
+  .nodebox:hover rect{stroke-width:3;filter:drop-shadow(0 3px 6px rgba(16,24,40,.18))}
+  .nodebox.active rect{filter:drop-shadow(0 0 7px rgba(30,64,175,.45))}
+  .nodebox.dim rect{opacity:.25}
+  .nodebox .t{font-size:14px;font-weight:700;fill:#1f2933;text-anchor:middle}
+  .nodebox .s{font-size:10.5px;fill:#64748b;text-anchor:middle}
+  .badge{font-size:10.5px;font-weight:700;fill:#fff;text-anchor:middle}
+
+  /* ── 流转顺序数字徽章（活跃路径边上） ── */
+  .seqnum circle{fill:#dc2626;stroke:#fff;stroke-width:2.5}
+  .seqnum text{font-size:11px;font-weight:800;fill:#fff;text-anchor:middle;pointer-events:none}
+
+  .legend-row{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-top:12px;font-size:12.5px;color:var(--sub)}
+  .legend-row .sw{width:34px;height:3px;border-radius:2px;display:inline-block;vertical-align:middle}
+
+  /* ── 步骤条 ─────────────────────── */
+  .steps{margin-top:18px}
+  .steps .scn{font-size:14px;font-weight:700;color:#b91c1c;margin:0 0 12px}
+  .steps .st{display:flex;gap:12px;margin:8px 0;background:#fbfcfe;border:1px solid var(--line);
+    border-radius:10px;padding:10px 14px;align-items:flex-start}
+  .steps .st .idx{flex:none;width:30px;height:30px;border-radius:50%;background:var(--brand);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;margin-top:2px}
+  .steps .st .nm{font-weight:700;font-size:14px;color:var(--brand)}
+  .steps .st .tx{font-size:13.5px;color:var(--ink)}
+  .steps .st.hot{border-color:#93c5fd;background:#eff6ff}
+  .steps .st.hot .idx{background:var(--green)}
+  .steps .st.decide{border-color:#f2d19b;background:#fffbeb}
+  .steps .st.decide .idx{background:var(--amber)}
+  .steps .st.decide .nm{color:var(--amber)}
+  .steps .st.risk{border-color:#fecaca;background:#fef2f2}
+  .steps .st.risk .idx{background:var(--red)}
+  .steps .st.risk .nm{color:var(--red)}
+
+  /* ── 路由表 ─────────────────────── */
+  table.params{width:100%;border-collapse:collapse;font-size:13.5px;margin:10px 0}
+  table.params th{background:var(--slate-soft);text-align:left;padding:7px 10px;border:1px solid var(--line);
+    font-size:12.5px;color:var(--slate)}
+  table.params td{padding:7px 10px;border:1px solid var(--line);vertical-align:top}
+  .pill{display:inline-block;border-radius:6px;padding:0 8px;font-size:12px;font-weight:600}
+  .pill.g{background:var(--green-soft);color:var(--green)}
+  .pill.p{background:var(--brand-soft);color:var(--brand)}
+  .pill.v{background:var(--amber-soft);color:var(--amber)}
+  .pill.b{background:var(--violet-soft);color:var(--violet)}
+  .pill.r{background:var(--red-soft);color:var(--red)}
+  .pill.s{background:var(--slate-soft);color:var(--slate)}
+  .side-note{background:var(--slate-soft);border-left:4px solid var(--slate);border-radius:0 8px 8px 0;
+    padding:9px 14px;font-size:13.5px;margin:10px 0;color:var(--slate)}
+  .side-note b{color:var(--ink)}
+
+  /* ── 节点详情面板 ───────────────── */
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 14px}
+  .chip{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:5px 14px;
+    font-size:12.5px;font-weight:600;color:var(--slate);cursor:pointer;transition:all .2s}
+  .chip:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-soft)}
+  .chip.on{border-color:var(--brand);background:var(--brand);color:#fff}
+  .detail-head{display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+  .detail-head .dn{font-size:18px;font-weight:800}
+  .detail-head .ds{color:var(--sub);font-size:13px}
+  .nd-empty{display:none;color:var(--sub);font-size:13.5px;text-align:center;padding:18px;
+    background:var(--slate-soft);border-radius:10px}
+  #nodedetail.empty .nd-empty{display:block}
+  pre{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:12px 14px;overflow-x:auto;
+    font-size:12.5px;line-height:1.6;margin:8px 0}
+  code.inline{background:#eef1f6;border-radius:5px;padding:1px 6px;font-size:12.5px;
+    font-family:Consolas,Menlo,monospace;color:#0b3b8c}
+  .foot{color:var(--sub);font-size:12.5px;text-align:center;margin-top:30px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>政务多智能体协同平台 · 完整链路图</h1>
+  <p>按 <b>业务决策逻辑</b>（输入护栏 → 意图三级分类 → Supervisor 规划 → 专业 Agent → 跨域协同 → 治理收口）组织路径，状态机拓扑依据 <b>orchestration/langgraph/graph.py</b>，节点实现依据 <b>nodes.py / edges.py / state.py</b>。选择一个场景，图上高亮完整链路并逐步讲解。</p>
+  <div class="tags">
+    <span class="tag">7 个节点 + 5 组条件路由</span>
+    <span class="tag">输入护栏前置 LLM</span>
+    <span class="tag">BERT 三级分类 · 99.5%</span>
+    <span class="tag">MCP 标准化工具体系</span>
+    <span class="tag">A2A 异步跨域挂起/恢复</span>
+    <span class="tag">LoopDetector + 10 步限制</span>
+    <span class="tag">三级降级链</span>
+  </div>
+</header>
+
+<!-- ═══════════ 业务决策漏斗 ═══════════ -->
+<div class="card">
+  <h2><span class="no">脑</span>业务决策漏斗：请求进来后，先判断再执行</h2>
+  <p class="lead">这是「用户请求 → 多 Agent 协同 → 最终回答」的完整决策过程。核心原则：<b>越快的判断越先跑，安全护栏放在最前，LLM/MCP 调用最后</b>。</p>
+
+  <div class="funnel">
+    <div class="f-title"><span class="no">①</span>输入</div>
+    <div class="frow">
+      <div class="fbox rule"><b>用户请求</b><span class="dim">POST /api/chat { user_query, user_id }</span></div>
+      <span class="farrow">→ 前置四步（backend/api/routes.py + dependencies.py）</span>
+    </div>
+    <div class="frow">
+      <span class="flabel">前置</span>
+      <div class="fbox rule"><b>JWT 认证</b><span class="dim">AuthMiddleware 解析 Bearer Token → user_id/role</span></div>
+      <div class="fbox rule"><b>RBAC 鉴权</b><span class="dim">4 角色 × 16 权限</span></div>
+      <div class="fbox rule"><b>输入护栏</b><span class="dim">GuardrailRunner.run_input()：注入/敏感词命中即阻断，不消耗 Token</span></div>
+      <div class="fbox rule"><b>trace_id</b><span class="dim">UUID7 生成 → 全链路日志携带</span></div>
+    </div>
+
+    <div class="f-title" style="margin-top:14px"><span class="no">②</span>意图识别（三级分类链 · agents/intent/classifier.py）</div>
+    <div class="frow">
+      <span class="flabel">L1 BERT</span>
+      <div class="fbox bert"><b>本地微调 BERT 模型</b><span class="dim">置信度 &gt; 0.7 → 直接采用（99.5% 通过率）</span></div>
+      <span class="farrow">置信度 ≤0.7 ↓</span>
+      <div class="fbox rule"><b>关键词匹配（0.5–0.7）</b><span class="dim">18 条关键词映射</span></div>
+      <span class="farrow">未命中 ↓</span>
+      <div class="fbox rule"><b>LLM fallback</b><span class="dim">最低置信度最后手段</span></div>
+    </div>
+    <div class="frow">
+      <span class="flabel">产出</span>
+      <div class="fout">intent_label + confidence<span class="why">restaurant_license / business_license / policy_query / fund_query / property_service ...</span></div>
+    </div>
+
+    <div class="f-title" style="margin-top:14px"><span class="no">③</span>Supervisor 规划 + 路由（agents/supervisor/）</div>
+    <div class="frow">
+      <div class="fbox sup">
+        <b>Planner 生成 task_plan</b><span class="dim">LLM 计划（_llm_plan）→ 失败/为空时关键词模板兜底（_rule_plan）→ Router 按任务类型路由</span>
+      </div>
+    </div>
+    <div class="frow">
+      <span class="flabel">路由</span>
+      <div class="fbox q"><b>查政策 → policy_node</b></div>
+      <div class="fbox q"><b>审材料 → material_node</b></div>
+      <div class="fbox q"><b>办件 → workflow_node</b></div>
+      <div class="fbox q"><b>无 intent → intent_node</b></div>
+    </div>
+
+    <div class="f-title" style="margin-top:14px"><span class="no">④</span>专业 Agent 执行（全部走 MCP，禁止直连业务代码）</div>
+    <div class="frow">
+      <div class="fbox q"><b>Policy</b>MCP search_policy → Milvus+BM25+Reranker → LLM 生成 → evidence</div>
+      <div class="fbox q"><b>Material</b>MCP check_material → OCR/NER 抽取 → 规则校验</div>
+      <div class="fbox q"><b>Workflow</b>MCP create_case → 办件号</div>
+    </div>
+
+    <div class="f-title" style="margin-top:14px"><span class="no">⑤</span>跨域协同判定（edges.py _needs_a2a）</div>
+    <div class="frow">
+      <div class="fbox rule"><b>关键词命中</b><span class="dim">房产/不动产/房屋/产权/公积金/住房基金 → intent=property_service/fund_query</span></div>
+      <span class="farrow">有 →</span>
+      <div class="fout low">a2a_node：HTTP 异步挂起 OR 本地 Mock 同步<span class="why">异步：send_task → waiting_task_id → checkpoint 挂起 → 外部 Agent 回调恢复</span></div>
+      <div class="fout">无 → governance<span class="why">直接进入治理收口</span></div>
+    </div>
+
+    <div class="f-title" style="margin-top:14px"><span class="no">⑥</span>治理收口 + 回答</div>
+    <div class="frow">
+      <div class="fbox rule"><b>Governance</b><span class="dim">输出护栏（错误/密钥/Prompt 泄露）→ PII 脱敏 → end_trace()</span></div>
+      <span class="farrow">→</span>
+      <div class="fout">ChatResponse { answer, evidence, intent, risk_level, execution_steps, elapsed_ms }<span class="why">Trace span 全链路落 TraceRecorder</span></div>
+    </div>
+    <div class="frow">
+      <span class="flabel">💡 关键</span>
+      <div class="fbox rule"><b>安全护栏双层防护</b><span class="dim">输入护栏在 LLM <b>之前</b>（execute_agent 中 graph.ainvoke 前执行）阻断注入；输出护栏在 governance_node 兜底 PII/泄露。治理 Agent（Governance）<b>不参与业务回答</b>，只负责检测与收口。</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 状态机图 ═══════════ -->
+<div class="card">
+  <h2><span class="no">图</span>状态机全景：选择场景，看请求怎么走</h2>
+  <p class="lead">节点 = 一个 Python 函数（可点击看说明）；边上 = 路由条件。supervisor 是编排中心，intent→supervisor 为静态回环边。</p>
+
+  <div class="controls">
+    <label for="scn">追踪路径：</label>
+    <select id="scn">
+      <optgroup label="▸ 完整业务链路">
+        <option value="s1" selected>① 开餐馆 → intent+policy+material+workflow 全链路</option>
+        <option value="s2">② 政策咨询 → 单路 RAG 检索</option>
+        <option value="s3">③ 材料审核 → 单路规则校验</option>
+      </optgroup>
+      <optgroup label="▸ 跨域协同">
+        <option value="s4">④ 不动产查询 → A2A 同步 Mock</option>
+        <option value="s5">⑤ 公积金查询 → A2A 异步挂起/回调恢复</option>
+      </optgroup>
+      <optgroup label="▸ 安全治理">
+        <option value="s6">⑥ 恶意输入 → 输入护栏前置阻断</option>
+      </optgroup>
+    </select>
+    <span class="pathname" id="pathname">·</span>
+  </div>
+
+  <div class="graphbox">
+  <svg class="graph" viewBox="0 0 1440 1080" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,1 L9,5 L0,9 z" fill="#b6c3d4"/>
+      </marker>
+      <marker id="arrA" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,1 L9,5 L0,9 z" fill="#dc2626"/>
+      </marker>
+      <marker id="arrH" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,1 L9,5 L0,9 z" fill="#0ea5e9"/>
+      </marker>
+    </defs>
+
+    <!-- ═══ 边 ═══ -->
+    <g class="edge" data-from="START" id="e1"><path d="M700,64 L700,150"/></g>
+
+    <g class="edge" data-from="supervisor" id="e2"><path d="M600,200 C480,200 210,280 210,340"/><text class="el" x="410" y="240">无 intent</text></g>
+    <g class="edge" data-from="intent" id="e3"><path d="M320,372 C480,372 560,300 620,230"/><text class="el" x="470" y="332">静态回环</text></g>
+
+    <g class="edge" data-from="supervisor" id="e4"><path d="M600,230 C460,230 210,480 210,560"/><text class="el" x="350" y="380">policy 任务</text></g>
+    <g class="edge" data-from="supervisor" id="e5"><path d="M800,230 C940,230 1230,480 1230,560"/><text class="el" x="1030" y="380">material 任务</text></g>
+
+    <g class="edge" data-from="policy" id="e6"><path d="M320,592 C480,592 560,300 620,240"/><text class="el" x="470" y="470">完成</text></g>
+    <g class="edge" data-from="material" id="e7"><path d="M1120,592 C960,592 820,300 780,240"/><text class="el" x="930" y="470">完成</text></g>
+
+    <g class="edge" data-from="supervisor" id="e8"><path d="M700,230 C700,440 720,600 720,700"/><text class="el" x="748" y="460">workflow 任务</text></g>
+
+    <g class="edge" data-from="workflow" id="e9"><path d="M620,732 C500,732 210,800 210,880"/><text class="el" x="380" y="800">无 A2A</text></g>
+    <g class="edge" data-from="workflow" id="e10"><path d="M820,732 C950,732 1230,800 1230,880"/><text class="el" x="1050" y="800">有 A2A</text></g>
+    <g class="edge" data-from="a2a" id="e11"><path d="M1120,912 C800,912 320,912 320,912"/><text class="el" x="720" y="900">完成</text></g>
+
+    <g class="edge" data-from="supervisor" id="e12"><path d="M600,215 C320,215 100,560 100,912"/><text class="el" x="196" y="620">全完成</text></g>
+
+    <g class="edge" data-from="governance" id="e13"><path d="M210,944 C210,1005 700,1005 700,980"/></g>
+    <g class="edge" data-from="a2a" id="e14"><path d="M1230,944 C1230,1005 700,1005 700,980"/><text class="el" x="1010" y="992">挂起</text></g>
+
+    <!-- ═══ 节点 ═══ -->
+    <g class="nodebox" data-id="START" data-otype="start" transform="translate(625,20)">
+      <rect width="150" height="44" rx="22" fill="#eef1f6" stroke="#94a3b8"/>
+      <text class="t" x="75" y="28">START</text>
+    </g>
+
+    <g class="nodebox" data-id="supervisor" data-otype="decision" transform="translate(580,150)">
+      <rect width="240" height="80" rx="12" fill="#fdf3e3" stroke="#d97706"/>
+      <text class="t" x="120" y="28">supervisor_node</text>
+      <text class="s" x="120" y="46">任务理解 · 拆解 · 路由</text>
+      <text class="s" x="120" y="60">Planner→Router → task_plan</text>
+      <circle cx="232" cy="12" r="15" fill="#d97706"/><text class="badge" x="232" y="16">5路</text>
+    </g>
+
+    <g class="nodebox" data-id="intent" data-otype="prep" transform="translate(100,340)">
+      <rect width="220" height="64" rx="12" fill="#f2eaff" stroke="#a855f7"/>
+      <text class="t" x="110" y="25">intent_node</text>
+      <text class="s" x="110" y="43">BERT→关键词→LLM 三级分类</text>
+      <text class="s" x="110" y="57">agents/intent/classifier.py</text>
+    </g>
+
+    <g class="nodebox" data-id="policy" data-otype="agent" transform="translate(100,560)">
+      <rect width="220" height="64" rx="12" fill="#e7efff" stroke="#2563eb"/>
+      <text class="t" x="110" y="25">policy_node</text>
+      <text class="s" x="110" y="43">MCP search_policy · RAG 检索</text>
+      <text class="s" x="110" y="57">Milvus+BM25+Reranker</text>
+    </g>
+
+    <g class="nodebox" data-id="material" data-otype="agent" transform="translate(1120,560)">
+      <rect width="220" height="64" rx="12" fill="#e7efff" stroke="#2563eb"/>
+      <text class="t" x="110" y="25">material_node</text>
+      <text class="s" x="110" y="43">MCP check_material</text>
+      <text class="s" x="110" y="57">OCR/NER → 规则校验</text>
+    </g>
+
+    <g class="nodebox" data-id="workflow" data-otype="agent" transform="translate(610,700)">
+      <rect width="220" height="64" rx="12" fill="#e7efff" stroke="#2563eb"/>
+      <text class="t" x="110" y="25">workflow_node</text>
+      <text class="s" x="110" y="43">MCP create_case</text>
+      <text class="s" x="110" y="57">办件号生成</text>
+    </g>
+
+    <g class="nodebox" data-id="a2a" data-otype="prep" transform="translate(1120,880)">
+      <rect width="220" height="64" rx="12" fill="#f2eaff" stroke="#7c3aed"/>
+      <text class="t" x="110" y="25">a2a_node</text>
+      <text class="s" x="110" y="43">A2AConnector.send_task</text>
+      <text class="s" x="110" y="57">HTTP 异步挂起 / Mock 同步</text>
+      <circle cx="198" cy="16" r="14" fill="#7c3aed"/><text class="badge" x="198" y="20">2路</text>
+    </g>
+
+    <g class="nodebox" data-id="governance" data-otype="gen" transform="translate(100,880)">
+      <rect width="220" height="64" rx="12" fill="#fdeaea" stroke="#dc2626"/>
+      <text class="t" x="110" y="25">governance_node</text>
+      <text class="s" x="110" y="43">GuardrailRunner 输入/输出</text>
+      <text class="s" x="110" y="57">PII 脱敏 · end_trace()</text>
+    </g>
+
+    <g class="nodebox" data-id="END" data-otype="start" transform="translate(625,980)">
+      <rect width="150" height="44" rx="22" fill="#eef1f6" stroke="#94a3b8"/>
+      <text class="t" x="75" y="28">END</text>
+    </g>
+
+    <!-- 流转顺序数字徽章（由 JS 在选中场景时绘制，置于最上层） -->
+    <g id="seqnums"></g>
+  </svg>
+  </div>
+
+  <div class="legend-row">
+    <span><span class="sw" style="background:#b6c3d4"></span> 固定边</span>
+    <span><span class="sw" style="background:#0ea5e9"></span> 鼠标悬停：该节点出边</span>
+    <span><span class="sw" style="background:#dc2626"></span> 当前场景路径（红色 + 虚线流动）</span>
+    <span><span class="sw" style="background:#fdf3e3"></span> 决策/编排节点</span>
+    <span><span class="sw" style="background:#e7efff"></span> 专业 Agent</span>
+    <span><span class="sw" style="background:#f2eaff"></span> 意图 / A2A</span>
+    <span><span class="sw" style="background:#fdeaea;border:1px solid #dc2626"></span> 安全治理</span>
+    <span style="color:#dc2626;font-weight:700">数字 ①②③… = 流转顺序（与下方步骤条一致）</span>
+  </div>
+
+  <div class="steps" id="steps"></div>
+</div>
+
+<!-- 路由说明 -->
+<div class="card">
+  <h2><span class="no">路</span>五个路由决策点（edges.py 的条件路由）</h2>
+  <p class="lead">图的骨架是这 5 组条件边 + 2 条静态边（START→supervisor、intent→supervisor）。条件边运行时才决定往哪走。</p>
+  <table class="params">
+    <tr><th>决策点</th><th>路由函数</th><th>条件 → 去向</th><th>关键点</th></tr>
+    <tr>
+      <td><span class="pill v">supervisor 之后</span></td>
+      <td><code class="inline">route_after_supervisor</code></td>
+      <td>
+        <span class="pill r">state 无 intent</span> → intent_node<br>
+        <span class="pill p">task_plan 有 PENDING</span> → 按任务 agent（policy/material/workflow）<br>
+        <span class="pill g">全完成</span> → supervisor（合成）或 governance
+      </td>
+      <td>任务状态机驱动：每个 Task status PENDING → COMPLETED/FAILED</td>
+    </tr>
+    <tr>
+      <td><span class="pill p">policy/material 之后</span></td>
+      <td><code class="inline">route_after_specialist</code></td>
+      <td><span class="pill s">先检查 error/risk</span> → 再复用 <code class="inline">route_after_supervisor</code> 全部去向</td>
+      <td>异常 → error 置位 → 回 supervisor 重试（retry_count &lt; 3）；risk=high/critical 提前进 governance</td>
+    </tr>
+    <tr>
+      <td><span class="pill p">workflow 之后</span></td>
+      <td><code class="inline">route_after_workflow</code></td>
+      <td>
+        <span class="pill r">waiting_task_id</span> → END（A2A 挂起）<br>
+        <span class="pill b">_needs_a2a()</span> → a2a_node<br>
+        <span class="pill g">全完成</span> → governance
+      </td>
+      <td>_needs_a2a 关键词：房产/不动产/公积金… → 意图 property_service/fund_query</td>
+    </tr>
+    <tr>
+      <td><span class="pill b">a2a 之后</span></td>
+      <td><code class="inline">route_after_a2a</code></td>
+      <td>
+        <span class="pill r">waiting_task_id</span> → END（挂起）<br>
+        <span class="pill r">有 error</span> → supervisor（重试）<br>
+        <span class="pill g">否则</span> → governance
+      </td>
+      <td>异步：send_task 后 checkpoint 落库，外部 Agent 回调 /api/a2a/callback 恢复</td>
+    </tr>
+    <tr>
+      <td><span class="pill r">governance 之后</span></td>
+      <td><code class="inline">route_after_governance</code></td>
+      <td>
+        <span class="pill r">blocked / waiting</span> → END<br>
+        <span class="pill r">error 且 retry &lt; 3</span> → supervisor<br>
+        <span class="pill g">否则</span> → END
+      </td>
+      <td>安全阻断或正常结束都收口到 END；错误重试有次数上限</td>
+    </tr>
+  </table>
+  <div class="side-note"><b>为什么 supervisor 是中心？</b>所有专业 Agent 执行完都回到 supervisor 重新路由（task_plan 状态机驱动），保证任务按序执行、错误可重试、风险可提前收口。intent→supervisor 是静态回环，保证意图识别后必二次规划。</div>
+</div>
+
+<!-- Runtime 安全护栏 -->
+<div class="card">
+  <h2><span class="no">盾</span>Runtime 安全护栏 + 三级降级链</h2>
+  <p class="lead">Agent 执行由 <code class="inline">orchestration/langgraph/runtime.py</code> 包裹，所有外部依赖都有降级路径。</p>
+  <table class="params">
+    <tr><th>机制</th><th>规则</th><th>触发行为</th></tr>
+    <tr>
+      <td><span class="pill v">LoopDetector</span></td>
+      <td>滑动窗口 6 次调用；连续 3 次相同 tool</td>
+      <td>触发 → 中断循环 → 重新规划</td>
+    </tr>
+    <tr>
+      <td><span class="pill v">StepLimiter</span></td>
+      <td>最大执行 10 步</td>
+      <td>超过 → <code class="inline">RuntimeExceededError</code> → 优雅终止</td>
+    </tr>
+    <tr>
+      <td><span class="pill v">Timeout</span></td>
+      <td>单 Agent 60s（agent_timeout）</td>
+      <td>超过 → <code class="inline">RuntimeTimeoutError</code></td>
+    </tr>
+    <tr>
+      <td><span class="pill v">Guardrail</span></td>
+      <td>输入护栏前置 + 输出护栏后置</td>
+      <td>注入/敏感词 → 阻断（不消耗 Token）；PII → 自动脱敏</td>
+    </tr>
+  </table>
+  <table class="params">
+    <tr><th>层级</th><th>降级对象</th><th>降级行为</th></tr>
+    <tr><td>L1 基础设施</td><td>PostgreSQL / Redis / Milvus</td><td>内存模式 / 无缓存 / BM25 关键词检索</td></tr>
+    <tr><td>L2 模型层</td><td>LLM API / BERT</td><td>规则模板回答 / 关键词匹配 fallback</td></tr>
+    <tr><td>L3 协议层</td><td>MCP Server / A2A Connector</td><td>stub 模板回答 / 本地 Mock Agent</td></tr>
+  </table>
+</div>
+
+<!-- 节点详情 -->
+<div class="card">
+  <h2><span class="no">点</span>节点实现要点（点击节点按钮，或直接点图上节点）</h2>
+  <p class="lead">默认展示入口节点；点击任一节点按钮或图上节点，这里切换对应实现要点。</p>
+  <div class="chips" id="chips"></div>
+  <div class="detail-head">
+    <span class="dn" id="nd-name">—</span>
+    <span class="ds" id="nd-sub"></span>
+  </div>
+  <div id="nodedetail" class="nd-empty">
+    <div class="nd-empty">👆 从上面选一个节点，查看它的实现要点</div>
+  </div>
+</div>
+
+<div class="foot">业务决策逻辑依据 backend/api/dependencies.py · 拓扑依据 orchestration/langgraph/graph.py · 节点实现依据 nodes.py / edges.py / state.py / agents/* · 浏览器打开本文件即可交互</div>
+</div>
+
+<script>
+const EDGE_IDS = ['e1','e2','e3','e4','e5','e6','e7','e8','e9','e10','e11','e12','e13','e14'];
+const NODE_IDS = ['START','supervisor','intent','policy','material','workflow','a2a','governance','END'];
+
+const SCENARIOS = {
+  s1:{ g:'完整业务 · 多任务', label:'开餐馆 → intent+policy+material+workflow 全链路',
+    decision:'输入护栏通过 → supervisor 规划 task_plan（查政策+审材料+办件）→ 无 intent 先走 intent（BERT 判 restaurant_license）→ 回环 supervisor → 依次执行 policy 检索证照、material 校验材料、workflow 创建办件 → 无 A2A 需求 → governance 输出护栏 → 回答。',
+    edges:['e1','e2','e3','e4','e6','e5','e7','e8','e9','e13'] },
+  s2:{ g:'轻量业务', label:'政策咨询 → 单路 RAG 检索',
+    decision:'"小微企业税收优惠" → intent 判 policy_query → supervisor 规划仅 policy 任务 → policy MCP 检索（Milvus+BM25+Reranker）→ 回 supervisor → 全完成 → governance → 回答（带 evidence 引用）。',
+    edges:['e1','e2','e3','e4','e6','e12','e13'] },
+  s3:{ g:'轻量业务', label:'材料审核 → 单路规则校验',
+    decision:'"办营业执照要什么材料" → intent 判 business_license → supervisor 规划 material 任务 → material 校验（别名匹配/格式校验）→ 回 supervisor → 全完成 → governance → 回答（缺材料清单）。',
+    edges:['e1','e2','e3','e5','e7','e12','e13'] },
+  s4:{ g:'跨域协同 · 同步', label:'不动产查询 → A2A 同步 Mock',
+    decision:'"查询名下房产" → intent 判 property_service → supervisor 规划 policy+workflow → workflow 后 _needs_a2a（房产关键词）命中 → a2a_node：A2AConnector.send_task → 本地 Mock Agent 同步返回 → governance → 回答（含不动产列表）。',
+    edges:['e1','e2','e3','e4','e6','e8','e10','e11','e13'] },
+  s5:{ g:'跨域协同 · 异步', label:'公积金查询 → A2A 异步挂起/回调恢复',
+    decision:'"公积金余额" → intent 判 fund_query → supervisor 规划 workflow → workflow 后 _needs_a2a（公积金）命中 → a2a_node：send_task 走 HTTP 异步 → 设置 waiting_task_id → route_after_a2a → END（checkpoint 挂起落库）→ 外部 Agent 完成回调 POST /api/a2a/callback（HMAC 验签）→ resume_from_a2a 恢复 → governance → 回答。',
+    edges:['e1','e2','e3','e8','e10','e14','e11','e13'] },
+  s6:{ g:'安全治理 · 阻断', label:'恶意输入 → 输入护栏前置阻断',
+    decision:'用户输入含注入指令/敏感词 → execute_agent 中 GuardrailRunner.run_input() 在 graph.ainvoke <b>之前</b>执行 → 命中即阻断，返回 blocked，不消耗 Token，图不被进入。图中以 supervisor→governance(blocked)→END 示意。',
+    edges:['e1','e12','e13'] },
+};
+
+const STEPS = {
+  START:'请求进入 execute_agent()，初始化 AgentState（24 字段 TypedDict），trace_id=UUID7，随后 graph.ainvoke。',
+  supervisor:'SupervisorAgent.orchestrate()：Planner 生成 task_plan（LLM 计划 + 关键词规则兜底）→ Router 按任务类型路由到对应 Agent。',
+  intent:'IntentClassifier 三级分类链：BERT(>0.7 直接采用) → 关键词(0.5-0.7) → LLM fallback，输出 intent_label + confidence。',
+  policy:'MCP search_policy → Milvus 向量 + BM25 稀疏混合检索 → Reranker 精排 → LLM 生成回答，evidence 附引用。',
+  material:'MCP check_material → OCR/NER 字段抽取 → 规则校验材料完整性（别名匹配/格式校验），输出 passed/missing/warnings。',
+  workflow:'MCP create_case → 生成办件号（CASE_XXXXXXXX），写入 mcp_history。',
+  a2a:'A2AConnector.send_task：HTTP 异步（send_task → waiting_task_id → 挂起 END）或本地 Mock 同步返回。',
+  governance:'GuardrailRunner.run_output()（错误/密钥/Prompt 泄露）+ PII 脱敏 + 敏感词过滤 → end_trace() 收口。',
+  END:'返回 ChatResponse { answer, evidence, intent, risk_level, execution_steps, elapsed_ms }；Trace span 全链路写入 TraceRecorder。',
+};
+
+const NODE_DETAIL = {
+  START:{n:'START · 图入口', s:'LangGraph 内置', h:`
+    <p style="margin:0 0 6px">所有 <code class="inline">graph.ainvoke()</code> 都从 <b>START</b> 开始。请求由 <code class="inline">backend/api/dependencies.py:execute_agent()</code> 初始化成 <code class="inline">AgentState</code>（24 字段 TypedDict）。</p>
+    <pre><code># orchestration/langgraph/state.py — AgentState
+class AgentState(TypedDict):
+    trace_id: str
+    user_query: str
+    intent: str
+    task_plan: list          # Supervisor 拆解的任务
+    current_agent: str
+    messages: list
+    tool_calls: list
+    mcp_history: list        # 每个 MCP 调用一条
+    a2a_tasks: list
+    evidence: list
+    final_answer: str
+    risk_level: str          # low/medium/high/critical
+    # ... 共 24 字段</code></pre>`},
+  supervisor:{n:'supervisor_node · 编排中心', s:'agents/supervisor/ · 决策', h:`
+    <p style="margin:0 0 6px">Agent 平台的<b>调度中枢</b>：理解任务 → 拆解成 task_plan → 路由到专业 Agent。禁止业务逻辑。</p>
+    <ul style="margin:0 0 6px;padding-left:20px;font-size:13.5px">
+      <li><b>Planner._llm_plan(state)</b>：LLM 生成任务计划（JSON，容错解析）</li>
+      <li><b>Planner._rule_plan(state)</b>：LLM 失败/为空时，关键词模板兜底</li>
+      <li><b>Router.route(task)</b>：关键词优先 → _infer_by_keyword → _llm_route</li>
+    </ul>
+    <pre><code># agents/supervisor/agent.py（简化）
+def orchestrate(self, state) -&gt; dict:
+    plan = self.planner._llm_plan(state)
+    if not plan:
+        plan = self.planner._rule_plan(state)   # 兜底
+    return {"task_plan": [Task(**t) for t in plan]}</code></pre>`},
+  intent:{n:'intent_node · 意图识别', s:'agents/intent/classifier.py', h:`
+    <p style="margin:0 0 6px">三级分类链：<b>快的先跑</b>。BERT 本地推理（微调模型）→ 关键词 → LLM。</p>
+    <pre><code># agents/intent/classifier.py（三级分类）
+result = await classifier.classify(query)
+if result.source == "bert" and result.confidence > 0.7:
+    return result                # ① BERT 直接采用
+kw = classifier._keyword_classify(query)
+if kw.confidence >= 0.5:
+    return kw                    # ② 关键词兜底
+return await llm_classify(query) # ③ LLM 最后手段</code></pre>
+    <p style="margin:0 0 0;font-size:13px">10 个预定义意图标签；BERT 微调后评测通过率 <b>99.5%</b>（models/intent/bert-intent/）。</p>`},
+  policy:{n:'policy_node · 政策检索', s:'agents/policy/agent.py · MCP', h:`
+    <p style="margin:0 0 6px">RAG 检索增强：Query → 向量化 → Milvus 稠密 + BM25 稀疏 → Reranker 精排 → LLM 生成。</p>
+    <pre><code># agents/policy/agent.py（经 MCP 网关）
+result = await mcp_client.call_tool(
+    name="search_policy",
+    arguments={"query": user_query},
+)
+# 返回 PolicyResult(answer=..., evidence=[...])
+# 必须返回 {"answer": "...", "evidence": []}</code></pre>
+    <p style="margin:0 0 0;font-size:13px">禁止 <code class="inline">import policy_service</code> 直连业务代码 —— 所有工具调用必须走 MCP（Gateway 12300 → Policy Server 12301）。</p>`},
+  material:{n:'material_node · 材料审核', s:'agents/material/agent.py · MCP', h:`
+    <p style="margin:0 0 6px">材料完整性校验：字段抽取（OCR/NER）+ 规则校验（别名匹配/格式）。</p>
+    <pre><code># agents/material/agent.py（经 MCP 网关）
+result = await mcp_client.call_tool(
+    name="check_material",
+    arguments={"business_type": bt, "materials": materials},
+)
+# passed / missing[] / warnings[]</code></pre>
+    <p style="margin:0 0 0;font-size:13px">别名支持：如「身份证明」自动匹配「身份证」；5 类业务材料清单（restaurant_license / business_license / ...）。</p>`},
+  workflow:{n:'workflow_node · 流程执行', s:'agents/workflow/agent.py · MCP', h:`
+    <p style="margin:0 0 6px">办件流程执行：调用 MCP 创建办件、查询状态。</p>
+    <pre><code># agents/workflow/agent.py（经 MCP 网关）
+resp = await mcp_client.call_tool(
+    name="create_case",
+    arguments={"case_type": intent, "payload": ...},
+)
+# case_no = resp["case_no"]  # "CASE_XXXXXXXX"</code></pre>
+    <p style="margin:0 0 0;font-size:13px">执行完成后由 <code class="inline">route_after_workflow</code> 判断：<b>有 A2A 需求 → a2a_node</b>；无 → governance。</p>`},
+  a2a:{n:'a2a_node · 跨域协同', s:'tools/a2a/connector.py', h:`
+    <p style="margin:0 0 6px">跨系统 Agent 协作：HTTP 异步（真实外部 Agent）或本地 Mock 同步（stub 降级）。</p>
+    <pre><code># orchestration/langgraph/nodes.py — a2a_node（简化）
+result = await a2a_connector.send_task(skill="query_property", input_data={...})
+if result["mode"] == "http":
+    state["waiting_task_id"] = result["task_id"]   # → route_after_a2a → END 挂起
+    # checkpoint 已落 PostgreSQL，等待外部回调恢复
+else:
+    # 本地 Mock Agent 同步返回，直接继续
+    state["external_result"] = result["data"]</code></pre>
+    <p style="margin:0 0 0;font-size:13px">回调恢复：外部 Agent 完成 → <code class="inline">POST /api/a2a/callback</code>（HMAC-SHA256 验签 + ±300s 防重放）→ <code class="inline">resume_from_a2a</code> 从断点恢复。</p>`},
+  governance:{n:'governance_node · 安全治理', s:'governance/guardrail.py · pii.py', h:`
+    <p style="margin:0 0 6px">治理收口：<b>不参与业务回答</b>，只做检测与收口。输入护栏已前置到 LLM 之前，这里是输出侧兜底。</p>
+    <pre><code># orchestration/langgraph/nodes.py — governance_node（简化）
+out = GuardrailRunner().run_output(final_answer)   # 错误/密钥/Prompt 泄露
+safe_answer = mask_pii(final_answer)                # PII 脱敏
+# 手机 138****1234 · 身份证 110***********1234 · 邮箱 u***@domain.com
+end_trace()                                         # 全链路 span 落 TraceRecorder</code></pre>
+    <p style="margin:0 0 0;font-size:13px"><b>输入护栏前置</b>：execute_agent() 在 graph.ainvoke 前执行 <code class="inline">GuardrailRunner.run_input(user_query)</code>，注入/严重敏感词立即阻断，不消耗 Token。</p>`},
+  END:{n:'END · 图出口', s:'LangGraph 内置', h:`
+    <p style="margin:0 0 6px">回答通过 <code class="inline">state["final_answer"]</code> 返回给 HTTP 层。checkpointer 已把完整 State 持久化，支持 A2A 异步恢复。</p>
+    <pre><code># backend/api/schemas.py — ChatResponse
+{
+  "answer": str,
+  "evidence": [{"source", "excerpt", "relevance_score"}],
+  "intent": str,
+  "risk_level": str,       # low/medium/high/critical
+  "execution_steps": int,
+  "elapsed_ms": float,
+  "trace_id": str,
+}</code></pre>`},
+};
+
+let curScn = 's1';
+let curNode = 'supervisor';
+const $ = s => document.querySelector(s);
+
+function renderChips(sel){
+  const box = document.getElementById('chips');
+  box.innerHTML = Object.keys(NODE_DETAIL).map(id=>{
+    const d = NODE_DETAIL[id];
+    const label = (d.n||id).replace(/^START.*/,'START').replace(/^END.*/,'END');
+    return `<button class="chip ${id===sel?'on':''}" data-id="${id}">${label}</button>`;
+  }).join('');
+}
+
+function showNode(id){
+  curNode = id;
+  const d = NODE_DETAIL[id];
+  if(!d){ return; }
+  document.getElementById('nd-name').textContent = d.n;
+  document.getElementById('nd-sub').textContent = d.s || '';
+  const box = document.getElementById('nodedetail');
+  box.innerHTML = d.h;
+  box.classList.remove('empty');
+  renderChips(id);
+}
+
+document.getElementById('chips').addEventListener('click', e=>{
+  const btn = e.target.closest('.chip');
+  if(btn) showNode(btn.dataset.id);
+});
+
+NODE_IDS.forEach(id=>{
+  const g = document.querySelector(`.nodebox[data-id="${id}"]`);
+  g.addEventListener('click', ()=>showNode(id));
+});
+
+function applyScenario(scn){
+  curScn = scn;
+  const S = SCENARIOS[scn];
+  document.getElementById('pathname').textContent = '· ' + S.g + '｜' + S.label;
+
+  EDGE_IDS.forEach(id=>{
+    const g = document.getElementById(id);
+    g.classList.toggle('active', S.edges.includes(id));
+    g.classList.remove('hl');
+  });
+  NODE_IDS.forEach(id=>{
+    const g = document.querySelector(`.nodebox[data-id="${id}"]`);
+    g.classList.remove('active');
+    g.classList.remove('dim');
+  });
+
+  // ── 在活跃路径的每条边上绘制流转顺序数字（取路径中点，徽章右上偏移）──
+  const seqEl = document.getElementById('seqnums');
+  seqEl.innerHTML = '';
+  S.edges.forEach((eid, i)=>{
+    const g = document.getElementById(eid);
+    const path = g ? g.querySelector('path') : null;
+    if(!path) return;
+    const len = path.getTotalLength() || 0;
+    const pt = path.getPointAtLength(len * 0.5);
+    const x = Math.round(pt.x) + 9, y = Math.round(pt.y) - 9;
+    const grp = document.createElementNS('http://www.w3.org/2000/svg','g');
+    grp.setAttribute('class','seqnum');
+    grp.innerHTML = `<circle cx="${x}" cy="${y}" r="11"></circle><text x="${x}" y="${y+4}">${i+1}</text>`;
+    seqEl.appendChild(grp);
+  });
+
+  // 从边还原执行节点序列（去掉 START，补 END）
+  const seq = [];
+  S.edges.forEach(e=>{
+    const g = document.getElementById(e);
+    const from = g.dataset.from;
+    if(!seq.includes(from)) seq.push(from);
+  });
+  if(seq[0]==='START') seq.shift();
+  if(seq[seq.length-1] !== 'END') seq.push('END');
+
+  const stepsEl = document.getElementById('steps');
+  const isGen = n => ['policy','material','workflow','governance'].includes(n);
+  const isRisk = n => ['governance'].includes(n);
+  let idx = 0;
+  const stepHtml = n => {
+    const cls = isRisk(n)?'risk':(isGen(n)?'hot':'');
+    return `<div class="st ${cls}">
+      <span class="idx">${++idx}</span>
+      <div><span class="nm">${n}</span>${STEPS[n]?`<div class="tx">${STEPS[n]}</div>`:''}</div>
+    </div>`;
+  };
+  stepsEl.innerHTML = `<div class="scn">◆ 路径追踪：${S.label}</div>
+    <div class="st decide">
+      <span class="idx">判</span>
+      <div><span class="nm">业务判定（${S.g}）</span><div class="tx">${S.decision}</div></div>
+    </div>
+    ${seq.map(stepHtml).join('')}`;
+}
+
+document.getElementById('scn').addEventListener('change', e=>applyScenario(e.target.value));
+
+NODE_IDS.forEach(id=>{
+  const g = document.querySelector(`.nodebox[data-id="${id}"]`);
+  g.addEventListener('mouseenter', ()=>{
+    if(curScn && !SCENARIOS[curScn].edges.some(e=>document.getElementById(e).dataset.from===id)){
+      EDGE_IDS.forEach(e=>{
+        const ge = document.getElementById(e);
+        ge.classList.toggle('hl', ge.dataset.from===id && !ge.classList.contains('active'));
+      });
+    }
+  });
+  g.addEventListener('mouseleave', ()=>{
+    EDGE_IDS.forEach(e=>document.getElementById(e).classList.remove('hl'));
+  });
+});
+
+applyScenario('s1');
+document.querySelectorAll('.nodebox').forEach(g=>g.classList.add('active'));
+showNode('supervisor');
+</script>
+</body>
+</html>
