@@ -64,27 +64,33 @@ async def create_conversation(
 
 
 async def list_conversations(user_id: str, limit: int = 50) -> list[dict[str, Any]]:
-    """列出用户会话（按更新时间倒序）。"""
+    """列出用户会话（按更新时间倒序，含 message_count 供前端过滤空会话）。"""
     try:
         from database.connection import get_session_factory
-        from database.models import Conversation
-        from sqlalchemy import select
+        from database.models import Conversation, ConversationMessage
+        from sqlalchemy import func, select
 
         session_factory = get_session_factory()
+        msg_count = (
+            select(func.count(ConversationMessage.id))
+            .where(ConversationMessage.conversation_id == Conversation.conversation_id)
+            .scalar_subquery()
+        )
         async with session_factory() as session:
             stmt = (
-                select(Conversation)
+                select(Conversation, msg_count.label("message_count"))
                 .where(Conversation.user_id == user_id)
                 .order_by(Conversation.updated_at.desc())
                 .limit(limit)
             )
-            rows = (await session.execute(stmt)).scalars().all()
+            rows = (await session.execute(stmt)).all()
         return [
             {
-                "conversation_id": r.conversation_id,
-                "title": r.title,
-                "created_at": r.created_at.isoformat() if r.created_at else "",
-                "updated_at": r.updated_at.isoformat() if r.updated_at else "",
+                "conversation_id": r[0].conversation_id,
+                "title": r[0].title,
+                "message_count": r[1] or 0,
+                "created_at": r[0].created_at.isoformat() if r[0].created_at else "",
+                "updated_at": r[0].updated_at.isoformat() if r[0].updated_at else "",
             }
             for r in rows
         ]

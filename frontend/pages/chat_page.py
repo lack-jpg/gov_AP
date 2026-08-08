@@ -41,7 +41,13 @@ with st.sidebar:
             st.session_state["conversation_id"] = None
             st.session_state["messages"] = []
 
-        convs = api_client.list_conversations().get("items", [])
+        # 隐藏空会话（message_count==0），避免「新对话」残留条目
+        convs = [
+            c for c in api_client.list_conversations().get("items", [])
+            if c.get("message_count", 0) > 0
+        ]
+        if not convs:
+            st.caption("暂无历史会话")
         for conv in convs:
             label = (conv.get("title") or conv.get("conversation_id", ""))[:24]
             cid = conv.get("conversation_id")
