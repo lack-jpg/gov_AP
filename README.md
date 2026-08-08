@@ -6,7 +6,7 @@
 
 > 注意：前端界面全部由AI生成，请勿直接复制。
 
-> **最近更新（2026-08-08）**：A2A 真实系统对接（HTTP 回调链路 + `a2a_task` 持久化 + Docker 化）+ 性能优化（LLM 响应缓存 18.4s→0.26s、Milvus HNSW 索引、SSE 流式输出）+ 前端完善（多轮对话、历史会话持久化、看板可视化图表）。详见 [更新日志](#20-更新日志)。
+> **最近更新（2026-08-08）**：A2A 真实系统对接（HTTP 回调链路 + `a2a_task` 持久化 + Docker 化）+ 性能优化（LLM 响应缓存 18.4s→0.26s、Milvus HNSW 索引、SSE 流式输出）+ 前端完善（多轮对话、历史会话持久化、看板可视化图表）+ 前端中文显示修复（隐藏 Streamlit 原生英文 UI + 意图标签中文化 + LLM 输出强制中文）。详见 [更新日志](#20-更新日志)。
 
 ---
 
@@ -1676,6 +1676,18 @@ governance_node（末尾节点）
 ---
 
 # 20. 更新日志
+
+## 2026-08-08 — 前端中文显示修复
+
+修复本地/容器前端部分页面出现英文的问题：
+
+| 改动 | 文件 | 说明 |
+| --- | --- | --- |
+| 隐藏 Streamlit 原生英文 UI | `frontend/ui.py` | CSS 隐藏 Deploy 按钮 / "Made with Streamlit" 页脚 / 汉堡菜单，侧边栏不再有英文元素 |
+| 意图标签中文化 | `frontend/pages/intent_page.py` | 「意图」卡片改显示中文名，英文枚举值降级为次要灰色卡 |
+| LLM 输出强制中文 | `agents/supervisor/prompts.py`、`agents/policy/prompts.py`、`rag/generator.py` | 三个 LLM 提示词明确「始终使用简体中文回答」，避免偶发英文输出 |
+
+> 验证：8 个页面 AppTest 渲染全中文无报错；`pytest tests/` 93 通过。
 
 ## 2026-08-08 — A2A 真实系统对接 + 任务持久化 + Docker 化
 
