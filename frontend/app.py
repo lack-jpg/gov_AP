@@ -13,7 +13,14 @@ import sys
 
 import streamlit as st
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# 将 frontend/ 与项目根目录加入 sys.path：
+# 项目根必须在前，`from frontend import ui` 才能把 frontend 当作包解析
+# （仅加 frontend/ 会导致 streamlit 首次运行时 ModuleNotFoundError）
+_frontend_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_frontend_dir)
+for _p in (_frontend_dir, _project_root):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 st.set_page_config(
     page_title="政务多智能体协同平台",
