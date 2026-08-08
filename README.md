@@ -6,7 +6,7 @@
 
 > 注意：前端界面全部由AI生成，请勿直接复制。
 
-> **最近更新（2026-08-08）**：A2A 真实系统对接（HTTP 回调链路 + `a2a_task` 持久化 + Docker 化）+ 性能优化（LLM 响应缓存 18.4s→0.26s、Milvus HNSW 索引、SSE 流式输出）+ 前端完善（多轮对话、历史会话持久化、看板可视化图表 + 中文显示修复）+ 测试覆盖（174 pytest + 端到端 23/23）。详见 [更新日志](#20-更新日志)。
+> **最近更新（2026-08-08）**：A2A 真实系统对接 + 性能优化（LLM 缓存 18.4s→0.26s、SSE）+ 前端完善（多轮对话、历史、看板图表）+ 测试覆盖（174 pytest + 端到端 23/23）+ **监控告警（Prometheus + Grafana /metrics）** + **CI/CD（GitHub Actions：lint→test→build→push）**。详见 [更新日志](#20-更新日志)。
 
 ---
 
@@ -1676,6 +1676,32 @@ governance_node（末尾节点）
 ---
 
 # 20. 更新日志
+
+## 2026-08-08 — 监控告警（Prometheus + Grafana）+ CI/CD（GitHub Actions）
+
+### 监控告警
+
+| 改动 | 文件 | 说明 |
+| --- | --- | --- |
+| `/metrics` 端点 | `backend/main.py` | 暴露 `MetricsCollector` 指标（agent 调用/成功/失败/延迟/token），免认证 |
+| 认证放行 | `backend/middleware/auth.py` | `/metrics` 加入免认证路径 |
+| Prometheus 配置 | `deploy/prometheus/prometheus.yml` | 抓取 `api:8002/metrics`，15s 间隔 |
+| Grafana | `deploy/grafana/**` | 自动配置 Prometheus 数据源 + gov-agent 看板（请求速率/成功率/错误率/延迟分位/token） |
+| docker-compose | 新增 `prometheus`(9090) + `grafana`(3000) | 全栈一键起 |
+
+### CI/CD（GitHub Actions）
+
+`.github/workflows/ci.yml`：
+- `lint`：`ruff check .`
+- `test`：`pytest tests/`（174 个，离线/DB-free）
+- `build`：master push 时构建并推送 api 镜像到 GHCR（`ghcr.io/lack-jpg/gov_AP/api`）
+- `e2e`：手动触发，docker compose 全栈跑 `scripts/e2e_integration_test.py`
+
+### 其他
+- `requirements.txt` 补 `langchain-openai`（修复测试收集 + api 镜像 LLM 模式）
+- `pyproject.toml` ruff 规则收敛 + `ruff check --fix` 全量清理（127 自动修复 + F821/F841/F401/E741/B004/B007）
+
+**验证**：`/metrics` 返回 agent 指标；Prometheus target UP 且能查 `agent_calls_total`；Grafana `:3000` 自动加载看板；e2e 23/23；`ruff check .` 全绿；174 pytest 通过。
 
 ## 2026-08-08 — 测试覆盖 + MCP 链路修复
 
