@@ -1687,7 +1687,8 @@ governance_node（末尾节点）
 | 认证放行 | `backend/middleware/auth.py` | `/metrics` 加入免认证路径 |
 | Prometheus 配置 | `deploy/prometheus/prometheus.yml` | 抓取 `api:8002/metrics`，15s 间隔 |
 | Grafana | `deploy/grafana/**` | 自动配置 Prometheus 数据源 + gov-agent 看板（请求速率/成功率/错误率/延迟分位/token） |
-| docker-compose | 新增 `prometheus`(9090) + `grafana`(3000) | 全栈一键起 |
+| Alertmanager | `deploy/prometheus/alert_rules.yml` + `deploy/alertmanager/` | 4 条告警规则（失败率>20%/p95延迟>5s/无流量/token激增），Alertmanager 9093 |
+| docker-compose | 新增 `prometheus`(9090) + `grafana`(3000) + `alertmanager`(9093) | 全栈一键起 |
 
 ### CI/CD（GitHub Actions）
 
