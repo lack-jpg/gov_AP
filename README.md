@@ -6,7 +6,7 @@
 
 > 注意：前端界面全部由AI生成，请勿直接复制。
 
-> **最近更新（2026-08-06）**：前端视觉升级（浅色政务蓝主题 + 共享 UI 组件库 `frontend/ui.py` + 8 页重构 + `design-system/` 设计规范）+ Docker API 容器启动修复（bind mount 权限）+ 评测报告文件回退（`evaluation_results/`）。详见 [更新日志](#20-更新日志)。
+> **最近更新（2026-08-08）**：A2A 真实系统对接（HTTP 回调链路 + `a2a_task` 持久化 + Docker 化）+ 性能优化（LLM 响应缓存 18.4s→0.26s、Milvus HNSW 索引、SSE 流式输出）+ 前端完善（多轮对话、历史会话持久化、看板可视化图表）。详见 [更新日志](#20-更新日志)。
 
 ---
 
@@ -359,6 +359,8 @@ Callback (HMAC 签名验证)
 ```
 
 > **安全加固（2026-08-05）**：A2A 回调端点增加 HMAC-SHA256 签名验证 + ±300s 时间窗口防重放，防止伪造回调注入。外部 Agent 需使用共享密钥签名请求。
+>
+> **真实系统对接（2026-08-08）**：HTTP 回调链路端到端跑通 —— Connector 支持同步 completed / 异步 submitted 分流；Mock Server 异步模式（有 `callback_url` 时立即返回 submitted，后台执行 + HMAC 签名回调）；任务状态持久化到 `a2a_task` 表（`PostgresTaskStore` 写穿）；恢复路径改为 `task_id → source_trace_id(thread) → 最新 checkpoint`。Docker 内 `a2a-mock` 服务承载 housing/fund，外部真实系统把 `A2A_HOUSING_URL` / `A2A_FUND_URL` 换成真实端点即可接入。
 
 任务生命周期：
 
@@ -594,10 +596,12 @@ gov_AP/
 │       ├── __init__.py               # 包初始化
 │       ├── connector.py              # A2A连接器
 │       ├── protocol.py               # 通信协议
-│       ├── task.py                   # 任务生命周期
+│       ├── task.py                   # 任务生命周期（状态机）
+│       ├── task_store.py             # 任务持久化（PostgreSQL 写穿 PostgresTaskStore）
 │       ├── registry.py               # Agent注册中心
-│       ├── callback.py               # 回调处理
+│       ├── callback.py               # 回调处理（HMAC 校验 + 恢复）
 │       └── mock_agents/              # 模拟外部Agent
+│           ├── server.py             # HTTP Mock Server（12201/12202，支持异步回调）
 │           ├── housing_agent.py      # 不动产Agent
 │           └── fund_agent.py         # 公积金Agent
 │
@@ -684,6 +688,8 @@ gov_AP/
 ├── deploy/                           # 部署配置
 │   ├── Dockerfile                    # API + MCP Server Docker 镜像
 │   ├── docker-entrypoint.sh          # API 容器入口（root 授权 bind mount → setpriv 降权 appuser）
+│   ├── Dockerfile.mcp                # MCP Gateway + 3 Servers 镜像（12300-12303）
+│   ├── Dockerfile.agent              # A2A Mock 外部 Agent 镜像（housing 12201 / fund 12202）
 │   ├── Dockerfile.frontend           # Streamlit 前端 Docker 镜像（轻量，仅 streamlit + httpx）
 │   └── k8s/                          # Kubernetes
 │       ├── backend.yaml              # 后端Deployment
@@ -779,7 +785,8 @@ python >=3.12
 | Frontend      | **12345** | Streamlit 前端界面     |
 | FastAPI       | **8002**  | 后端 API（8000 + 2）   |
 | MCP Gateway   | **12300** | 后续 Server 依次 +1    |
-| A2A Callback  | **12200** | 后续 Connector 依次 +1 |
+| A2A Mock      | **12201/12202** | housing/fund 外部 Agent（Docker `a2a-mock`） |
+| A2A Callback  | **api:8002** | `/api/a2a/callback`（HMAC 校验，Docker 内 `http://api:8002`） |
 | PostgreSQL    | **5658**  | 避开 Hyper-V 保留段     |
 | Redis         | **6500**  | 避开 Windows 保留端口区间  |
 | Milvus        | **19532** | 19530 + 2          |
@@ -1136,24 +1143,30 @@ Intent 回环：`intent_node → supervisor_node` 为**静态边**，意图识�
 
 ```python
 # a2a_node 中
-result = await a2a_connector.send_task(skill="query_property", ...)
-# result["mode"] == "http"
+result = await a2a_connector.send_task(skill="query_property", ..., callback_url=settings.a2a_callback_url)
+# result["mode"] == "http" 且 status == "submitted" → 异步等待回调
 state["waiting_task_id"] = result["task_id"]
 await checkpointer.suspend_for_a2a(thread_id, ..., a2a_task_id)
 # → 路由到 END（LangGraph 本轮结束，checkpoint 已落 PostgreSQL）
+# 外部 Agent 若同步返回 completed → 直接携带 artifact 继续，无需挂起
 ```
 
 **回调恢复**：
 
 ```
-外部 Agent 完成 → POST /api/a2a/callback { task_id, status, artifact }
+外部 Agent 完成 → POST /api/a2a/callback { task_id, status, artifact, signature, timestamp }
+  （AuthMiddleware 放行；HMAC 签名校验，±300s 防重放）
   → A2ACallbackHandler.process_callback()
-    → checkpointer.resume_from_a2a(task_id)   ← 按 task_id 全库搜索
-    → 注入 external_result + 清空 waiting_task_id
+    → 任务状态机 submitted → working → completed（写穿 a2a_task 表）
+    → checkpointer.resume_from_a2a(task_id)
+        ← a2a_task 表按 task_id 取 source_trace_id(thread) → 最新 checkpoint（带重试）
+    → 注入 external_result，保留 waiting_task_id
     → graph.ainvoke(resumed_state, config)     ← 从断点恢复
-    → a2a_node._handle_a2a_resume()           ← 合并外部结果到 evidence
-    → governance_node → END
+    → a2a_node._handle_a2a_resume()           ← 合并外部结果到 evidence + 标记任务完成
+    → supervisor 汇总（含外部数据）→ governance_node → END
 ```
+
+> **Docker 部署**：`docker compose up` 会同时启动 `a2a-mock`（housing 12201 / fund 12202），api 通过 `A2A_HOUSING_URL` / `A2A_FUND_URL` 指向它。外部真实系统只需把这两个地址换成真实 Agent 的 HTTP 端点即可（协议一致）。
 
 **同步模式（stub fallback）**：
 
@@ -1358,6 +1371,7 @@ governance_node（末尾节点）
 > **Phase 1 完成** ✅ — 27个模块完成，系统可在无 LLM / 无 PostgreSQL 的 stub 模式下完整运行。
 > **Phase 2 完成** ✅ — MCP Server + Tool Calling 体系就绪，6个Tool + 3个Server + Gateway + Client 全部实现。
 > **Phase 3 完成** ✅ — A2A 跨域 Agent 协同 + Async Callback 体系就绪，7个A2A模块 + LangGraph集成完成。
+> **Phase 3 增强（2026-08-08）** ✅ — A2A 真实系统对接：HTTP 回调链路端到端跑通（同步/异步分流、HMAC 签名回调、checkpoint 恢复）、任务状态持久化（`a2a_task` 表 + `PostgresTaskStore`）、Docker 化（`a2a-mock` 服务 + `Dockerfile.agent`），端到端「公积金查询」验证通过。
 > 已建立 `models/` 模型目录（已 gitignore），端口统一偏移避免本地冲突。
 
 ## Phase 1 — LangGraph Runtime + Supervisor + RAG ✅
@@ -1373,7 +1387,7 @@ governance_node（末尾节点）
 ✅ runtime.py        — Runtime安全护栏 + LoopDetector + 3异常类（394行，22测试）
 ```
 
-### Agent层 (agents/) — 17/19 完成
+### Agent层 (agents/) — 24/24 完成
 
 ```
 ✅ __init__.py                — AgentRegistry（register/get/list/health_check/unregister，126行）
@@ -1402,7 +1416,7 @@ governance_node（末尾节点）
 ✅ material/ 真实NER模型      — BERT-NER接入（双模式：transformers pipeline + regex fallback）
 ```
 
-### 后端层 (backend/) — 8/12 完成
+### 后端层 (backend/) — 10/10 完成
 
 ```
 ✅ config.py                   — Settings（40+字段含模型路径+端口，pydantic-settings + lru_cache，~290行）
@@ -1431,7 +1445,7 @@ governance_node（末尾节点）
 
 ```
 ✅ connection.py               — async SQLAlchemy + session factory + get_db DI + init/close（104行）
-✅ models.py                   — 5表ORM（Trace, Agent, Prompt, Evaluation, Checkpoint，310行）
+✅ models.py                   — 6表ORM（Trace, Agent, Prompt, Evaluation, Checkpoint, A2ATask，310行）
 ✅ schemas.py                  — CRUD Pydantic模型（Create/Response，133行）
 ```
 
@@ -1662,6 +1676,62 @@ governance_node（末尾节点）
 ---
 
 # 20. 更新日志
+
+## 2026-08-08 — A2A 真实系统对接 + 任务持久化 + Docker 化
+
+### A2A HTTP 回调链路端到端跑通（真实系统对接）
+
+| 改动 | 文件 | 说明 |
+| --- | --- | --- |
+| Connector 分流 | `tools/a2a/connector.py` | 解析 `A2ATaskResponse`：同步 completed 直接返回 artifact / 异步 submitted 等回调；新增 `default_callback_url` |
+| Mock 异步模式 | `tools/a2a/mock_agents/server.py` | 有 `callback_url` 时立即返回 submitted，后台执行 + HMAC 签名回调；`--smoke` 扩展异步断言 |
+| 回调放行 | `backend/middleware/auth.py` | `/api/a2a/callback` 走 HMAC 校验而非 JWT，AuthMiddleware 放行 |
+| 状态机兼容 | `tools/a2a/callback.py` | 回调直接 completed 时先 submitted→working 再进终态 |
+| 恢复修复 | `orchestration/langgraph/checkpointer.py` | `resume_from_a2a` 改为 task→source_trace_id→最新 checkpoint（带重试）；`_get_latest_checkpoint` 按自增 id 取最新 |
+| 恢复流程 | `backend/api/routes.py` `_resume_agent_after_callback` | 保留 waiting_task_id 供 a2a_node 消费 external_result；`a2a_node` 用 Connector 的 task_id 记 state |
+| A2A 可达性 | `agents/supervisor/planner.py` + `orchestration/langgraph/edges.py` | `fund_query`/`property_service` 规则模板补 workflow 步骤；路由在跨域意图任务全完成后进入 a2a_node（LLM/规则规划均可达） |
+| a2a_tasks 状态 | `orchestration/langgraph/state.py` | 改为替换语义（原 append reducer 在恢复重放时列表翻倍） |
+
+### A2A 任务持久化
+
+| 改动 | 文件 | 说明 |
+| --- | --- | --- |
+| `a2a_task` 表 | `database/models.py` + `database/migrations/versions/0002_a2a_task.py` | 任务状态/artifact/source_trace_id 落库 |
+| PostgresTaskStore | `tools/a2a/task_store.py`（新增） | 写穿式持久化：内存镜像 + 每任务 asyncio.Lock upsert + 启动 hydrate，DB 故障降级内存 |
+| 任务模型 | `orchestration/langgraph/state.py` | `A2ATaskRecord` 增加 `source_trace_id`（= thread_id，供回调恢复定位 checkpoint） |
+
+### Docker 化
+
+- `deploy/Dockerfile.agent`（新增）+ `docker-compose.yml` 新增 `a2a-mock` 服务（housing 12201 / fund 12202）
+- api 容器 env：`A2A_HOUSING_URL` / `A2A_FUND_URL` → `http://a2a-mock:*`，`A2A_CALLBACK_URL` → `http://api:8002`
+- 配置化端点：`backend/config.py` 新增 `A2A_HOUSING_URL` / `A2A_FUND_URL`；`.env`/`.env.example` A2A 块更新（回调默认 `localhost:8002`）
+
+**端到端验证**：「查询公积金余额」→ a2a_node → HTTP → a2a-mock 异步回调 → checkpoint 恢复 → 最终回答含外部公积金数据（账号 GJJ-0282023001234，余额 285,600.5 元）+ 政策引用；`a2a_task` 表落库 completed + artifact。`pytest tests/` 84 通过 + a2a 全部 smoke 通过。
+
+## 2026-08-08 — 性能优化 + 前端完善
+
+### 性能优化
+
+| 改动 | 文件 | 说明 |
+| --- | --- | --- |
+| LLM 响应缓存 | `governance/llm_cache.py`（新增） | `LlmCache`（Redis 优先 `llmc:` + 内存 TTL 回退）+ `CachingChatOpenAI`（按渲染消息哈希键）；`get_agent_graph` 一处替换覆盖全部 6 个 LLM 调用点 |
+| 缓存配置 | `backend/config.py` | `LLM_CACHE_ENABLED` / `LLM_CACHE_TTL` |
+| Milvus 索引调优 | `rag/knowledge_base.py` + `rag/retriever.py` | 补 HNSW `create_index`（M/efConstruction/nlist 配置化 + `ensure_index`）；读配置 host/port（修复 19530/19532 不一致）+ `nprobe` 配置化 |
+| Milvus 参数 | `backend/config.py` | `MILVUS_INDEX_M/EF_CONSTRUCTION/NLIST`、`MILVUS_SEARCH_NPROBE` |
+| SSE 流式 | `backend/api/routes.py` `/api/chat/stream` + `backend/api/dependencies.py stream_agent` | `graph.astream(stream_mode="values")` 逐节点产出 SSE 事件（节点中文标签），前端实时显示进度 |
+
+**实测**：相同问题二次请求 `18.4s → 0.26s`（LLM 缓存命中）。
+
+### 前端完善
+
+| 改动 | 文件 | 说明 |
+| --- | --- | --- |
+| 多轮对话 | `backend/api/routes.py` + `backend/api/dependencies.py execute_agent` | `conversation_id` 作 LangGraph `thread_id`；历史注入 `messages` + `conversation_history`，规划/汇总 LLM 参考前文 |
+| 历史持久化 | `database/models.py` + 迁移 `0003_conversation.py` + `backend/services/conversation_service.py` | `conversation` / `conversation_message` 表 + CRUD；`POST/GET /api/conversations`、`GET /api/conversations/{id}/messages` |
+| 前端会话 | `frontend/pages/chat_page.py` + `frontend/api_client.py` | `st.session_state` 消息 + 侧边栏会话列表/新对话/加载历史 |
+| 可视化图表 | `backend/api/routes.py dashboard_overview` + `frontend/pages/dashboard_page.py` | 透出 `agent_stats`/`eval_trends`/`total_tokens`；Agent 调用/成功率/耗时/Token 柱状图、评测趋势折线、评分分布柱状图（streamlit 原生） |
+
+**验证**：SSE 节点进度 + final 事件 ✅；两轮对话 4 条消息落库、会话列表/消息读取 ✅；看板 agent_stats/total_tokens 透出 ✅；LLM 缓存 Redis `llmc:*` 键 + 重复查询 70× 提速 ✅。`pytest tests/` **93 通过**。
 
 ## 2026-08-06 — 前端视觉升级 + Docker 容器启动修复 + 评测报告文件回退
 
