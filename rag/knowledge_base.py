@@ -15,6 +15,60 @@ from tools.logger import get_logger
 
 logger = get_logger(__name__)
 
+# 默认 Milvus 集合名（与 retriever.DEFAULT_COLLECTION 一致）
+COLLECTION_NAME = "gov_policy"
+
+
+def _milvus_host_default() -> str:
+    """Milvus 主机（读配置，默认 localhost）。"""
+    try:
+        from backend.config import get_settings
+        return get_settings().milvus_host or "localhost"
+    except Exception:
+        return "localhost"
+
+
+def _milvus_port_default() -> int:
+    """Milvus 端口（读配置 19532，容器内应为 19530）。"""
+    try:
+        from backend.config import get_settings
+        return int(get_settings().milvus_port) or 19530
+    except Exception:
+        return 19530
+
+
+def _milvus_index_params() -> dict:
+    """HNSW 索引参数（读配置，默认 M=16 / efConstruction=200 / nlist=1024）。"""
+    m, ef, nlist = 16, 200, 1024
+    try:
+        from backend.config import get_settings
+        s = get_settings()
+        m = int(s.milvus_index_m) or m
+        ef = int(s.milvus_index_ef_construction) or ef
+        nlist = int(s.milvus_index_nlist) or nlist
+    except Exception:
+        pass
+    return {"M": m, "efConstruction": ef, "nlist": nlist}
+
+
+def _ensure_index(collection) -> None:
+    """确保 embedding 字段存在 HNSW 索引（幂等，缺则补建）。"""
+    try:
+        indexes = [idx.field_name for idx in collection.indexes]
+        if "embedding" in indexes:
+            return
+        collection.create_index(
+            "embedding",
+            {
+                "metric_type": "COSINE",
+                "index_type": "HNSW",
+                "params": _milvus_index_params(),
+            },
+        )
+        logger.info("已创建 HNSW 索引 (gov_policy): {}", _milvus_index_params())
+    except Exception as e:
+        logger.warning("创建 Milvus 索引失败（不影响数据插入）: {}", e)
+
 
 class KnowledgeBase:
     """
@@ -123,8 +177,8 @@ class KnowledgeBase:
     async def index_documents(
         self,
         documents: Optional[list[dict]] = None,
-        milvus_host: str = "localhost",
-        milvus_port: int = 19530,
+        milvus_host: str = "",
+        milvus_port: int = 0,
     ) -> int:
         """
         将文档索引到 Milvus（含 Embedding）。
@@ -134,12 +188,14 @@ class KnowledgeBase:
 
         Args:
             documents: 文档列表，不传则用 load_documents 的结果
-            milvus_host: Milvus 主机
-            milvus_port: Milvus 端口
+            milvus_host: Milvus 主机（空则读配置 MILVUS_HOST）
+            milvus_port: Milvus 端口（0 则读配置 MILVUS_PORT）
 
         Returns:
             索引的文档数
         """
+        milvus_host = milvus_host or _milvus_host_default()
+        milvus_port = milvus_port or _milvus_port_default()
         docs = documents or self._documents
         if not docs:
             logger.warning("没有文档需要索引")
@@ -166,7 +222,7 @@ class KnowledgeBase:
                 from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
 
                 connections.connect(alias="default", host=milvus_host, port=str(milvus_port))
-                collection_name = "gov_policy"
+                collection_name = COLLECTION_NAME
 
                 if utility.has_collection(collection_name):
                     collection = Collection(collection_name)
@@ -180,6 +236,9 @@ class KnowledgeBase:
                     ]
                     schema = CollectionSchema(fields, description="政务政策知识库")
                     collection = Collection(collection_name, schema)
+
+                # 确保 HNSW 索引（参数读配置）
+                _ensure_index(collection)
 
                 # 插入数据
                 data = [
@@ -197,24 +256,26 @@ class KnowledgeBase:
         logger.info("文档索引完成: {} 个片段", len(chunks))
         return len(chunks)
 
-    async def rebuild_index(self, path: str, milvus_host: str = "localhost", milvus_port: int = 19530) -> int:
+    async def rebuild_index(self, path: str, milvus_host: str = "", milvus_port: int = 0) -> int:
         """
         重建知识库索引（清空后重新索引）。
 
         Args:
             path: 文档路径
-            milvus_host: Milvus 主机
-            milvus_port: Milvus 端口
+            milvus_host: Milvus 主机（空则读配置）
+            milvus_port: Milvus 端口（0 则读配置）
 
         Returns:
             索引的文档数
         """
+        milvus_host = milvus_host or _milvus_host_default()
+        milvus_port = milvus_port or _milvus_port_default()
         # 清空 Milvus 集合
         try:
             from pymilvus import utility
-            if utility.has_collection("gov_policy"):
-                utility.drop_collection("gov_policy")
-                logger.info("已清空旧集合 gov_policy")
+            if utility.has_collection(COLLECTION_NAME):
+                utility.drop_collection(COLLECTION_NAME)
+                logger.info("已清空旧集合 {}", COLLECTION_NAME)
         except Exception as e:
             logger.warning("清空 Milvus 集合失败: {}", e)
 

@@ -40,7 +40,7 @@ if overview:
         ("成功率", f"{overview.get('success_rate', 0) * 100:.1f}%", "green"),
         ("平均耗时", f"{overview.get('avg_latency_ms', 0):.0f} ms", "amber"),
         ("活跃 Agent", overview.get("active_agents", 0), "blue"),
-        ("MCP 调用", overview.get("tool_call_count", 0), "gray"),
+        ("Token 用量", f"{overview.get('total_tokens', 0):,}", "gray"),
         ("A2A 任务", overview.get("a2a_task_count", 0), "blue"),
     ]
     cols = st.columns(6)
@@ -50,6 +50,31 @@ if overview:
 
     if overview.get("total_requests", 0) == 0:
         st.info("💡 暂无请求数据。去 **💬 智能对话** 页发起一次对话后，这里会显示真实统计。")
+
+    # ── Agent 统计图表（streamlit 原生，零新增依赖） ──
+    agent_stats = overview.get("agent_stats") or []
+    if agent_stats:
+        ui.section_header("🤖", "Agent 统计")
+        names = [a.get("agent_name", "") for a in agent_stats]
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("调用次数")
+            st.bar_chart({n: a.get("total_calls", 0) for n, a in zip(names, agent_stats)})
+            st.subheader("成功率 (%)")
+            st.bar_chart({n: round(a.get("success_rate", 0) * 100, 1) for n, a in zip(names, agent_stats)})
+        with c2:
+            st.subheader("平均耗时 (ms)")
+            st.bar_chart({n: round(a.get("avg_latency_ms", 0), 1) for n, a in zip(names, agent_stats)})
+            st.subheader("Token 用量")
+            st.bar_chart({n: a.get("total_tokens", 0) for n, a in zip(names, agent_stats)})
+
+    # ── 评测趋势（折线） ──
+    eval_trends = overview.get("eval_trends") or []
+    if eval_trends:
+        ui.section_header("📈", "评测趋势")
+        st.line_chart({
+            t.get("date", ""): round(t.get("task_success_rate", 0) * 100, 1) for t in eval_trends
+        })
 else:
     ui.empty_state("📭", "暂无运行数据", "启动后端并产生请求后，这里会显示真实统计。")
 
@@ -83,6 +108,15 @@ if report:
 
     if report.get("error"):
         st.warning(report["error"])
+
+    # 评分分布柱状图
+    st.subheader("评分分布 (%)")
+    st.bar_chart({
+        "任务成功率": report.get("task_success_rate", 0) * 100,
+        "工具准确率": report.get("tool_accuracy", 0) * 100,
+        "RAG真实性": report.get("rag_faithfulness", 0) * 100,
+        "答案相关性": report.get("rag_answer_relevance", 0) * 100,
+    })
 else:
     st.info(f"版本 `{version}` 暂无评测报告。\n\n运行评测生成报告：`python -m governance.evaluation.runner run --version {version}`")
 

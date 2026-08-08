@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from tools.logger import get_logger
 from orchestration.langgraph.state import A2ATaskStatus, A2ATaskRecord
@@ -63,8 +63,19 @@ class TaskStateMachine:
         tsm.transition(A2ATaskStatus.COMPLETED, artifact={...})
     """
 
-    def __init__(self, record: A2ATaskRecord):
+    def __init__(
+        self,
+        record: A2ATaskRecord,
+        *,
+        on_change: Optional[Callable[[A2ATaskRecord], None]] = None,
+    ):
+        """
+        Args:
+            record: A2ATaskRecord 实例
+            on_change: 可选回调，每次状态迁移后调用（用于持久化，如 PostgresTaskStore 写穿）
+        """
         self._record = record
+        self._on_change = on_change
 
     # ── 属性 ──
 
@@ -132,6 +143,13 @@ class TaskStateMachine:
             old=current.value,
             new=new_status.value,
         )
+
+        # 状态变更后触发持久化回调（PostgresTaskStore 写穿）
+        if self._on_change is not None:
+            try:
+                self._on_change(self._record)
+            except Exception as e:
+                logger.warning("A2A 状态变更回调失败: {task_id} — {error}", task_id=self.task_id, error=e)
 
         return self._record
 
@@ -239,11 +257,30 @@ class TaskStore:
 _task_store: Optional[TaskStore] = None
 
 
+def _create_default_store() -> TaskStore:
+    """
+    创建全局 TaskStore。
+
+    DB 已配置且 PostgresTaskStore 可导入时返回持久化存储；
+    否则回退到纯内存 TaskStore（无 DB 环境优雅降级）。
+    """
+    try:
+        from tools.a2a.task_store import PostgresTaskStore
+        from backend.config import get_settings
+
+        settings = get_settings()
+        if settings.postgres_host:
+            return PostgresTaskStore()
+    except Exception:
+        pass
+    return TaskStore()
+
+
 def get_task_store() -> TaskStore:
-    """获取全局 TaskStore 单例"""
+    """获取全局 TaskStore 单例（DB 可用时自动持久化）"""
     global _task_store
     if _task_store is None:
-        _task_store = TaskStore()
+        _task_store = _create_default_store()
     return _task_store
 
 

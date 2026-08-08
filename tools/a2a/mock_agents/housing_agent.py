@@ -9,6 +9,7 @@ Task: Implement mock housing agent with query_property skill
 from __future__ import annotations
 
 import asyncio
+import os
 import random
 import uuid
 from datetime import datetime, timezone
@@ -18,6 +19,9 @@ from tools.logger import get_logger
 from tools.a2a.protocol import A2ATaskRequest, A2ATaskResponse, AgentCard, A2ATaskStatus
 
 logger = get_logger(__name__)
+
+# AgentCard 中对外公布的端点（Docker 内可用 A2A_HOUSING_URL 覆盖）
+_DEFAULT_ENDPOINT = os.environ.get("A2A_HOUSING_URL", "http://localhost:12201")
 
 
 # ============================================================
@@ -107,7 +111,7 @@ class HousingAgent:
             display_name="不动产系统Agent",
             description="提供不动产登记查询、产权核验等服务",
             skills=["query_property", "register_property"],
-            endpoint="http://localhost:12201",
+            endpoint=_DEFAULT_ENDPOINT,
             version="0.1.0",
             timeout_ms=15000,
         )

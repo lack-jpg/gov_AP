@@ -97,6 +97,16 @@ class Settings(BaseSettings):
         default=60,
         description="LLM API调用超时时间（秒）",
     )
+    llm_cache_enabled: bool = Field(
+        default=True,
+        alias="LLM_CACHE_ENABLED",
+        description="LLM 响应缓存（相同问题复用结果，减少重复调用与成本）",
+    )
+    llm_cache_ttl: int = Field(
+        default=3600,
+        alias="LLM_CACHE_TTL",
+        description="LLM 缓存过期时间（秒），默认 1 小时",
+    )
 
     # ── 模型文件路径 ──
     models_dir: str = Field(
@@ -227,6 +237,26 @@ class Settings(BaseSettings):
             "容器内运行时设为 19530（服务名 milvus）"
         ),
     )
+    milvus_index_m: int = Field(
+        default=16,
+        alias="MILVUS_INDEX_M",
+        description="HNSW 索引参数 M（每个节点的最大连接数，越大召回越好、内存/构建开销越高）",
+    )
+    milvus_index_ef_construction: int = Field(
+        default=200,
+        alias="MILVUS_INDEX_EF_CONSTRUCTION",
+        description="HNSW 索引构建参数 efConstruction（越大索引质量越高、构建越慢）",
+    )
+    milvus_index_nlist: int = Field(
+        default=1024,
+        alias="MILVUS_INDEX_NLIST",
+        description="HNSW 索引参数 nlist（聚类中心数，影响查询速度与精度）",
+    )
+    milvus_search_nprobe: int = Field(
+        default=10,
+        alias="MILVUS_SEARCH_NPROBE",
+        description="HNSW 搜索参数 nprobe / ef（检索时扫描的聚类数/候选集大小）",
+    )
 
     # ── Agent Runtime ──
     agent_max_steps: int = Field(
@@ -254,9 +284,19 @@ class Settings(BaseSettings):
 
     # ── A2A ──
     a2a_callback_url: str = Field(
-        default="http://localhost:12200/api/a2a/callback",
+        default="http://localhost:8002/api/a2a/callback",
         alias="A2A_CALLBACK_URL",
-        description="A2A Callback接收地址（12200 起，外部Agent完成回调）",
+        description="A2A Callback接收地址（本地 API 8002 或 Docker 内 http://api:8002），外部Agent完成回调",
+    )
+    a2a_housing_url: str = Field(
+        default="http://localhost:12201",
+        alias="A2A_HOUSING_URL",
+        description="不动产外部 Agent 地址（12201；Docker 内为 http://a2a-mock:12201）",
+    )
+    a2a_fund_url: str = Field(
+        default="http://localhost:12202",
+        alias="A2A_FUND_URL",
+        description="公积金外部 Agent 地址（12202；Docker 内为 http://a2a-mock:12202）",
     )
     a2a_hmac_secret: str = Field(
         default="",

@@ -858,9 +858,11 @@ async def a2a_node(
                 # 无 Connector → 使用直接 stub 调用
                 result = await _a2a_stub_call(skill, skill_input)
 
-            # 记录 A2A 任务
+            # 记录 A2A 任务（task_id 必须与 Connector 创建的一致，供回调恢复匹配）
             a2a_record = A2ATaskRecord(
+                task_id=result.get("task_id", ""),
                 source_agent="workflow",
+                source_trace_id=state.get("trace_id", ""),
                 target_agent=result.get("agent_name", "unknown"),
                 skill=skill,
                 input=skill_input,
@@ -868,19 +870,16 @@ async def a2a_node(
             )
             state["a2a_tasks"] = state.get("a2a_tasks", []) + [a2a_record.model_dump()]
 
-            # 异步模式 → 挂起等待
-            if result.get("mode") == "http":
+            # 异步模式（submitted/working）→ 挂起等待回调
+            if result.get("mode") == "http" and result.get("status") in ("submitted", "working"):
                 state["waiting_task_id"] = result["task_id"]
                 # 挂起 LangGraph
                 if checkpointer is not None:
                     try:
                         trace_id = state.get("trace_id", "")
-                        # 使用当前 LangGraph checkpoint_id（非空字符串）
-                        from orchestration.langgraph.state import create_initial_state
-                        _ckpt_id = state.get("trace_id", f"ckpt_{id(state)}")
                         await checkpointer.suspend_for_a2a(
                             thread_id=trace_id,
-                            checkpoint_id=_ckpt_id,
+                            checkpoint_id=state.get("trace_id", ""),
                             a2a_task_id=result["task_id"],
                         )
                         logger.info(
@@ -892,9 +891,9 @@ async def a2a_node(
                         logger.warning("A2A 挂起失败（将使用同步模式）: {}", e)
                 break  # 挂起后不再继续
 
-            # Stub 同步模式 → 继续下一个 skill
+            # 同步完成（stub 或外部 Agent 立即返回 completed）→ 继续下一个 skill
             logger.info(
-                "A2A Stub: skill={skill} status={status}",
+                "A2A 同步完成: skill={skill} status={status}",
                 skill=skill,
                 status=result.get("status", "?"),
             )
@@ -1026,7 +1025,7 @@ async def _handle_a2a_resume(state: AgentState, external_result: dict) -> AgentS
         "evidence": evidence,
         "a2a_tasks": updated_tasks,
         "waiting_task_id": "",
-        "external_result": external_result,
+        "external_result": {},  # 已消费，避免 resume 流程重复进入
     }
 
 

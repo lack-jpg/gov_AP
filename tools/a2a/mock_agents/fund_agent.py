@@ -9,6 +9,7 @@ Task: Implement mock fund agent with query_fund skill
 from __future__ import annotations
 
 import asyncio
+import os
 import random
 import uuid
 from datetime import datetime, timezone
@@ -18,6 +19,9 @@ from tools.logger import get_logger
 from tools.a2a.protocol import A2ATaskRequest, A2ATaskResponse, AgentCard, A2ATaskStatus
 
 logger = get_logger(__name__)
+
+# AgentCard 中对外公布的端点（Docker 内可用 A2A_FUND_URL 覆盖）
+_DEFAULT_ENDPOINT = os.environ.get("A2A_FUND_URL", "http://localhost:12202")
 
 
 # ============================================================
@@ -128,7 +132,7 @@ class FundAgent:
             display_name="公积金系统Agent",
             description="提供公积金余额查询、提取记录查询、贷款额度测算等服务",
             skills=["query_fund", "query_fund_detail"],
-            endpoint="http://localhost:12202",
+            endpoint=_DEFAULT_ENDPOINT,
             version="0.1.0",
             timeout_ms=10000,
         )

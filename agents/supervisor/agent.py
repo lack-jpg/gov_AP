@@ -105,6 +105,9 @@ class SupervisorAgent:
 
         # 场景2: 全部任务完成 → 汇总
         if task_plan and self._all_completed(task_plan):
+            # A2A 回调恢复：先让 a2a_node 消费 external_result，再汇总
+            if state.get("external_result"):
+                return state
             return await self._synthesize(state)
 
         # 场景3: 已有部分任务在执行/完成 → 检查是否需要补充
@@ -239,6 +242,22 @@ class SupervisorAgent:
             if failed > 0:
                 parts.append(f"\n有 {failed} 个步骤未能完成，建议联系人工客服。")
 
+        # A2A 外部 Agent 结果（不动产/公积金等跨域查询）
+        a2a_tasks = state.get("a2a_tasks", [])
+        a2a_completed = [t for t in a2a_tasks if t.get("status") == TaskStatus.COMPLETED.value and t.get("artifact")]
+        if a2a_completed:
+            a2a_parts: list[str] = []
+            for t in a2a_completed:
+                artifact = t["artifact"]
+                if isinstance(artifact, dict) and artifact.get("total_count") is not None:
+                    a2a_parts.append(
+                        f"外部系统（{t.get('target_agent', '')}）查询完成，共检索到 {artifact['total_count']} 条相关记录。"
+                    )
+                else:
+                    a2a_parts.append(f"外部系统查询完成：{str(artifact)[:200]}")
+            if a2a_parts:
+                parts.append("\n" + "\n".join(a2a_parts))
+
         final_answer = "\n".join(parts) if parts else "抱歉，未能处理您的请求，请稍后重试或联系人工客服。"
         return set_final_answer(state, final_answer)
 
@@ -274,6 +293,8 @@ class SupervisorAgent:
                  "failed": sum(1 for t in task_plan if t.get("status") == TaskStatus.FAILED.value)},
                 ensure_ascii=False,
             ),
+            "a2a_result": json.dumps(state.get("a2a_tasks", []), ensure_ascii=False, default=str),
+            "conversation_history": state.get("conversation_history", ""),
         }
 
         # Prompt Registry 优先，硬编码常量 fallback

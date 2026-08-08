@@ -1,0 +1,46 @@
+# =====================================================
+# Dockerfile.agent - A2A Mock External Agents (housing + fund)
+# Author: le
+# Date: 2026/8/8
+# Version: 0.1
+# Task: Containerize A2A mock agents server (12201 housing / 12202 fund)
+#
+# Usage:
+#   docker build -f deploy/Dockerfile.agent -t gov-agent-platform/agent:latest .
+#   docker run -p 12201:12201 -p 12202:12202 gov-agent-platform/agent:latest
+# =====================================================
+
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir --prefix=/install \
+    fastapi uvicorn[standard] pydantic pydantic-settings httpx loguru
+
+# ──────────────────────────────────────
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /install /usr/local
+
+COPY . .
+
+RUN useradd -m -u 1000 a2auser \
+    && chown -R a2auser:a2auser /app
+USER a2auser
+
+EXPOSE 12201 12202
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:12201/.well-known/agent || exit 1
+
+CMD ["python", "-m", "tools.a2a.mock_agents.server"]

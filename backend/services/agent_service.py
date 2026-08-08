@@ -191,11 +191,10 @@ class AgentService:
             # 从 checkpoint 恢复 state
             checkpoint_state = checkpoint_tuple.checkpoint.get("channel_values", {})
 
-            # 注入 external_result
+            # 注入 external_result；保留 waiting_task_id（a2a_node 凭它进入 resume 分支并清除）
             resumed_state = {
                 **checkpoint_state,
                 "external_result": a2a_result,
-                "waiting_task_id": "",
             }
 
             # 恢复执行

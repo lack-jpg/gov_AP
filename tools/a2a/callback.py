@@ -126,6 +126,13 @@ class A2ACallbackHandler:
 
         # 3. 更新任务状态
         try:
+            # 兼容外部 Agent 未单独通知 WORKING 的情况（submitted → completed/failed）
+            if new_status in (A2ATaskStatus.COMPLETED, A2ATaskStatus.FAILED, A2ATaskStatus.TIMEOUT):
+                if tsm.status == A2ATaskStatus.CREATED:
+                    tsm.submit()
+                if tsm.status == A2ATaskStatus.SUBMITTED:
+                    tsm.start_working()
+
             if new_status == A2ATaskStatus.COMPLETED:
                 tsm.complete(artifact or {})
                 logger.info("A2A 回调: {task_id} → COMPLETED", task_id=task_id)

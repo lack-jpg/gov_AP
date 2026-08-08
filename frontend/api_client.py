@@ -7,6 +7,7 @@ frontend.api_client - FastAPI 后端 API 客户端（httpx）
 """
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, Optional
 
@@ -71,17 +72,29 @@ def health() -> Optional[dict]:
     return _get("/health", timeout=3)
 
 
-def chat(user_query: str, user_id: str = "demo_user") -> tuple[int, dict]:
+def chat(
+    user_query: str,
+    user_id: str = "demo_user",
+    conversation_id: Optional[str] = None,
+) -> tuple[int, dict]:
     """
     多 Agent 对话（POST /api/chat）。
+
+    Args:
+        user_query: 用户输入
+        user_id: 用户 ID
+        conversation_id: 会话 ID（多轮对话时携带，后端据此保留上下文）
 
     Returns:
         (status_code, response_dict)
     """
+    body: dict[str, Any] = {"user_query": user_query, "user_id": user_id}
+    if conversation_id:
+        body["conversation_id"] = conversation_id
     try:
         r = httpx.post(
             f"{BASE_URL}/api/chat",
-            json={"user_query": user_query, "user_id": user_id},
+            json=body,
             headers=_headers(),
             timeout=180,  # 真实 LLM + MCP 调用可能较慢
         )
@@ -90,6 +103,47 @@ def chat(user_query: str, user_id: str = "demo_user") -> tuple[int, dict]:
         return r.status_code, {"error": r.text[:300]}
     except Exception as e:
         return 0, {"error": str(e)}
+
+
+def chat_stream(
+    user_query: str,
+    user_id: str = "demo_user",
+    conversation_id: Optional[str] = None,
+):
+    """
+    流式对话（POST /api/chat/stream，SSE）。
+
+    yield 事件 dict:
+        {"event": "node", "node": "...", "label": "..."}   # 节点进度
+        {"event": "final", "answer": "...", "trace_id": "...", ...}
+        {"event": "error", "message": "..."}
+    """
+    body: dict[str, Any] = {"user_query": user_query, "user_id": user_id}
+    if conversation_id:
+        body["conversation_id"] = conversation_id
+    try:
+        with httpx.Client(timeout=180) as client:
+            with client.stream(
+                "POST",
+                f"{BASE_URL}/api/chat/stream",
+                json=body,
+                headers=_headers(),
+            ) as resp:
+                if resp.status_code != 200:
+                    yield {"event": "error", "message": f"HTTP {resp.status_code}"}
+                    return
+                for line in resp.iter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if not data:
+                        continue
+                    try:
+                        yield json.loads(data)
+                    except ValueError:
+                        continue
+    except Exception as e:
+        yield {"event": "error", "message": str(e)}
 
 
 def chat_with_fallback(user_query: str, user_id: str = "demo_user") -> tuple[int, dict]:
@@ -119,6 +173,29 @@ def chat_with_fallback(user_query: str, user_id: str = "demo_user") -> tuple[int
         return 0, {"error": f"后端不可用，本地 stub 模块加载失败: {e}"}
     except Exception as e:
         return 0, {"error": f"后端不可用，本地 stub 执行失败: {e}"}
+
+
+def create_conversation(user_id: str = "demo_user") -> Optional[dict]:
+    """创建多轮对话会话（POST /api/conversations）"""
+    try:
+        r = httpx.post(
+            f"{BASE_URL}/api/conversations",
+            headers=_headers(),
+            timeout=10,
+        )
+        return r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
+
+
+def list_conversations(user_id: str = "demo_user") -> dict:
+    """会话列表（GET /api/conversations）"""
+    return _get("/api/conversations") or {"items": [], "total": 0}
+
+
+def get_conversation_messages(conversation_id: str) -> dict:
+    """会话消息（GET /api/conversations/{id}/messages）"""
+    return _get(f"/api/conversations/{conversation_id}/messages") or {"messages": []}
 
 
 def dashboard_overview() -> Optional[dict]:

@@ -78,6 +78,26 @@ async def chat(
 
     # 使用客户端传入的trace_id（如果有）
     effective_trace_id = request.trace_id or trace_id
+    conversation_id = request.conversation_id or None
+
+    # 多轮对话：加载历史上下文 + 确保会话存在
+    prior_messages: list[dict] = []
+    if conversation_id:
+        try:
+            from backend.services.conversation_service import (
+                add_message,
+                create_conversation,
+                get_conversation,
+                load_history,
+            )
+
+            prior_messages = await load_history(conversation_id)
+            if await get_conversation(conversation_id) is None:
+                await create_conversation(
+                    user_id, title=request.user_query[:50], conversation_id=conversation_id,
+                )
+        except Exception:
+            prior_messages = []
 
     try:
         # 执行Agent工作流
@@ -86,6 +106,8 @@ async def chat(
             user_id=user_id,
             trace_id=effective_trace_id,
             settings=settings,
+            conversation_id=conversation_id,
+            prior_messages=prior_messages,
         )
     except Exception as e:
         logger.error(f"[{effective_trace_id}] Agent execution failed: {e}", exc_info=True)
@@ -117,8 +139,28 @@ async def chat(
 
     step_count = len(result.get("mcp_history", []))
 
+    # 多轮对话：持久化 user 问题 + assistant 回答（含 trace_id）
+    if conversation_id:
+        try:
+            from backend.services.conversation_service import (
+                add_message,
+                update_conversation_title,
+            )
+
+            await add_message(conversation_id, "user", request.user_query)
+            answer_text = result.get("final_answer", "")
+            if answer_text:
+                await add_message(conversation_id, "assistant", answer_text, trace_id=effective_trace_id)
+            # 标题默认取首条用户问题
+            conv = await get_conversation(conversation_id)
+            if conv and conv.get("title", "新对话") == "新对话":
+                await update_conversation_title(conversation_id, request.user_query[:50])
+        except Exception as e:
+            logger.warning("对话消息持久化失败: {}", e)
+
     return ChatResponse(
         trace_id=effective_trace_id,
+        conversation_id=conversation_id,
         answer=result.get("final_answer", "抱歉，未能生成回答。"),
         evidence=evidence_items,
         intent=result.get("intent", ""),
@@ -127,6 +169,128 @@ async def chat(
         elapsed_ms=elapsed,
         error=result.get("error") if result.get("error") else None,
     )
+
+
+# ============================================================
+# POST /api/chat/stream — 流式对话（SSE，节点级进度）
+# ============================================================
+
+_NODE_LABELS: dict[str, str] = {
+    "supervisor_node": "任务规划",
+    "intent_node": "意图识别",
+    "policy_node": "政策检索",
+    "material_node": "材料审核",
+    "workflow_node": "流程执行",
+    "a2a_node": "跨域协同",
+    "governance_node": "安全审查",
+}
+
+
+@router.post(
+    "/chat/stream",
+    summary="流式对话（SSE）",
+    description="以 Server-Sent Events 流式返回 Agent 工作流的节点级进度与最终回答",
+)
+async def chat_stream(
+    request: ChatRequest,
+    user_id: str = Depends(get_user_id),
+    trace_id: str = Depends(get_trace_id),
+    settings: Settings = Depends(get_config),
+):
+    """
+    流式对话端点。
+
+    SSE 事件：
+        data: {"event":"node","node":"intent_node","label":"意图识别"}
+        data: {"event":"final","answer":..., "trace_id":..., "intent":..., "elapsed_ms":...}
+        data: {"event":"error","message":...}
+    """
+    from fastapi.responses import StreamingResponse
+    from backend.api.dependencies import stream_agent
+
+    effective_trace_id = request.trace_id or trace_id
+
+    async def event_generator():
+        start = time.perf_counter()
+        try:
+            async for kind, payload in stream_agent(
+                request.user_query, user_id, effective_trace_id, settings,
+            ):
+                if kind == "node":
+                    label = _NODE_LABELS.get(payload, payload)
+                    yield f"data: {json.dumps({'event': 'node', 'node': payload, 'label': label}, ensure_ascii=False)}\n\n"
+                elif kind == "final":
+                    elapsed = (time.perf_counter() - start) * 1000
+                    final_event = {
+                        "event": "final",
+                        "trace_id": effective_trace_id,
+                        "answer": payload.get("final_answer", "抱歉，未能生成回答。"),
+                        "intent": payload.get("intent", ""),
+                        "risk_level": payload.get("risk_level", "low"),
+                        "execution_steps": len(payload.get("mcp_history", [])),
+                        "elapsed_ms": round(elapsed, 1),
+                        "evidence": payload.get("evidence", []),
+                        "error": payload.get("error"),
+                    }
+                    yield f"data: {json.dumps(final_event, ensure_ascii=False, default=str)}\n\n"
+                elif kind == "error":
+                    yield f"data: {json.dumps({'event': 'error', 'message': str(payload)}, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.error("SSE 流式对话异常: {}", e)
+            yield f"data: {json.dumps({'event': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ============================================================
+# 多轮对话会话 — 创建 / 列表 / 消息
+# ============================================================
+
+
+@router.post(
+    "/conversations",
+    summary="创建会话",
+    description="创建一个多轮对话会话，返回 conversation_id 供后续 /api/chat 关联",
+)
+async def create_conversation_endpoint(
+    user_id: str = Depends(get_user_id),
+) -> dict:
+    from backend.services.conversation_service import create_conversation
+
+    return await create_conversation(user_id)
+
+
+@router.get(
+    "/conversations",
+    summary="会话列表",
+    description="列出当前用户的多轮对话会话（按更新时间倒序）",
+)
+async def list_conversations_endpoint(
+    user_id: str = Depends(get_user_id),
+) -> dict:
+    from backend.services.conversation_service import list_conversations
+
+    items = await list_conversations(user_id)
+    return {"items": items, "total": len(items)}
+
+
+@router.get(
+    "/conversations/{conversation_id}/messages",
+    summary="会话消息",
+    description="获取指定会话的全部历史消息（按时间正序）",
+)
+async def get_conversation_messages(
+    conversation_id: str,
+    user_id: str = Depends(get_user_id),
+) -> dict:
+    from backend.services.conversation_service import list_messages
+
+    messages = await list_messages(conversation_id)
+    return {"conversation_id": conversation_id, "messages": messages}
 
 
 # ============================================================
@@ -433,11 +597,10 @@ async def _resume_agent_after_callback(
         # 从 checkpoint 恢复 state
         checkpoint_state = checkpoint_tuple.checkpoint.get("channel_values", {})
 
-        # 注入 external_result 并清除 waiting_task_id
+        # 注入 external_result；保留 waiting_task_id（a2a_node 凭它进入 resume 分支并清除）
         resumed_state = {
             **checkpoint_state,
             "external_result": artifact,
-            "waiting_task_id": "",
         }
 
         # 获取 graph 并恢复执行
@@ -520,6 +683,9 @@ async def dashboard_overview(
     except Exception:
         pass
 
+    # Token 用量 + 每 Agent 统计 + 评测趋势（供前端图表）
+    total_tokens = sum(a.total_tokens for a in agent_stats)
+
     return {
         "total_requests": total_requests,
         "success_rate": round(success_rate, 4),
@@ -527,6 +693,9 @@ async def dashboard_overview(
         "active_agents": len(agent_stats),
         "tool_call_count": tool_call_count,
         "a2a_task_count": a2a_task_count,
+        "total_tokens": total_tokens,
+        "agent_stats": [a.to_dict() for a in agent_stats],
+        "eval_trends": [e.to_dict() for e in summary.eval_trends],
     }
 
 

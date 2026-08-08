@@ -62,6 +62,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("PostgreSQL 初始化失败（将以无DB模式运行）: {}", e)
 
+    # 恢复 A2A 任务存储（重启后回调仍能定位原任务）
+    try:
+        from tools.a2a.task import get_task_store
+
+        store = get_task_store()
+        if hasattr(store, "hydrate"):
+            await store.hydrate()
+    except Exception as e:
+        logger.warning("A2A 任务存储恢复失败: {}", e)
+
     # 初始化 Redis
     try:
         from database.redis import init_redis

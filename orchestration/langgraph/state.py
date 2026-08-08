@@ -281,6 +281,10 @@ class A2ATaskRecord(BaseModel):
     source_agent: str = Field(
         description="发起任务的本系统Agent名称，如 supervisor | workflow",
     )
+    source_trace_id: str = Field(
+        default="",
+        description="发起任务的 LangGraph thread_id / trace_id，用于回调后恢复 checkpoint",
+    )
     target_agent: str = Field(
         description="目标外部Agent名称: housing_agent (不动产) | fund_agent (公积金) | ...",
     )
@@ -464,6 +468,9 @@ class AgentState(TypedDict):
     """对话消息历史（兼容LangChain message格式）。
     使用 operator.add 作为reducer，新消息追加到列表末尾"""
 
+    conversation_history: str
+    """多轮对话历史文本（最近若干轮 user/assistant），供规划与汇总 LLM 参考"""
+
     # ── 工具调用 ──
     tool_calls: Annotated[list[dict], _tool_calls_reducer]
     """Agent端的工具调用记录列表，每个元素为ToolCall模型的字典"""
@@ -474,7 +481,9 @@ class AgentState(TypedDict):
     所有MCP调用必须记录于此，用于审计和评测"""
 
     # ── A2A跨域任务 ──
-    a2a_tasks: Annotated[list[dict], _append_reducer]
+    # 注意：使用替换语义（非 append reducer）——a2a_node 追加时会读当前值拼出新列表，
+    # _handle_a2a_resume 恢复时整体替换（标记完成）；append reducer 会在恢复重放时翻倍。
+    a2a_tasks: list[dict]
     """A2A跨域任务列表，每个元素为A2ATaskRecord模型的字典"""
 
     # ── 外部队列 ──
@@ -529,6 +538,8 @@ class AgentState(TypedDict):
 def create_initial_state(
     user_query: str,
     trace_id: Optional[str] = None,
+    messages: Optional[list[dict]] = None,
+    conversation_history: str = "",
 ) -> AgentState:
     """
     创建初始AgentState。
@@ -539,6 +550,8 @@ def create_initial_state(
     Args:
         user_query: 用户原始输入
         trace_id: 链路追踪ID，不传则自动生成
+        messages: 多轮对话历史（user/assistant 消息字典列表），单轮为空
+        conversation_history: 多轮历史文本（供 LLM 规划/汇总参考）
 
     Returns:
         初始化后的AgentState
@@ -560,7 +573,8 @@ def create_initial_state(
         current_agent=AgentName.SUPERVISOR.value,
         current_node="",
         # 对话
-        messages=[],
+        messages=messages or [],
+        conversation_history=conversation_history,
         # 工具调用
         tool_calls=[],
         # MCP调用历史
@@ -1030,13 +1044,13 @@ if __name__ == "__main__":
     expected_fields = {
         "trace_id", "user_query", "intent", "intent_result",
         "task_plan", "current_agent", "current_node",
-        "messages", "tool_calls", "mcp_history",
+        "messages", "conversation_history", "tool_calls", "mcp_history",
         "a2a_tasks", "waiting_task_id", "external_result",
         "evidence", "policy_result", "material_result",
         "final_answer", "risk_level", "safety_check",
         "execution_metrics", "error", "error_history", "retry_count",
     }
-    check("AgentState has all 24 fields", set(hints.keys()) == expected_fields,
+    check("AgentState has all 25 fields", set(hints.keys()) == expected_fields,
           f"missing: {expected_fields - set(hints.keys())}, extra: {set(hints.keys()) - expected_fields}")
 
     # Annotated 字段应保留在hints中

@@ -224,8 +224,23 @@ def initialize_default_agents() -> ExternalAgentRegistry:
 
     在应用启动时调用，预注册 mock 外部 Agent。
     包含: housing_agent (不动产), fund_agent (公积金)
+
+    端点优先读配置（A2A_HOUSING_URL / A2A_FUND_URL）：
+    Docker 内指向 http://a2a-mock:12201/12202，本地默认 localhost。
     """
     registry = get_external_registry()
+
+    # 从配置读取外部 Agent 端点（默认 localhost，适配 Docker 覆盖）
+    housing_url = "http://localhost:12201"
+    fund_url = "http://localhost:12202"
+    try:
+        from backend.config import get_settings
+
+        settings = get_settings()
+        housing_url = settings.a2a_housing_url or housing_url
+        fund_url = settings.a2a_fund_url or fund_url
+    except Exception:
+        pass  # 配置不可用 → 使用默认 localhost
 
     # 不动产 Agent
     housing_card = AgentCard(
@@ -233,7 +248,7 @@ def initialize_default_agents() -> ExternalAgentRegistry:
         display_name="不动产系统Agent",
         description="提供不动产登记查询、产权核验等服务",
         skills=["query_property", "register_property"],
-        endpoint="http://localhost:12201",
+        endpoint=housing_url,
         version="0.1.0",
         timeout_ms=15000,
     )
@@ -246,7 +261,7 @@ def initialize_default_agents() -> ExternalAgentRegistry:
         display_name="公积金系统Agent",
         description="提供公积金余额查询、提取记录查询等服务",
         skills=["query_fund", "query_fund_detail"],
-        endpoint="http://localhost:12202",
+        endpoint=fund_url,
         version="0.1.0",
         timeout_ms=10000,
     )

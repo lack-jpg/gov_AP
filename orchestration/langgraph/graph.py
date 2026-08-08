@@ -152,6 +152,7 @@ def build_graph(
             "policy_node": "policy_node",
             "material_node": "material_node",
             "workflow_node": "workflow_node",
+            "a2a_node": "a2a_node",
             "governance_node": "governance_node",
             "supervisor_node": "supervisor_node",  # 可能需要重新规划
         },
@@ -170,6 +171,7 @@ def build_graph(
                 "policy_node": "policy_node",
                 "material_node": "material_node",
                 "workflow_node": "workflow_node",
+                "a2a_node": "a2a_node",
                 "governance_node": "governance_node",
                 "supervisor_node": "supervisor_node",
             },

@@ -113,13 +113,28 @@ async def get_a2a_connector():
         return _a2a_connector
 
     try:
-        from tools.a2a.connector import get_a2a_connector as _get_connector
+        from backend.config import get_settings
+        from tools.a2a.connector import A2AConnector
         from tools.a2a.registry import initialize_default_agents
+        from tools.a2a.task import get_task_store
 
-        # 初始化默认外部 Agent 注册
+        settings = get_settings()
+
+        # 初始化默认外部 Agent 注册（端点从 A2A_HOUSING_URL / A2A_FUND_URL 读取）
         initialize_default_agents()
 
-        _a2a_connector = _get_connector()
+        # 任务存储持久化恢复（重启后回调仍能定位原任务）
+        store = get_task_store()
+        if hasattr(store, "hydrate"):
+            try:
+                await store.hydrate()
+            except Exception:
+                pass  # DB 不可用时静默降级为内存
+
+        _a2a_connector = A2AConnector(
+            task_store=store,
+            default_callback_url=settings.a2a_callback_url,
+        )
         return _a2a_connector
     except ImportError:
         return None
@@ -183,13 +198,13 @@ async def get_agent_graph(
     # 惰性构建
     from orchestration.langgraph.graph import build_graph
 
-    # 如果有LLM配置，构建带LLM的Graph
+    # 如果有LLM配置，构建带LLM的Graph（CachingChatOpenAI 带响应缓存：相同问题复用结果）
     llm = None
     if settings.llm_api_key:
         try:
-            from langchain_openai import ChatOpenAI
             from governance.callbacks import TokenUsageCallback
-            llm = ChatOpenAI(
+            from governance.llm_cache import CachingChatOpenAI
+            llm = CachingChatOpenAI(
                 base_url=settings.llm_api_url,
                 api_key=settings.llm_api_key,
                 model=settings.llm_model,
@@ -247,6 +262,8 @@ async def execute_agent(
     user_id: str,
     trace_id: str,
     settings: Settings,
+    conversation_id: Optional[str] = None,
+    prior_messages: Optional[list[dict]] = None,
 ) -> dict:
     """
     执行一次完整的Agent工作流。
@@ -264,6 +281,8 @@ async def execute_agent(
         user_id: 用户ID
         trace_id: 链路追踪ID
         settings: 应用配置
+        conversation_id: 会话ID（多轮对话用，作为 LangGraph thread_id 保持上下文）
+        prior_messages: 历史对话消息（[{role, content}]），注入 messages 供 LLM 参考
 
     Returns:
         执行后的AgentState字典
@@ -277,16 +296,30 @@ async def execute_agent(
         RuntimeLoopDetectedError,
     )
 
-    # 创建初始State
-    initial_state = create_initial_state(user_query=user_query, trace_id=trace_id)
+    # 多轮历史 → 文本上下文（供规划/汇总 LLM 参考）
+    conversation_history = ""
+    if prior_messages:
+        try:
+            from backend.services.conversation_service import format_history_text
+            conversation_history = format_history_text(prior_messages)
+        except Exception:
+            conversation_history = ""
+
+    # 创建初始State（携带多轮消息与历史文本）
+    initial_state = create_initial_state(
+        user_query=user_query,
+        trace_id=trace_id,
+        messages=prior_messages or [],
+        conversation_history=conversation_history,
+    )
 
     # 获取Graph
     graph = await get_agent_graph(settings)
 
-    # 运行时安全护栏
+    # 运行时安全护栏（多轮时 thread_id 用 conversation_id，保持 LangGraph 会话上下文）
     config = {
         "configurable": {
-            "thread_id": trace_id,
+            "thread_id": conversation_id or trace_id,
             "user_id": user_id,
         },
     }
@@ -365,3 +398,67 @@ async def execute_agent(
             "risk_level": "high",
             "error": str(e),
         }
+
+
+# ============================================================
+# Streaming Executor — SSE 节点级流式输出
+# ============================================================
+
+
+async def stream_agent(
+    user_query: str,
+    user_id: str,
+    trace_id: str,
+    settings: Settings,
+):
+    """
+    流式执行 Agent 工作流（供 /api/chat/stream SSE 使用）。
+
+    yield (kind, payload):
+        ("node", node_name)  — 每个 LangGraph 节点进入（state.current_node）
+        ("final", state)     — 最终 AgentState（含 final_answer 等）
+        ("error", message)   — 执行失败
+
+    用 graph.astream(stream_mode="values")：每个 superstep 产出完整状态，
+    既拿节点名，又拿最终状态，避免重复执行。
+    """
+    from orchestration.langgraph.state import create_initial_state
+    from orchestration.langgraph.runtime import create_runtime_from_settings
+
+    initial_state = create_initial_state(user_query=user_query, trace_id=trace_id)
+    graph = await get_agent_graph(settings)
+    config = {
+        "configurable": {
+            "thread_id": trace_id,
+            "user_id": user_id,
+        },
+    }
+
+    # ── 输入护栏：在 LLM 调用前检查 ──
+    try:
+        from governance.guardrail import GuardrailRunner
+        input_check = GuardrailRunner().run_input(user_query)
+    except Exception:
+        input_check = None
+    if input_check is not None and input_check.blocked:
+        yield ("final", {
+            **initial_state,
+            "final_answer": "抱歉，您的输入包含不安全内容，系统已自动拦截。",
+            "risk_level": "high",
+            "safety_check": input_check.to_dict(),
+        })
+        return
+
+    try:
+        final_state = None
+        async for state in graph.astream(initial_state, config=config, stream_mode="values"):
+            node_name = state.get("current_node", "") or ""
+            if node_name:
+                yield ("node", node_name)
+            final_state = state
+        yield ("final", final_state if final_state is not None else initial_state)
+    except Exception as e:
+        from tools.logger import get_logger as _get_logger
+        _logger = _get_logger(__name__)
+        _logger.error("Stream agent 执行异常 (trace={}): {}", trace_id, e, exc_info=True)
+        yield ("error", str(e))

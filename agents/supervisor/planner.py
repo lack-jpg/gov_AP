@@ -139,6 +139,10 @@ class Planner:
         """从State中提取上下文信息，注入Prompt"""
         parts: list[str] = []
 
+        history = state.get("conversation_history", "")
+        if history:
+            parts.append(f"多轮对话历史:\n{history}")
+
         intent = state.get("intent", "")
         if intent:
             parts.append(f"已识别意图: {intent}")
@@ -237,12 +241,16 @@ class Planner:
             "fund_query": [
                 {"type": "search_policy", "agent": "policy",
                  "description": "查询公积金政策", "priority": 10},
+                {"type": "create_case", "agent": "workflow",
+                 "description": "创建公积金查询办件（触发外部公积金 Agent 协同）", "priority": 0},
             ],
             "property_service": [
                 {"type": "search_policy", "agent": "policy",
                  "description": "查询不动产相关政策", "priority": 10},
                 {"type": "check_material", "agent": "material",
                  "description": "检查不动产办理材料", "priority": 5},
+                {"type": "create_case", "agent": "workflow",
+                 "description": "创建不动产查询办件（触发外部不动产 Agent 协同）", "priority": 0},
             ],
             "business_register": [
                 {"type": "search_policy", "agent": "policy",

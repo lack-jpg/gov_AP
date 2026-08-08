@@ -8,6 +8,7 @@ Task: Implement checkpoint save/restore for long-running and A2A workflows
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any, Optional, Iterator, AsyncIterator
@@ -253,11 +254,12 @@ class PostgresCheckpointer(BaseCheckpointSaver):
 
         Args:
             thread_id: LangGraph thread_id
-            checkpoint_id: 当前 checkpoint
+            checkpoint_id: 兼容参数（已弃用，改为按 thread 取最新 checkpoint）
             a2a_task_id: 外部 A2A 任务 ID
         """
         async with self._session_factory() as session:
-            row = await self._get_checkpoint_by_id(session, thread_id, checkpoint_id)
+            # 使用该 thread 的最新 checkpoint（checkpoint_id 参数仅用于兼容旧调用方）
+            row = await self._get_latest_checkpoint(session, thread_id)
             if row and row.metadata_json:
                 try:
                     meta = json.loads(row.metadata_json)
@@ -272,31 +274,64 @@ class PostgresCheckpointer(BaseCheckpointSaver):
     async def resume_from_a2a(
         self,
         a2a_task_id: str,
+        *,
+        max_retries: int = 10,
+        retry_delay: float = 0.2,
     ) -> Optional[CheckpointTuple]:
         """
         根据 A2A task_id 查找并恢复挂起的 checkpoint。
 
+        路径: a2a_task 表按 task_id 取 source_trace_id(thread_id)
+              → 取该 thread 的最新 checkpoint（aput 在节点执行后写入）
+
+        带重试: 回调可能早于「post-node checkpoint 落库」到达，轮询等待
+        channel_values.waiting_task_id == task_id 后返回，避免恢复陈旧 checkpoint
+        导致 A2A 任务被重复发送。
+
         Args:
             a2a_task_id: 外部 A2A 任务 ID
+            max_retries: 最大重试次数
+            retry_delay: 每次重试间隔（秒）
 
         Returns:
             挂起的 CheckpointTuple 或 None
         """
-        async with self._session_factory() as session:
-            # 在所有 checkpoint 中搜索 a2a_task_id
-            stmt = (
-                select(_CheckpointRow)
-                .where(_CheckpointRow.metadata_json.contains(a2a_task_id))
-                .order_by(_CheckpointRow.checkpoint_id.desc())
-                .limit(1)
+        # 从任务存储取 source_trace_id（== LangGraph thread_id）
+        try:
+            from tools.a2a.task import get_task_store
+
+            record = get_task_store().get(a2a_task_id)
+        except Exception as e:
+            _cp_logger.warning("resume_from_a2a: 读取任务存储失败: {}", e)
+            return None
+
+        thread_id = (record.source_trace_id if record else "") or ""
+        if not thread_id:
+            _cp_logger.warning(
+                "resume_from_a2a: 任务 {task_id} 缺少 source_trace_id，无法定位 checkpoint",
+                task_id=a2a_task_id,
             )
-            result = await session.execute(stmt)
-            row = result.scalar_one_or_none()
+            return None
 
-            if row is None:
-                return None
+        for attempt in range(max_retries):
+            async with self._session_factory() as session:
+                row = await self._get_latest_checkpoint(session, thread_id)
 
-            return self._row_to_tuple(row)
+            if row is not None:
+                tup = self._row_to_tuple(row)
+                channel_values = tup.checkpoint.get("channel_values", {})
+                if channel_values.get("waiting_task_id") == a2a_task_id:
+                    return tup
+                # 最新 checkpoint 尚未包含 waiting_task_id（回调早于 aput）→ 稍后重试
+
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+
+        _cp_logger.warning(
+            "resume_from_a2a: 等待 {task_id} 的 checkpoint 超时（{n} 次），放弃恢复",
+            task_id=a2a_task_id, n=max_retries,
+        )
+        return None
 
     # ── 内部 ──
 
@@ -321,7 +356,7 @@ class PostgresCheckpointer(BaseCheckpointSaver):
         stmt = (
             select(_CheckpointRow)
             .where(_CheckpointRow.thread_id == thread_id)
-            .order_by(_CheckpointRow.checkpoint_id.desc())
+            .order_by(_CheckpointRow.id.desc())  # 自增 id 保证「最新写入」语义
             .limit(1)
         )
         result = await session.execute(stmt)

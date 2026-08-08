@@ -114,6 +114,10 @@ class ChatResponse(BaseModel):
     trace_id: str = Field(
         description="本次请求的链路追踪ID",
     )
+    conversation_id: Optional[str] = Field(
+        default=None,
+        description="多轮对话会话ID（单轮请求为None）",
+    )
     answer: str = Field(
         description="多Agent协同产生的最终回答（自然语言）",
     )

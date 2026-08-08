@@ -374,3 +374,137 @@ class Checkpoint(Base):
 
     def __repr__(self) -> str:
         return f"<Checkpoint(id={self.checkpoint_id!r}, task={self.task_id!r}, status={self.status!r})>"
+
+
+# ============================================================
+# A2ATask 表 — A2A 跨域任务状态持久化
+# ============================================================
+
+
+class A2ATask(Base):
+    """A2A 跨域任务记录（TaskStore 的 PostgreSQL 持久化层）"""
+
+    __tablename__ = "a2a_task"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    task_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True,
+        comment="A2A 任务唯一标识 (a2a_xxxxxxxx)，与 A2ATaskRecord.task_id 对应",
+    )
+    source_agent: Mapped[str] = mapped_column(
+        String(64), nullable=False,
+        comment="发起任务的本系统 Agent 名称",
+    )
+    source_trace_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, default="", index=True,
+        comment="发起任务的 LangGraph thread_id / trace_id，用于回调后恢复 checkpoint",
+    )
+    target_agent: Mapped[str] = mapped_column(
+        String(64), nullable=False,
+        comment="目标外部 Agent 名称",
+    )
+    skill: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True,
+        comment="调用的外部 Agent 技能",
+    )
+
+    # ── 数据 ──
+    input_json: Mapped[dict | None] = mapped_column(
+        JSON, nullable=False, default=dict,
+        comment="发送给外部 Agent 的请求参数",
+    )
+    artifact: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True,
+        comment="外部 Agent 返回的结果数据",
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text, nullable=True,
+        comment="任务失败或超时时的错误信息",
+    )
+
+    # ── 状态 ──
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="created", index=True,
+        comment="A2ATaskStatus.value: created | submitted | working | completed | failed | timeout",
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+
+    def __repr__(self) -> str:
+        return f"<A2ATask(id={self.task_id!r}, status={self.status!r}, skill={self.skill!r})>"
+
+
+# ============================================================
+# Conversation 表 — 多轮对话会话
+# ============================================================
+
+
+class Conversation(Base):
+    """多轮对话会话（前端会话列表 + 历史消息关联）"""
+
+    __tablename__ = "conversation"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    conversation_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True,
+        comment="会话唯一标识 (conv_xxx)，前端/多轮对话使用",
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True,
+        comment="归属用户 ID",
+    )
+    title: Mapped[str] = mapped_column(
+        String(256), nullable=False, default="新对话",
+        comment="会话标题（默认取首条用户问题）",
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow,
+        onupdate=_utcnow,
+    )
+
+    def __repr__(self) -> str:
+        return f"<Conversation(id={self.conversation_id!r}, user={self.user_id!r})>"
+
+
+# ============================================================
+# ConversationMessage 表 — 对话消息
+# ============================================================
+
+
+class ConversationMessage(Base):
+    """单条对话消息（user / assistant）"""
+
+    __tablename__ = "conversation_message"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    conversation_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True,
+    )
+    role: Mapped[str] = mapped_column(
+        String(16), nullable=False,
+        comment="user | assistant",
+    )
+    content: Mapped[str] = mapped_column(
+        Text, nullable=False,
+    )
+    trace_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow,
+    )
+
+    def __repr__(self) -> str:
+        return f"<ConversationMessage(conv={self.conversation_id!r}, role={self.role!r})>"

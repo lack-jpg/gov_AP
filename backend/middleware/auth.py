@@ -124,8 +124,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app, **kwargs)
 
     async def dispatch(self, request: Request, call_next):
-        # 跳过健康检查和文档端点
-        if request.url.path in ("/health", "/docs", "/redoc", "/openapi.json"):
+        # 跳过健康检查、文档端点和 A2A 外部回调（回调用 HMAC 签名校验，而非 JWT）
+        if request.url.path in (
+            "/health", "/docs", "/redoc", "/openapi.json", "/api/a2a/callback",
+        ):
             return await call_next(request)
 
         # 优先 JWT Bearer Token

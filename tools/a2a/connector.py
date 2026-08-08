@@ -60,16 +60,19 @@ class A2AConnector:
         registry: Optional[ExternalAgentRegistry] = None,
         task_store: Optional[TaskStore] = None,
         http_timeout: float = 30.0,
+        default_callback_url: str = "",
     ):
         """
         Args:
             registry: 外部 Agent 注册中心
             task_store: 任务存储
             http_timeout: HTTP 请求超时时间（秒）
+            default_callback_url: 默认回调地址（外部 Agent 完成后回调），send_task 未显式指定时使用
         """
         self._registry = registry or get_external_registry()
         self._task_store = task_store or get_task_store()
         self._http_timeout = http_timeout
+        self._default_callback_url = default_callback_url
         self._http_client: Optional[httpx.AsyncClient] = None
 
     @property
@@ -148,18 +151,19 @@ class A2AConnector:
         # 创建任务记录
         task_record = A2ATaskRecord(
             source_agent="workflow",
+            source_trace_id=source_trace_id,
             target_agent=target.name,
             skill=skill,
             input=input_data,
         )
         tsm = self._task_store.create(task_record)
 
-        # 创建请求
+        # 创建请求（未显式指定 callback_url 时使用 Connector 默认值）
         request = A2ATaskRequest(
             task_id=task_record.task_id,
             skill=skill,
             input=input_data,
-            callback_url=callback_url,
+            callback_url=callback_url or self._default_callback_url,
             source_trace_id=source_trace_id,
             timeout_ms=target.timeout_ms,
         )
@@ -169,14 +173,7 @@ class A2AConnector:
             try:
                 result = await self._send_http(request, target)
                 if result is not None:
-                    tsm.submit()
-                    return {
-                        "task_id": task_record.task_id,
-                        "status": "submitted",
-                        "agent_name": target.name,
-                        "artifact": None,  # 异步模式，等待回调
-                        "mode": "http",
-                    }
+                    return self._handle_http_response(result, target, tsm)
             except Exception as e:
                 logger.warning("HTTP 发送失败 ({})，fallback to stub: {}", target.name, e)
 
@@ -236,6 +233,57 @@ class A2AConnector:
 
     # ── 内部实现 ──
 
+    def _handle_http_response(
+        self,
+        result: dict[str, Any],
+        target: AgentCard,
+        tsm: TaskStateMachine,
+    ) -> dict[str, Any]:
+        """
+        解析外部 Agent 的 A2ATaskResponse，把真实状态反映到任务记录。
+
+        三种情况:
+            - completed → 同步完成，直接返回 artifact（无需等待回调）
+            - failed    → 同步失败
+            - 其他（submitted/working）→ 异步模式，等待回调后恢复
+        """
+        resp_status = result.get("status", "submitted")
+
+        if resp_status == "completed":
+            artifact = result.get("artifact") or {}
+            tsm.submit()
+            tsm.start_working()
+            tsm.complete(artifact)
+            return {
+                "task_id": tsm.task_id,
+                "status": "completed",
+                "agent_name": target.name,
+                "artifact": artifact,
+                "mode": "http",
+            }
+
+        if resp_status == "failed":
+            tsm.submit()
+            tsm.start_working()
+            tsm.fail(result.get("error_message") or "external agent failed")
+            return {
+                "task_id": tsm.task_id,
+                "status": "failed",
+                "agent_name": target.name,
+                "artifact": None,
+                "mode": "http",
+            }
+
+        # submitted / working → 异步模式，等待回调
+        tsm.submit()
+        return {
+            "task_id": tsm.task_id,
+            "status": "submitted",
+            "agent_name": target.name,
+            "artifact": None,
+            "mode": "http",
+        }
+
     async def _send_http(
         self,
         request: A2ATaskRequest,
@@ -266,7 +314,10 @@ class A2AConnector:
             status=response.status_code,
         )
 
-        return response.json()
+        try:
+            return response.json()
+        except ValueError:
+            return {"status": "submitted"}
 
     async def _send_stub(
         self,

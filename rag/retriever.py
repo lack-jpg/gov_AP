@@ -37,9 +37,16 @@ class HybridRetriever:
         docs = await retriever.hybrid_search(query, query_embedding, top_k=5)
     """
 
-    def __init__(self, milvus_host: str = "localhost", milvus_port: int = 19530):
-        self._milvus_host = milvus_host
-        self._milvus_port = milvus_port
+    def __init__(self, milvus_host: str = "", milvus_port: int = 0):
+        # 读配置（MILVUS_HOST / MILVUS_PORT，默认 localhost:19532），空值用默认
+        try:
+            from backend.config import get_settings
+            settings = get_settings()
+            self._milvus_host = milvus_host or settings.milvus_host or "localhost"
+            self._milvus_port = milvus_port or int(settings.milvus_port) or 19530
+        except Exception:
+            self._milvus_host = milvus_host or "localhost"
+            self._milvus_port = milvus_port or 19530
         self._milvus_client = None  # pymilvus Collection
         self._milvus_connected = False
         self._bm25 = None  # _SimpleBM25
@@ -149,10 +156,16 @@ class HybridRetriever:
             from pymilvus import Collection
 
             def _search() -> list[dict]:
+                nprobe = 10
+                try:
+                    from backend.config import get_settings
+                    nprobe = int(get_settings().milvus_search_nprobe) or 10
+                except Exception:
+                    pass
                 results = self._milvus_client.search(
                     data=[query_embedding.tolist()],
                     anns_field="embedding",
-                    param={"metric_type": "COSINE", "params": {"nprobe": 10}},
+                    param={"metric_type": "COSINE", "params": {"nprobe": nprobe}},
                     limit=top_k,
                     output_fields=["title", "content", "source"],
                 )

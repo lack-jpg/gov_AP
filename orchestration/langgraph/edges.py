@@ -81,6 +81,11 @@ def route_after_supervisor(state: AgentState) -> str:
                     return NodeName.WORKFLOW.value
 
     # 第四步：全部完成
+    # 跨域查询（不动产/公积金）→ 先做 A2A 外部 Agent 协同（未执行过，或回调恢复待消费）
+    if _needs_a2a(intent, state.get("user_query", "")) and (
+        not state.get("a2a_tasks") or state.get("external_result")
+    ):
+        return NodeName.A2A_CHECK.value
     # 如果尚未合成最终答案 → 回supervisor合成
     # 如果已经有final_answer → governance安全检查
     if not state.get("final_answer", ""):
@@ -221,7 +226,7 @@ def route_after_a2a(state: AgentState) -> str:
     A2A 节点之后的路由。
 
     - 如果设置了 waiting_task_id → 挂起（END），等待外部回调
-    - 如果 A2A 任务全部完成 → governance_node
+    - 如果 A2A 任务全部完成 → supervisor（汇总最终答案，含外部 Agent 结果）
     - 如果出错 → supervisor
 
     Args:
@@ -240,8 +245,8 @@ def route_after_a2a(state: AgentState) -> str:
     if state.get("error", ""):
         return NodeName.SUPERVISOR.value
 
-    # A2A 完成 → 安全检查
-    return NodeName.GOVERNANCE.value
+    # A2A 完成 → 回 supervisor 合成最终答案（含外部 Agent 数据），再走治理
+    return NodeName.SUPERVISOR.value
 
 
 # ============================================================
