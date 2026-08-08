@@ -124,6 +124,23 @@ class A2ACallbackHandler:
                 detail=f"Invalid status: {status_str}. Valid: {[s.value for s in A2ATaskStatus]}",
             )
 
+        # 幂等：终态收到相同的终态回调（重复/重试）→ 视为成功 no-op，不重复恢复
+        if (
+            new_status in (A2ATaskStatus.COMPLETED, A2ATaskStatus.FAILED, A2ATaskStatus.TIMEOUT)
+            and tsm.status == new_status
+        ):
+            logger.info(
+                "A2A 回调幂等命中: {task_id} 已是 {status}，忽略重复回调",
+                task_id=task_id, status=new_status.value,
+            )
+            return {
+                "success": True,
+                "message": f"Callback already {new_status.value} (idempotent no-op)",
+                "task_id": task_id,
+                "checkpoint_resumed": False,
+                "final_state": None,
+            }
+
         # 3. 更新任务状态
         try:
             # 兼容外部 Agent 未单独通知 WORKING 的情况（submitted → completed/failed）
