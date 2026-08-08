@@ -6,7 +6,7 @@
 
 > 注意：前端界面全部由AI生成，请勿直接复制。
 
-> **最近更新（2026-08-08）**：A2A 真实系统对接（HTTP 回调链路 + `a2a_task` 持久化 + Docker 化）+ 性能优化（LLM 响应缓存 18.4s→0.26s、Milvus HNSW 索引、SSE 流式输出）+ 前端完善（多轮对话、历史会话持久化、看板可视化图表）+ 前端中文显示修复（隐藏 Streamlit 原生英文 UI + 意图标签中文化 + LLM 输出强制中文）。详见 [更新日志](#20-更新日志)。
+> **最近更新（2026-08-08）**：A2A 真实系统对接（HTTP 回调链路 + `a2a_task` 持久化 + Docker 化）+ 性能优化（LLM 响应缓存 18.4s→0.26s、Milvus HNSW 索引、SSE 流式输出）+ 前端完善（多轮对话、历史会话持久化、看板可视化图表 + 中文显示修复）+ 测试覆盖（174 pytest + 端到端 23/23）。详见 [更新日志](#20-更新日志)。
 
 ---
 
@@ -1843,10 +1843,11 @@ Docker 容器内 LangGraph 版本升级导致 4 项 API 不兼容，已全部适
 ### 验证
 
 ```
-pytest: 78/78 passed
+pytest: 174/174 passed（截至 2026-08-08）
 guardrail: 45/45 passed
 state: 117/117 passed
 a2a: 15/15 passed
+端到端集成: 23/23 passed（docker 全栈）
 logger smoke: 20/20 passed
 chat e2e: restaurant_license / risk=low / 200 OK
 dashboard: total_requests=6, success_rate=1.0, active_agents=4
