@@ -38,8 +38,8 @@ if health:
 else:
     ui.status_card(
         False,
-        "API 服务未启动（http://localhost:8002）",
-        "请运行 `docker compose up -d` 或 `uvicorn backend.main:app --port 8002`",
+        "API 服务未启动（http://localhost:12401）",
+        "请运行 `docker compose up -d` 或 `uvicorn backend.main:app --port 12401`",
     )
 
 overview = api_client.dashboard_overview()

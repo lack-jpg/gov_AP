@@ -56,9 +56,9 @@ class Settings(BaseSettings):
         description="FastAPI监听地址",
     )
     port: int = Field(
-        default=8002,
+        default=12401,
         alias="APP_PORT",
-        description="FastAPI监听端口（默认 8002，避免与本地 8000 冲突）",
+        description="FastAPI监听端口（端口规范：其他组 12401 起）",
     )
     frontend_port: int = Field(
         default=12345,
@@ -156,10 +156,10 @@ class Settings(BaseSettings):
         description="PostgreSQL主机地址",
     )
     postgres_port: int = Field(
-        default=5658,
+        default=12221,
         alias="POSTGRES_PORT",
         description=(
-            "PostgreSQL端口。本地开发用宿主端口 5658（docker compose 映射），"
+            "PostgreSQL端口。数据库组 12221（docker compose 映射），"
             "容器内运行时设为 5432（服务名 postgres）"
         ),
     )
@@ -202,10 +202,10 @@ class Settings(BaseSettings):
         description="Redis主机地址",
     )
     redis_port: int = Field(
-        default=6500,
+        default=12201,
         alias="REDIS_PORT",
         description=(
-            "Redis端口。本地开发用宿主端口 6500（docker compose 映射），"
+            "Redis端口。数据库组 12201（docker compose 映射），"
             "容器内运行时设为 6379（服务名 redis）"
         ),
     )
@@ -229,10 +229,10 @@ class Settings(BaseSettings):
         description="Milvus主机地址",
     )
     milvus_port: int = Field(
-        default=19532,
+        default=12211,
         alias="MILVUS_PORT",
         description=(
-            "Milvus端口。本地开发用宿主端口 19532（docker compose 映射），"
+            "Milvus端口。数据库组 12211（docker compose 映射），"
             "容器内运行时设为 19530（服务名 milvus）"
         ),
     )
@@ -276,26 +276,26 @@ class Settings(BaseSettings):
 
     # ── MCP ──
     mcp_gateway_url: str = Field(
-        default="http://localhost:12300",
+        default="http://localhost:12001",
         alias="MCP_GATEWAY_URL",
-        description="MCP Gateway地址（12300 起，Policy/Material/Workflow Server 依次递增）",
+        description="MCP Gateway地址（MCP 组 12001，Policy/Material/Workflow 依次 +10）",
     )
 
     # ── A2A ──
     a2a_callback_url: str = Field(
-        default="http://localhost:8002/api/a2a/callback",
+        default="http://localhost:12401/api/a2a/callback",
         alias="A2A_CALLBACK_URL",
-        description="A2A Callback接收地址（本地 API 8002 或 Docker 内 http://api:8002），外部Agent完成回调",
+        description="A2A Callback接收地址（本地 API 12401 或 Docker 内 http://api:12401），外部Agent完成回调",
     )
     a2a_housing_url: str = Field(
-        default="http://localhost:12201",
+        default="http://localhost:12101",
         alias="A2A_HOUSING_URL",
-        description="不动产外部 Agent 地址（12201；Docker 内为 http://a2a-mock:12201）",
+        description="不动产外部 Agent 地址（A2A 组 12101；Docker 内为 http://a2a-mock:12101）",
     )
     a2a_fund_url: str = Field(
-        default="http://localhost:12202",
+        default="http://localhost:12111",
         alias="A2A_FUND_URL",
-        description="公积金外部 Agent 地址（12202；Docker 内为 http://a2a-mock:12202）",
+        description="公积金外部 Agent 地址（A2A 组 12111；Docker 内为 http://a2a-mock:12111）",
     )
     a2a_hmac_secret: str = Field(
         default="",
@@ -340,8 +340,8 @@ class Settings(BaseSettings):
 
     # ── CORS ──
     cors_origins: str = Field(
-        default="http://localhost:12345,http://localhost:3000",
-        description="允许的CORS origins，多个用逗号分隔。默认仅允许开发常用端口",
+        default="http://localhost:12345,http://localhost:12421",
+        description="允许的CORS origins，多个用逗号分隔。默认前端 12345 + Grafana 12421",
     )
 
     def get_cors_origins(self) -> list[str]:

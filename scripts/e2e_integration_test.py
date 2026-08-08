@@ -26,7 +26,7 @@ import sys
 
 import httpx
 
-API = "http://127.0.0.1:8002"
+API = "http://127.0.0.1:12401"
 HEADERS = {
     "X-User-Id": "demo_user",
     "X-User-Role": "admin",

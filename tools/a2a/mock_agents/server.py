@@ -7,14 +7,14 @@ Version: 0.1
 Task: Expose housing_agent / fund_agent as FastAPI HTTP endpoints for real A2A over HTTP
 
 端口约定:
-    12201 — housing_agent（不动产系统）
-    12202 — fund_agent（公积金系统）
+    12101 — housing_agent（不动产系统）
+    12111 — fund_agent（公积金系统）
 
 与 tools.a2a.registry.initialize_default_agents() 中注册的 endpoint 一致。
 
 Usage:
     python -m tools.a2a.mock_agents.server                # 启动全部
-    python -m tools.a2a.mock_agents.server --housing-port 12201
+    python -m tools.a2a.mock_agents.server --housing-port 12101
 """
 from __future__ import annotations
 
@@ -204,8 +204,8 @@ def create_mock_server(agent, agent_name: str, port: int) -> FastAPI:
 
 
 def build_apps(
-    housing_port: int = 12201,
-    fund_port: int = 12202,
+    housing_port: int = 12101,
+    fund_port: int = 12111,
 ) -> dict[str, FastAPI]:
     """
     构建 Housing + Fund 两个 Mock Server app。
@@ -233,8 +233,8 @@ def build_apps(
 
 
 async def start_servers(
-    housing_port: int = 12201,
-    fund_port: int = 12202,
+    housing_port: int = 12101,
+    fund_port: int = 12111,
 ) -> None:
     """
     启动所有 Mock Server（一个进程内多个 uvicorn 实例）。
@@ -267,8 +267,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Start A2A Mock HTTP Servers (housing_agent + fund_agent)",
     )
-    parser.add_argument("--housing-port", type=int, default=12201)
-    parser.add_argument("--fund-port", type=int, default=12202)
+    parser.add_argument("--housing-port", type=int, default=12101)
+    parser.add_argument("--fund-port", type=int, default=12111)
     args = parser.parse_args()
 
     try:

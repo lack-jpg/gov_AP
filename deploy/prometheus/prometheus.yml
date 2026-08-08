@@ -6,10 +6,20 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# 告警规则
+rule_files:
+  - /etc/prometheus/alert_rules.yml
+
+# Alertmanager
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
 scrape_configs:
   - job_name: "gov-agent-api"
     metrics_path: /metrics
     static_configs:
-      - targets: ["api:8002"]
+      - targets: ["api:12401"]
         labels:
           service: "gov-agent-api"

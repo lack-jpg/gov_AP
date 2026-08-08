@@ -33,7 +33,7 @@ class MCPClient:
     架构: Agent → MCPClient → MCP Gateway → MCP Server → Business Logic
 
     使用方式:
-        client = MCPClient(gateway_url="http://localhost:12300")
+        client = MCPClient(gateway_url="http://localhost:12001")
         tools = await client.list_tools("policy_server")
         result = await client.call_tool("policy_server", "search_policy", {"query": "..."})
 
@@ -45,14 +45,14 @@ class MCPClient:
     # ── Server → Gateway 端口映射 ──
     # 当 Gateway 不可用时，Client 可以直连 Server（fallback）
     SERVER_PORTS: dict[str, int] = {
-        "policy_server": 12301,
-        "material_server": 12302,
-        "workflow_server": 12303,
+        "policy_server": 12011,
+        "material_server": 12021,
+        "workflow_server": 12031,
     }
 
     def __init__(
         self,
-        gateway_url: str = "http://localhost:12300",
+        gateway_url: str = "http://localhost:12001",
         timeout: float = 30.0,
         auth_token: str = "",
     ):

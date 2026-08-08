@@ -9,16 +9,15 @@
 # 密码从同目录 .env 读取（POSTGRES_PASSWORD / REDIS_PASSWORD），
 # 不再硬编码。
 #
-# 端口约定（宿主端口，通过 .env / ${VAR:-default} 可覆盖）:
-#   Frontend    12345
-#   API         8002
-#   MCP Gateway 12300 | Servers 12301-12303
-#   A2A Mock    12201 housing | 12202 fund
-#   PostgreSQL  5658  (避开 Hyper-V 保留区间 5358-5457)
-#   Redis       6500  (避开 Windows 保留端口区间 6380-6479)
-#   Milvus      19532 (标准端口 19530 + 2，避免本地冲突)
+# 端口约定（宿主端口，通过 .env / ${VAR:-default} 可覆盖；组内 +10 步进，中间留 9 空位）:
+#   MCP       12001 Gateway | 12011 Policy | 12021 Material | 12031 Workflow
+#   A2A       12101 housing | 12111 fund
+#   DB        12201 Redis | 12211 Milvus | 12221 Postgres
+#   Frontend  12345
+#   其他      12401 API | 12411 Prometheus | 12421 Grafana | 12431 Alertmanager
 #
-# 重要：容器内服务间通信使用内部端口（PostgreSQL:5432, Redis:6379, Milvus:19530）
+# 重要：容器内服务间通信使用内部端口（PostgreSQL:5432, Redis:6379, Milvus:19530,
+#        MCP 12001-12031, A2A 12101/12111, API 12401）
 #        config.py 中的默认端口用于本地开发环境（直连宿主机）
 #
 # Usage:
@@ -31,7 +30,7 @@
 services:
 
   # ──────────────────────────────────────
-  # API — FastAPI Backend (端口 8002)
+  # API — FastAPI Backend (端口 12401)
   # ──────────────────────────────────────
   api:
     build:
@@ -40,16 +39,16 @@ services:
     container_name: gov_agent_api
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8002}:8002"
+      - "${APP_PORT:-12401}:12401"
     environment:
-      APP_PORT: 8002
+      APP_PORT: 12401
       # LLM（从 .env 注入，密钥不写入镜像）
       # 注意：容器内 localhost 指向容器自身！Docker Desktop 访问宿主机应用 host.docker.internal
       # 或设置环境变量 LLM_API_URL=http://192.168.x.x:8000/v1 指向宿主机/LLM 服务 IP
       LLM_API_URL: ${LLM_API_URL:-http://host.docker.internal:8000/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-qwen2.5-14b-instruct}
-      # 容器间通过服务名通信
+      # 容器间通过服务名通信（容器内端口）
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_USER: ${POSTGRES_USER:-gov_agent}
@@ -60,11 +59,11 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       MILVUS_HOST: milvus
       MILVUS_PORT: "19530"
-      MCP_GATEWAY_URL: http://mcp-server:12300
+      MCP_GATEWAY_URL: http://mcp-server:12001
       # A2A：回调地址指向本 api，外部 Agent 地址指向 a2a-mock 服务
-      A2A_CALLBACK_URL: http://api:8002/api/a2a/callback
-      A2A_HOUSING_URL: http://a2a-mock:12201
-      A2A_FUND_URL: http://a2a-mock:12202
+      A2A_CALLBACK_URL: http://api:12401/api/a2a/callback
+      A2A_HOUSING_URL: http://a2a-mock:12101
+      A2A_FUND_URL: http://a2a-mock:12111
       A2A_HMAC_SECRET: ${A2A_HMAC_SECRET:-}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-changeme}
     volumes:
@@ -87,7 +86,7 @@ services:
       - gov_agent_net
 
   # ──────────────────────────────────────
-  # A2A Mock Agents (端口 12201 housing / 12202 fund)
+  # A2A Mock Agents (端口 12101 housing / 12111 fund)
   # ──────────────────────────────────────
   a2a-mock:
     build:
@@ -96,8 +95,8 @@ services:
     container_name: gov_agent_a2a
     restart: unless-stopped
     ports:
-      - "12201:12201"
-      - "12202:12202"
+      - "12101:12101"
+      - "12111:12111"
     environment:
       A2A_HMAC_SECRET: ${A2A_HMAC_SECRET:-}
     networks:
@@ -116,14 +115,14 @@ services:
       - "${FRONTEND_PORT:-12345}:12345"
     environment:
       # 后端 API 地址（容器间服务名通信）
-      API_BASE_URL: http://api:8002
+      API_BASE_URL: http://api:12401
     depends_on:
       - api
     networks:
       - gov_agent_net
 
   # ──────────────────────────────────────
-  # MCP Servers + Gateway (端口 12300-12303)
+  # MCP Servers + Gateway (端口 12001/12011/12021/12031)
   # ──────────────────────────────────────
   mcp-server:
     build:
@@ -132,10 +131,10 @@ services:
     container_name: gov_agent_mcp
     restart: unless-stopped
     ports:
-      - "12300:12300"
-      - "12301:12301"
-      - "12302:12302"
-      - "12303:12303"
+      - "12001:12001"
+      - "12011:12011"
+      - "12021:12021"
+      - "12031:12031"
     environment:
       # 与 api 共享 JWT 密钥：Gateway 校验 MCP Client 的 Bearer Token 必须用同一密钥
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-changeme}
@@ -151,7 +150,7 @@ services:
     container_name: gov_agent_postgres
     restart: unless-stopped
     ports:
-      - "${POSTGRES_PORT:-5658}:5432"
+      - "${POSTGRES_PORT:-12221}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-gov_agent}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
@@ -176,7 +175,7 @@ services:
     restart: unless-stopped
     command: ["sh", "-c", "redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}"]
     ports:
-      - "${REDIS_PORT:-6500}:6379"
+      - "${REDIS_PORT:-12201}:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -196,7 +195,7 @@ services:
     container_name: gov_agent_milvus
     restart: unless-stopped
     ports:
-      - "${MILVUS_PORT:-19532}:19530"
+      - "${MILVUS_PORT:-12211}:19530"
       # Milvus 健康检查端口仅容器内使用，不映射到宿主机（避免 Windows 端口冲突）
     command: ["milvus", "run", "standalone"]
     environment:
@@ -215,14 +214,14 @@ services:
       - gov_agent_net
 
   # ──────────────────────────────────────
-  # Prometheus — 指标抓取 + 告警规则（端口 9090）
+  # Prometheus — 指标抓取 + 告警规则（宿主端口 12411）
   # ──────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.53.0
     container_name: gov_agent_prometheus
     restart: unless-stopped
     ports:
-      - "${PROMETHEUS_PORT:-9090}:9090"
+      - "${PROMETHEUS_PORT:-12411}:9090"
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./deploy/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
@@ -237,14 +236,14 @@ services:
       - gov_agent_net
 
   # ──────────────────────────────────────
-  # Alertmanager — 告警路由（端口 9093）
+  # Alertmanager — 告警路由（宿主端口 12431）
   # ──────────────────────────────────────
   alertmanager:
     image: prom/alertmanager:v0.27.0
     container_name: gov_agent_alertmanager
     restart: unless-stopped
     ports:
-      - "${ALERTMANAGER_PORT:-9093}:9093"
+      - "${ALERTMANAGER_PORT:-12431}:9093"
     volumes:
       - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     command:
@@ -253,14 +252,14 @@ services:
       - gov_agent_net
 
   # ──────────────────────────────────────
-  # Grafana — 可视化看板（端口 3000）
+  # Grafana — 可视化看板（宿主端口 12421）
   # ──────────────────────────────────────
   grafana:
     image: grafana/grafana:11.1.0
     container_name: gov_agent_grafana
     restart: unless-stopped
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      - "${GRAFANA_PORT:-12421}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}

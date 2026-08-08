@@ -3,11 +3,11 @@
 # Author: le
 # Date: 2026/8/8
 # Version: 0.1
-# Task: Containerize A2A mock agents server (12201 housing / 12202 fund)
+# Task: Containerize A2A mock agents server (12101 housing / 12111 fund)
 #
 # Usage:
 #   docker build -f deploy/Dockerfile.agent -t gov-agent-platform/agent:latest .
-#   docker run -p 12201:12201 -p 12202:12202 gov-agent-platform/agent:latest
+#   docker run -p 12101:12101 -p 12111:12111 gov-agent-platform/agent:latest
 # =====================================================
 
 FROM python:3.12-slim AS builder
@@ -38,9 +38,9 @@ RUN useradd -m -u 1000 a2auser \
     && chown -R a2auser:a2auser /app
 USER a2auser
 
-EXPOSE 12201 12202
+EXPOSE 12101 12111
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:12201/.well-known/agent || exit 1
+    CMD curl -f http://localhost:12101/.well-known/agent || exit 1
 
 CMD ["python", "-m", "tools.a2a.mock_agents.server"]

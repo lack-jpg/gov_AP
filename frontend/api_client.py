@@ -13,9 +13,9 @@ from typing import Any, Optional
 
 import httpx
 
-# 后端 API 地址（FastAPI 服务，默认 8002）
-# 容器部署时设置环境变量 API_BASE_URL=http://api:8002
-BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8002")
+# 后端 API 地址（FastAPI 服务，默认 12401）
+# 容器部署时设置环境变量 API_BASE_URL=http://api:12401
+BASE_URL = os.getenv("API_BASE_URL", "http://localhost:12401")
 
 # ── Demo Token ──
 # 开发/演示用 JWT Token（避免硬编码 X-User-Id / X-User-Role Header）。

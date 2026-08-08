@@ -32,7 +32,7 @@ app = FastAPI(
 @app.get("/health")
 async def health():
     """健康检查"""
-    return {"status": "healthy", "server": "policy_server", "port": 12301}
+    return {"status": "healthy", "server": "policy_server", "port": 12011}
 
 
 @app.post("/tools/list")
@@ -105,4 +105,4 @@ async def call_tool(request: ToolCallRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=12301, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=12011, log_level="info")

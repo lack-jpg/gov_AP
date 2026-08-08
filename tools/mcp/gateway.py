@@ -143,13 +143,13 @@ class MCPGateway:
     使用方式:
         gateway = MCPGateway()
         app = gateway.build_app()
-        uvicorn.run(app, port=12300)
+        uvicorn.run(app, port=12001)
     """
 
     SERVER_URLS: dict[str, str] = {
-        "policy_server": "http://localhost:12301",
-        "material_server": "http://localhost:12302",
-        "workflow_server": "http://localhost:12303",
+        "policy_server": "http://localhost:12011",
+        "material_server": "http://localhost:12021",
+        "workflow_server": "http://localhost:12031",
     }
 
     def __init__(self):
@@ -291,4 +291,4 @@ app = gateway.build_app()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=12300, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=12001, log_level="info")

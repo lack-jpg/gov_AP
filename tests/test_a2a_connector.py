@@ -160,11 +160,11 @@ async def test_send_task_default_callback_url_propagated():
         })
 
     conn, _ = _make_connector(
-        handler, default_callback_url="http://api:8002/api/a2a/callback",
+        handler, default_callback_url="http://api:12401/api/a2a/callback",
     )
     try:
         await conn.send_task("query_property", {"owner_name": "张三"})
-        assert seen["callback_url"] == "http://api:8002/api/a2a/callback"
+        assert seen["callback_url"] == "http://api:12401/api/a2a/callback"
     finally:
         await conn.close()
 

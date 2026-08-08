@@ -7,7 +7,7 @@
 #
 # Usage:
 #   docker build -f deploy/Dockerfile.mcp -t gov-agent-mcp:latest .
-#   docker run -p 12300:12300 gov-agent-mcp:latest
+#   docker run -p 12001:12001 gov-agent-mcp:latest
 # =====================================================
 
 FROM python:3.12-slim AS builder
@@ -39,9 +39,9 @@ RUN useradd -m -u 1000 mcpuser \
     && chown -R mcpuser:mcpuser /app
 USER mcpuser
 
-EXPOSE 12300 12301 12302 12303
+EXPOSE 12001 12011 12021 12031
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:12300/health || exit 1
+    CMD curl -f http://localhost:12001/health || exit 1
 
 CMD ["python", "-m", "tools.mcp.start_servers"]

@@ -21,7 +21,7 @@ from tools.a2a.protocol import A2ATaskRequest, A2ATaskResponse, AgentCard, A2ATa
 logger = get_logger(__name__)
 
 # AgentCard 中对外公布的端点（Docker 内可用 A2A_HOUSING_URL 覆盖）
-_DEFAULT_ENDPOINT = os.environ.get("A2A_HOUSING_URL", "http://localhost:12201")
+_DEFAULT_ENDPOINT = os.environ.get("A2A_HOUSING_URL", "http://localhost:12101")
 
 
 # ============================================================

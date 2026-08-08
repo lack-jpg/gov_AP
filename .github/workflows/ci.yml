@@ -101,7 +101,7 @@ jobs:
       - name: Wait for api healthy
         run: |
           for i in $(seq 1 60); do
-            if curl -sf http://127.0.0.1:8002/health >/dev/null; then echo "api ready"; exit 0; fi
+            if curl -sf http://127.0.0.1:12401/health >/dev/null; then echo "api ready"; exit 0; fi
             sleep 5
           done
           echo "api not ready"; exit 1

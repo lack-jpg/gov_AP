@@ -24,7 +24,7 @@ ui.page_header("📊", "运维看板（AgentOps）", "Agent 运行统计 · 成�
 
 # ── 后端连接状态 ──
 if not api_client.health():
-    ui.status_card(False, "后端 API 未启动", "看板数据不可用（http://localhost:8002）。请先启动服务。")
+    ui.status_card(False, "后端 API 未启动", "看板数据不可用（http://localhost:12401）。请先启动服务。")
 else:
     ui.status_card(True, "后端已连接")
 

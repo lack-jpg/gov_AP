@@ -77,7 +77,7 @@ class AgentCard(BaseModel):
     )
     endpoint: str = Field(
         default="",
-        description="Agent 通信端点 URL: http://localhost:12201",
+        description="Agent 通信端点 URL: http://localhost:12101",
     )
     version: str = Field(
         default="0.1.0",
@@ -298,13 +298,13 @@ if __name__ == "__main__":
         display_name="不动产系统Agent",
         description="提供不动产登记和查询服务",
         skills=["query_property", "register_property"],
-        endpoint="http://localhost:12201",
+        endpoint="http://localhost:12101",
         version="1.2.0",
     )
     check("AgentCard.agent_id starts with ext_agent_", card.agent_id.startswith("ext_agent_"))
     check("AgentCard.name", card.name == "housing_agent")
     check("AgentCard.skills[0]", card.skills[0] == "query_property")
-    check("AgentCard.endpoint", card.endpoint == "http://localhost:12201")
+    check("AgentCard.endpoint", card.endpoint == "http://localhost:12101")
 
     card_dict = card.model_dump()
     check("AgentCard serializable", isinstance(card_dict, dict))
@@ -343,7 +343,7 @@ if __name__ == "__main__":
     req = A2ATaskRequest(
         skill="query_property",
         input={"owner_name": "张三", "id_card": "110101199001011234"},
-        callback_url="http://localhost:12200/api/a2a/callback",
+        callback_url="http://localhost:12401/api/a2a/callback",
         source_trace_id="trace_abc123",
     )
     check("A2ATaskRequest.task_id starts with a2a_", req.task_id.startswith("a2a_"))

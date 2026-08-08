@@ -19,9 +19,9 @@ import uvicorn
 
 
 SERVERS = [
-    ("tools.mcp.servers.policy_server.server:app", 12301, "Policy"),
-    ("tools.mcp.servers.material_server.server:app", 12302, "Material"),
-    ("tools.mcp.servers.workflow_server.server:app", 12303, "Workflow"),
+    ("tools.mcp.servers.policy_server.server:app", 12011, "Policy"),
+    ("tools.mcp.servers.material_server.server:app", 12021, "Material"),
+    ("tools.mcp.servers.workflow_server.server:app", 12031, "Workflow"),
 ]
 
 
@@ -56,11 +56,11 @@ async def main():
             config = uvicorn.Config(
                 gateway_app,
                 host="0.0.0.0",
-                port=12300,
+                port=12001,
                 log_level="info",
             )
             server = uvicorn.Server(config)
-            print("[Gateway] Starting on port 12300...")
+            print("[Gateway] Starting on port 12001...")
             await server.serve()
 
         tasks.append(start_gateway())

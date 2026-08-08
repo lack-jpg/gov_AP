@@ -44,7 +44,7 @@ class A2AConnector:
                |
         A2AConnector.send_task()
                |
-        ├─ HTTP → 外部 Agent Server (12201/12202/...)
+        ├─ HTTP → 外部 Agent Server (12101/12111/...)
                |
         └─ Stub → Mock Agent (本地函数调用)
 
@@ -432,11 +432,11 @@ if __name__ == "__main__":
         from tools.a2a.protocol import AgentCard
         reg.register(AgentCard(
             name="housing_agent", display_name="不动产",
-            skills=["query_property"], endpoint="http://loc:12201",
+            skills=["query_property"], endpoint="http://loc:12101",
         ))
         reg.register(AgentCard(
             name="fund_agent", display_name="公积金",
-            skills=["query_fund"], endpoint="http://loc:12202",
+            skills=["query_fund"], endpoint="http://loc:12111",
         ))
         reg.set_health("housing_agent", AgentHealth.HEALTHY)
         reg.set_health("fund_agent", AgentHealth.HEALTHY)

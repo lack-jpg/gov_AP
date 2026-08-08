@@ -226,13 +226,13 @@ def initialize_default_agents() -> ExternalAgentRegistry:
     包含: housing_agent (不动产), fund_agent (公积金)
 
     端点优先读配置（A2A_HOUSING_URL / A2A_FUND_URL）：
-    Docker 内指向 http://a2a-mock:12201/12202，本地默认 localhost。
+    Docker 内指向 http://a2a-mock:12101/12111，本地默认 localhost。
     """
     registry = get_external_registry()
 
     # 从配置读取外部 Agent 端点（默认 localhost，适配 Docker 覆盖）
-    housing_url = "http://localhost:12201"
-    fund_url = "http://localhost:12202"
+    housing_url = "http://localhost:12101"
+    fund_url = "http://localhost:12111"
     try:
         from backend.config import get_settings
 
@@ -308,13 +308,13 @@ if __name__ == "__main__":
         name="housing_agent",
         display_name="不动产系统Agent",
         skills=["query_property", "register_property"],
-        endpoint="http://localhost:12201",
+        endpoint="http://localhost:12101",
     )
     card2 = AgentCard(
         name="fund_agent",
         display_name="公积金系统Agent",
         skills=["query_fund", "query_fund_detail"],
-        endpoint="http://localhost:12202",
+        endpoint="http://localhost:12111",
     )
     reg.register(card1)
     reg.register(card2)
@@ -384,11 +384,11 @@ if __name__ == "__main__":
     reg2 = ExternalAgentRegistry()
     reg2.register(AgentCard(
         name="housing_agent", display_name="不动产",
-        skills=["query_property"], endpoint="http://loc:12201",
+        skills=["query_property"], endpoint="http://loc:12101",
     ))
     reg2.register(AgentCard(
         name="fund_agent", display_name="公积金",
-        skills=["query_fund"], endpoint="http://loc:12202",
+        skills=["query_fund"], endpoint="http://loc:12111",
     ))
     reg2.set_health("housing_agent", AgentHealth.HEALTHY)
     reg2.set_health("fund_agent", AgentHealth.HEALTHY)

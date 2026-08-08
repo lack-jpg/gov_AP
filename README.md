@@ -396,7 +396,7 @@ Completed
 
 ## Guardrail安全
 
-> **安全加固（2026-08-05）**：护栏前置到 LLM 前执行，注入/严重敏感词在到达 LLM 之前即被阻断。CORS 默认白名单模式（`localhost:12345,localhost:3000`），可通过 `.env` 配置。
+> **安全加固（2026-08-05）**：护栏前置到 LLM 前执行，注入/严重敏感词在到达 LLM 之前即被阻断。CORS 默认白名单模式（`localhost:12345,localhost:12421`），可通过 `.env` 配置。
 
 支持：
 
@@ -583,13 +583,13 @@ gov_AP/
 │   │   ├── schema.py                 # 6 Tool Pydantic模型 + TOOL_REGISTRY
 │   │   ├── start_servers.py          # 一键启动所有MCP基础设施
 │   │   └── servers/                  # MCP Server
-│   │       ├── policy_server/        # 政策查询服务 :12301
+│   │       ├── policy_server/        # 政策查询服务 :12011
 │   │       │   ├── server.py         # FastAPI Server入口
 │   │       │   └── tools.py          # search_policy/get_policy_detail
-│   │       ├── material_server/      # 材料审核服务 :12302
+│   │       ├── material_server/      # 材料审核服务 :12021
 │   │       │   ├── server.py         # FastAPI Server入口
 │   │       │   └── tools.py          # extract_entity/check_material
-│   │       └── workflow_server/      # 流程执行服务 :12303
+│   │       └── workflow_server/      # 流程执行服务 :12031
 │   │           ├── server.py         # FastAPI Server入口
 │   │           └── tools.py          # create_case/query_status
 │   └── a2a/                          # A2A协议(Agent→Agent)
@@ -601,7 +601,7 @@ gov_AP/
 │       ├── registry.py               # Agent注册中心
 │       ├── callback.py               # 回调处理（HMAC 校验 + 恢复）
 │       └── mock_agents/              # 模拟外部Agent
-│           ├── server.py             # HTTP Mock Server（12201/12202，支持异步回调）
+│           ├── server.py             # HTTP Mock Server（12101/12111，支持异步回调）
 │           ├── housing_agent.py      # 不动产Agent
 │           └── fund_agent.py         # 公积金Agent
 │
@@ -688,8 +688,8 @@ gov_AP/
 ├── deploy/                           # 部署配置
 │   ├── Dockerfile                    # API + MCP Server Docker 镜像
 │   ├── docker-entrypoint.sh          # API 容器入口（root 授权 bind mount → setpriv 降权 appuser）
-│   ├── Dockerfile.mcp                # MCP Gateway + 3 Servers 镜像（12300-12303）
-│   ├── Dockerfile.agent              # A2A Mock 外部 Agent 镜像（housing 12201 / fund 12202）
+│   ├── Dockerfile.mcp                # MCP Gateway + 3 Servers 镜像（12001-12031）
+│   ├── Dockerfile.agent              # A2A Mock 外部 Agent 镜像（housing 12101 / fund 12111）
 │   ├── Dockerfile.frontend           # Streamlit 前端 Docker 镜像（轻量，仅 streamlit + httpx）
 │   └── k8s/                          # Kubernetes
 │       ├── backend.yaml              # 后端Deployment
@@ -778,19 +778,17 @@ python >=3.12
 
 ## 端口约定
 
-为避免与本地服务冲突，所有端口偏离标准端口：
+端口按组规划，组内 +10 步进、中间留 9 空位：
 
-| 服务            | 端口        | 说明                 |
-| ------------- | --------- | ------------------ |
-| Frontend      | **12345** | Streamlit 前端界面     |
-| FastAPI       | **8002**  | 后端 API（8000 + 2）   |
-| MCP Gateway   | **12300** | 后续 Server 依次 +1    |
-| A2A Mock      | **12201/12202** | housing/fund 外部 Agent（Docker `a2a-mock`） |
-| A2A Callback  | **api:8002** | `/api/a2a/callback`（HMAC 校验，Docker 内 `http://api:8002`） |
-| PostgreSQL    | **5658**  | 避开 Hyper-V 保留段     |
-| Redis         | **6500**  | 避开 Windows 保留端口区间  |
-| Milvus        | **19532** | 19530 + 2          |
-| OpenTelemetry | **4319**  | 4317 + 2           |
+| 组 | 服务 | 端口 |
+| --- | --- | --- |
+| **MCP** | Gateway / Policy / Material / Workflow | **12001 / 12011 / 12021 / 12031** |
+| **A2A** | housing / fund（Docker `a2a-mock`） | **12101 / 12111** |
+| **数据库** | Redis / Milvus / Postgres | **12101 / 12211 / 12221** |
+| **前端** | Streamlit | **12345**（固定） |
+| **其他** | FastAPI API / Prometheus / Grafana / Alertmanager | **12401 / 12411 / 12421 / 12431** |
+| A2A Callback | `/api/a2a/callback`（HMAC 校验，Docker 内 `http://api:12401`） | **api:12401** |
+| OpenTelemetry | OTLP | **4319**（4317 + 2） |
 
 ---
 
@@ -872,7 +870,7 @@ docker compose up -d frontend
 python tools/mcp/start_servers.py --no-gateway
 
 # 2. 启动主 API 服务
-uvicorn backend.main:app --host 0.0.0.0 --port 8002 --reload
+uvicorn backend.main:app --host 0.0.0.0 --port 12401 --reload
 
 # 3. 启动前端
 streamlit run frontend/app.py
@@ -901,10 +899,10 @@ streamlit run frontend/app.py
 Agent (LangGraph Node)
     │
     ├─ MCP Client ✅ (优先: 通过 MCP Server 获取真实能力)
-    │   ├─ Gateway (12300) ──→ Policy Server (12301)
-    │   │                     Material Server (12302)
-    │   │                     Workflow Server (12303)
-    │   └─ Direct 直连 ────→ Policy Server (12301)  ← Gateway fallback
+    │   ├─ Gateway (12001) ──→ Policy Server (12011)
+    │   │                     Material Server (12021)
+    │   │                     Workflow Server (12031)
+    │   └─ Direct 直连 ────→ Policy Server (12011)  ← Gateway fallback
     │
     └─ Stub 降级 ✅ (MCP 不可用时保留基本功能)
 ```
@@ -1122,9 +1120,9 @@ Intent 回环：`intent_node → supervisor_node` 为**静态边**，意图识�
 
 | 节点              | Agent         | MCP Server              | 工具                                   | 降级行为                       |
 | --------------- | ------------- | ----------------------- | ------------------------------------ | -------------------------- |
-| `policy_node`   | PolicyAgent   | `policy_server:12301`   | `search_policy`, `get_policy_detail` | stub 模板回答（预置5种导向回答）        |
-| `material_node` | MaterialAgent | `material_server:12302` | `extract_entity`, `check_material`   | `passed=True` + 提示 stub 模式 |
-| `workflow_node` | WorkflowAgent | `workflow_server:12303` | `create_case`, `query_status`        | `CASE_{uuid}` 模拟办件号        |
+| `policy_node`   | PolicyAgent   | `policy_server:12011`   | `search_policy`, `get_policy_detail` | stub 模板回答（预置5种导向回答）        |
+| `material_node` | MaterialAgent | `material_server:12021` | `extract_entity`, `check_material`   | `passed=True` + 提示 stub 模式 |
+| `workflow_node` | WorkflowAgent | `workflow_server:12031` | `create_case`, `query_status`        | `CASE_{uuid}` 模拟办件号        |
 
 每节点执行后：
 
@@ -1166,7 +1164,7 @@ await checkpointer.suspend_for_a2a(thread_id, ..., a2a_task_id)
     → supervisor 汇总（含外部数据）→ governance_node → END
 ```
 
-> **Docker 部署**：`docker compose up` 会同时启动 `a2a-mock`（housing 12201 / fund 12202），api 通过 `A2A_HOUSING_URL` / `A2A_FUND_URL` 指向它。外部真实系统只需把这两个地址换成真实 Agent 的 HTTP 端点即可（协议一致）。
+> **Docker 部署**：`docker compose up` 会同时启动 `a2a-mock`（housing 12101 / fund 12111），api 通过 `A2A_HOUSING_URL` / `A2A_FUND_URL` 指向它。外部真实系统只需把这两个地址换成真实 Agent 的 HTTP 端点即可（协议一致）。
 
 **同步模式（stub fallback）**：
 
@@ -1464,7 +1462,7 @@ governance_node（末尾节点）
 ## Phase 2 — MCP Server + Tool Calling ✅
 
 > **完成日期**: 2026-07-30
-> **架构**: Agent → MCPClient → MCPGateway (12300) → MCP Server (12301/12302/12303) → Business Logic
+> **架构**: Agent → MCPClient → MCPGateway (12001) → MCP Server (12011/12021/12031) → Business Logic
 > **降级策略**: MCP 不可用时自动 fallback 到 stub 模式，保证系统可用
 
 ### MCP 工具 Schema (tools/mcp/schema.py) — 1/1 完成
@@ -1485,7 +1483,7 @@ governance_node（末尾节点）
 
 ```
 ✅ tools.py                    — search_policy（7条政策语料库关键词匹配）+ get_policy_detail（文档详情查询）
-✅ server.py                   — FastAPI MCP Server（:12301, /tools/list + /tools/call）
+✅ server.py                   — FastAPI MCP Server（:12011, /tools/list + /tools/call）
 ```
 
 ### Material MCP Server + Agent 补全 — 6/6 完成
@@ -1503,14 +1501,14 @@ governance_node（末尾节点）
 
 ```
 ✅ tools/mcp/servers/material_server/tools.py  — extract_entity（OCR→实体抽取）+ check_material（Validator调用）
-✅ tools/mcp/servers/material_server/server.py — FastAPI MCP Server（:12302）
+✅ tools/mcp/servers/material_server/server.py — FastAPI MCP Server（:12021）
 ```
 
 ### Workflow MCP Server (tools/mcp/servers/workflow_server/) — 2/2 完成
 
 ```
 ✅ tools.py                    — create_case（CASE_XXXXXXXX办件号生成）+ query_status（hash确定性状态）
-✅ server.py                   — FastAPI MCP Server（:12303）
+✅ server.py                   — FastAPI MCP Server（:12031）
 ```
 
 ### LangGraph 集成更新 — 2/2 完成
@@ -1685,10 +1683,10 @@ governance_node（末尾节点）
 | --- | --- | --- |
 | `/metrics` 端点 | `backend/main.py` | 暴露 `MetricsCollector` 指标（agent 调用/成功/失败/延迟/token），免认证 |
 | 认证放行 | `backend/middleware/auth.py` | `/metrics` 加入免认证路径 |
-| Prometheus 配置 | `deploy/prometheus/prometheus.yml` | 抓取 `api:8002/metrics`，15s 间隔 |
+| Prometheus 配置 | `deploy/prometheus/prometheus.yml` | 抓取 `api:12401/metrics`，15s 间隔 |
 | Grafana | `deploy/grafana/**` | 自动配置 Prometheus 数据源 + gov-agent 看板（请求速率/成功率/错误率/延迟分位/token） |
-| Alertmanager | `deploy/prometheus/alert_rules.yml` + `deploy/alertmanager/` | 4 条告警规则（失败率>20%/p95延迟>5s/无流量/token激增），Alertmanager 9093 |
-| docker-compose | 新增 `prometheus`(9090) + `grafana`(3000) + `alertmanager`(9093) | 全栈一键起 |
+| Alertmanager | `deploy/prometheus/alert_rules.yml` + `deploy/alertmanager/` | 4 条告警规则（失败率>20%/p95延迟>5s/无流量/token激增），Alertmanager 12431 |
+| docker-compose | 新增 `prometheus`(12411) + `grafana`(12421) + `alertmanager`(12431) | 全栈一键起 |
 
 ### CI/CD（GitHub Actions）
 
@@ -1702,7 +1700,7 @@ governance_node（末尾节点）
 - `requirements.txt` 补 `langchain-openai`（修复测试收集 + api 镜像 LLM 模式）
 - `pyproject.toml` ruff 规则收敛 + `ruff check --fix` 全量清理（127 自动修复 + F821/F841/F401/E741/B004/B007）
 
-**验证**：`/metrics` 返回 agent 指标；Prometheus target UP 且能查 `agent_calls_total`；Grafana `:3000` 自动加载看板；e2e 23/23；`ruff check .` 全绿；174 pytest 通过。
+**验证**：`/metrics` 返回 agent 指标；Prometheus target UP 且能查 `agent_calls_total`；Grafana `:12421` 自动加载看板；e2e 23/23；`ruff check .` 全绿；174 pytest 通过。
 
 ## 2026-08-08 — 测试覆盖 + MCP 链路修复
 
@@ -1763,9 +1761,9 @@ governance_node（末尾节点）
 
 ### Docker 化
 
-- `deploy/Dockerfile.agent`（新增）+ `docker-compose.yml` 新增 `a2a-mock` 服务（housing 12201 / fund 12202）
-- api 容器 env：`A2A_HOUSING_URL` / `A2A_FUND_URL` → `http://a2a-mock:*`，`A2A_CALLBACK_URL` → `http://api:8002`
-- 配置化端点：`backend/config.py` 新增 `A2A_HOUSING_URL` / `A2A_FUND_URL`；`.env`/`.env.example` A2A 块更新（回调默认 `localhost:8002`）
+- `deploy/Dockerfile.agent`（新增）+ `docker-compose.yml` 新增 `a2a-mock` 服务（housing 12101 / fund 12111）
+- api 容器 env：`A2A_HOUSING_URL` / `A2A_FUND_URL` → `http://a2a-mock:*`，`A2A_CALLBACK_URL` → `http://api:12401`
+- 配置化端点：`backend/config.py` 新增 `A2A_HOUSING_URL` / `A2A_FUND_URL`；`.env`/`.env.example` A2A 块更新（回调默认 `localhost:12401`）
 
 **端到端验证**：「查询公积金余额」→ a2a_node → HTTP → a2a-mock 异步回调 → checkpoint 恢复 → 最终回答含外部公积金数据（账号 GJJ-0282023001234，余额 285,600.5 元）+ 政策引用；`a2a_task` 表落库 completed + artifact。`pytest tests/` 84 通过 + a2a 全部 smoke 通过。
 
@@ -1777,7 +1775,7 @@ governance_node（末尾节点）
 | --- | --- | --- |
 | LLM 响应缓存 | `governance/llm_cache.py`（新增） | `LlmCache`（Redis 优先 `llmc:` + 内存 TTL 回退）+ `CachingChatOpenAI`（按渲染消息哈希键）；`get_agent_graph` 一处替换覆盖全部 6 个 LLM 调用点 |
 | 缓存配置 | `backend/config.py` | `LLM_CACHE_ENABLED` / `LLM_CACHE_TTL` |
-| Milvus 索引调优 | `rag/knowledge_base.py` + `rag/retriever.py` | 补 HNSW `create_index`（M/efConstruction/nlist 配置化 + `ensure_index`）；读配置 host/port（修复 19530/19532 不一致）+ `nprobe` 配置化 |
+| Milvus 索引调优 | `rag/knowledge_base.py` + `rag/retriever.py` | 补 HNSW `create_index`（M/efConstruction/nlist 配置化 + `ensure_index`）；读配置 host/port（修复 19530/12211 不一致）+ `nprobe` 配置化 |
 | Milvus 参数 | `backend/config.py` | `MILVUS_INDEX_M/EF_CONSTRUCTION/NLIST`、`MILVUS_SEARCH_NPROBE` |
 | SSE 流式 | `backend/api/routes.py` `/api/chat/stream` + `backend/api/dependencies.py stream_agent` | `graph.astream(stream_mode="values")` 逐节点产出 SSE 事件（节点中文标签），前端实时显示进度 |
 
@@ -1840,9 +1838,9 @@ Docker 容器内 LangGraph 版本升级导致 4 项 API 不兼容，已全部适
 | ----------------- | --------------------------------- | ------------------------------------------------------------------------ |
 | 护栏前置 LLM          | `dependencies.py`                 | `GuardrailRunner.run_input()` 在 `graph.ainvoke` 前执行，注入/敏感词立即阻断           |
 | MCP 认证+RBAC       | `gateway.py`, `client.py`         | Gateway 增加 JWT Bearer Token 验证 + `admin`/`agent` 角色控制，Client 携带认证 Header |
-| CORS 白名单          | `config.py`                       | 默认值从 `"*"` 改为 `"localhost:12345,localhost:3000"`                         |
+| CORS 白名单          | `config.py`                       | 默认值从 `"*"` 改为 `"localhost:12345,localhost:12421"`                         |
 | A2A Callback HMAC | `routes.py`, `schemas.py`         | HMAC-SHA256 签名验证 + ±300s 防重放窗口                                           |
-| 端口文档统一            | `docker-compose.yml`, `config.py` | 修正 Redis 端口注释 6480→6500，补充容器内/本地开发的端口区分说明                                |
+| 端口文档统一            | `docker-compose.yml`, `config.py` | 修正 Redis 端口注释 6480→12201，补充容器内/本地开发的端口区分说明                                |
 
 ### 认证体系重构
 
