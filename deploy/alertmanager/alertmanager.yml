@@ -1,0 +1,17 @@
+# Alertmanager 配置 — gov-agent
+# 默认接收器为占位 webhook，可替换为钉钉/企业微信/邮件/Slack 等
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default
+  group_by: ["alertname"]
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+
+receivers:
+  - name: default
+    webhook_configs:
+      - url: "http://host.docker.internal:8000/alert"  # 占位 webhook（替换为真实告警通道）
+        send_resolved: true

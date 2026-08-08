@@ -215,7 +215,7 @@ services:
       - gov_agent_net
 
   # ──────────────────────────────────────
-  # Prometheus — 指标抓取（端口 9090）
+  # Prometheus — 指标抓取 + 告警规则（端口 9090）
   # ──────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.53.0
@@ -225,12 +225,30 @@ services:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
       - promdata:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
     depends_on:
       - api
+      - alertmanager
+    networks:
+      - gov_agent_net
+
+  # ──────────────────────────────────────
+  # Alertmanager — 告警路由（端口 9093）
+  # ──────────────────────────────────────
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: gov_agent_alertmanager
+    restart: unless-stopped
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
     networks:
       - gov_agent_net
 

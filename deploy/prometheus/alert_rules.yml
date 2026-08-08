@@ -1,0 +1,43 @@
+# Prometheus 告警规则 — gov-agent
+# 挂载: docker-compose prometheus → /etc/prometheus/alert_rules.yml
+groups:
+  - name: gov-agent-alerts
+    rules:
+      - alert: AgentHighFailureRate
+        expr: |
+          sum(rate(agent_failure_total[5m])) by (agent)
+            / clamp_min(sum(rate(agent_calls_total[5m])) by (agent), 1e-9) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent {{ $labels.agent }} 失败率过高 (>20%)"
+          description: "Agent {{ $labels.agent }} 最近 5 分钟失败率 > 20%，请检查 LLM/MCP/依赖服务状态。"
+
+      - alert: AgentHighLatency
+        expr: |
+          histogram_quantile(0.95, sum(rate(agent_latency_ms_bucket[5m])) by (le, agent)) > 5000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent {{ $labels.agent }} 延迟过高 (>5s p95)"
+          description: "Agent {{ $labels.agent }} 最近 5 分钟 p95 延迟 > 5000ms，可能存在慢调用/超时。"
+
+      - alert: ApiNoTraffic
+        expr: sum(rate(agent_calls_total[10m])) == 0
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "最近 10 分钟无 Agent 调用"
+          description: "平台最近 10 分钟没有任何 Agent 请求，可能是前端未使用或后端异常。"
+
+      - alert: HighTokenConsumption
+        expr: sum(rate(llm_tokens_total[5m])) > 50000
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "LLM Token 消耗激增 (>50k/5m)"
+          description: "最近 5 分钟 LLM token 消耗超过 50000，检查是否有异常循环调用或缓存失效。"
