@@ -18,7 +18,6 @@ Task: Implement Redis-first LLM response cache with in-memory fallback
 """
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import time

@@ -430,8 +430,8 @@ class BenchmarkRunner:
             "",
             "## Summary",
             "",
-            f"| Metric | Value |",
-            f"|--------|-------|",
+            "| Metric | Value |",
+            "|--------|-------|",
             f"| Overall Score | **{benchmark.overall_score:.2%}** |",
             f"| Total Cases | {benchmark.total_cases} |",
             f"| Passed Cases | {benchmark.passed_cases} |",
@@ -449,8 +449,8 @@ class BenchmarkRunner:
             lines.extend([
                 f"### {name}",
                 "",
-                f"| Metric | Value |",
-                f"|--------|-------|",
+                "| Metric | Value |",
+                "|--------|-------|",
                 f"| Overall Score | {result.overall_score:.2%} |",
                 f"| Total Cases | {result.total_cases} |",
                 f"| Passed Cases | {result.passed_cases} ({pass_rate:.0%}) |",
@@ -624,7 +624,7 @@ def _smoke_test() -> None:
     ds = GoldenDataset(name="empty_test", filepath="/nonexistent.json")
     assert ds.has_cases is False
     passed += 1
-    print(f"  [OK] GoldenDataset has_cases -> False")
+    print("  [OK] GoldenDataset has_cases -> False")
 
     # Test 5: BenchmarkRunner discover_datasets
     total += 1
@@ -791,7 +791,7 @@ def _smoke_test() -> None:
     assert len(d["errors"]) == 2
     assert len(d["warnings"]) == 1
     passed += 1
-    print(f"  [OK] BenchmarkResult errors/warnings")
+    print("  [OK] BenchmarkResult errors/warnings")
 
     # Test 20: GoldenDataset with nested format
     total += 1

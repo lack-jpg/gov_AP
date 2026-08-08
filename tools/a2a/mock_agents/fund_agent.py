@@ -440,6 +440,6 @@ if __name__ == "__main__":
             exit(1)
         else:
             print(" — all good")
-            print(f"\n  Run with: python -m tools.a2a.mock_agents.fund_agent")
+            print("\n  Run with: python -m tools.a2a.mock_agents.fund_agent")
 
     asyncio.run(main())

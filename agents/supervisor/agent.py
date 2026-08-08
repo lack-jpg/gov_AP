@@ -24,10 +24,8 @@ from orchestration.langgraph.state import (
     AgentName,
     AgentState,
     NodeName,
-    Task,
     TaskStatus,
     RiskLevel,
-    create_initial_state,
     set_intent,
     add_task,
     set_final_answer,
@@ -96,7 +94,6 @@ class SupervisorAgent:
         state = transition_to(state, NodeName.SUPERVISOR)
 
         task_plan = state.get("task_plan", [])
-        intent = state.get("intent", "")
         error = state.get("error", "")
 
         # 场景1: 执行出错 → 重新规划

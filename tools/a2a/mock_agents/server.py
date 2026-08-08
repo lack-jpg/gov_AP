@@ -24,7 +24,7 @@ import hashlib
 import hmac
 import os
 import time
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import FastAPI
 import httpx

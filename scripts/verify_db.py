@@ -33,7 +33,7 @@ async def verify_postgres() -> dict:
     Returns:
         {"ok": bool, "tables": int, "rows": int, "error": str|None}
     """
-    from sqlalchemy import select, text
+    from sqlalchemy import text
     from database.connection import get_session_factory
 
     try:
@@ -164,35 +164,35 @@ def print_report(pg: dict, redis: dict, milvus: dict) -> None:
     # ── PostgreSQL ──
     print("── PostgreSQL ──")
     if pg["ok"]:
-        print(f"  Status:  OK")
+        print("  Status:  OK")
         print(f"  Tables:  {pg['tables']}")
         for name, count in pg["table_rows"].items():
             print(f"    - {name}: {count} rows")
         if pg["tables"] == 0:
             print("    (表尚未创建 — 启动 FastAPI 后会自动建表)")
     else:
-        print(f"  Status:  FAIL")
+        print("  Status:  FAIL")
         print(f"  Error:   {pg['error']}")
     print()
 
     # ── Redis ──
     print("── Redis ──")
     if redis["ok"]:
-        print(f"  Status:  OK (PONG)")
+        print("  Status:  OK (PONG)")
     else:
-        print(f"  Status:  FAIL")
+        print("  Status:  FAIL")
         print(f"  Error:   {redis['error']}")
     print()
 
     # ── Milvus ──
     print("── Milvus ──")
     if milvus["ok"]:
-        print(f"  Status:  OK")
+        print("  Status:  OK")
         print(f"  Collections: {milvus['collections']}")
         for name in milvus.get("collection_names", []):
             print(f"    - {name}")
     else:
-        print(f"  Status:  FAIL")
+        print("  Status:  FAIL")
         print(f"  Error:   {milvus['error']}")
     print()
 

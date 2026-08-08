@@ -15,9 +15,9 @@ from __future__ import annotations
 
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from tools.logger import get_logger
@@ -612,7 +612,7 @@ if __name__ == "__main__":
     section("11. RBACMiddleware")
     mw = RBACMiddleware()
     check("RBACMiddleware 创建成功", mw is not None)
-    check("__call__ 存在", hasattr(mw, "__call__"))
+    check("__call__ 存在", callable(mw))
 
     # ── 12. require_role_decorator 装饰器 ──
     section("12. require_role_decorator 装饰器")
@@ -656,4 +656,4 @@ if __name__ == "__main__":
         exit(1)
     else:
         print(" — all good")
-        print(f"\n  Run with: python -m backend.middleware.rbac")
+        print("\n  Run with: python -m backend.middleware.rbac")

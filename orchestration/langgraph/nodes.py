@@ -14,7 +14,7 @@ from typing import Optional
 from langchain_core.language_models import BaseChatModel
 
 from agents.supervisor.agent import SupervisorAgent
-from tools.logger import get_logger, log_agent_call, log_mcp_call
+from tools.logger import get_logger
 from orchestration.langgraph.state import (
     A2ATaskRecord,
     A2ATaskStatus,
@@ -32,7 +32,6 @@ from orchestration.langgraph.state import (
     transition_to,
     set_error,
     set_final_answer,
-    add_evidence,
     record_mcp_call,
 )
 from governance.trace import (
@@ -41,7 +40,6 @@ from governance.trace import (
     start_trace,
     end_trace,
     get_current_trace,
-    get_trace_recorder,
 )
 from governance.monitor import get_collector, record_agent_call
 
@@ -580,7 +578,6 @@ async def workflow_node(
                     "create_case",
                     {"user_id": "default_user", "service": intent},
                 )
-                stub_case_id = case_result.get("case_id", "CASE_UNKNOWN")
 
                 mcp = MCPCallRecord(
                     trace_id=state["trace_id"],
@@ -622,7 +619,6 @@ async def workflow_node(
             user_id="default_user",
             service=intent,
         )
-        stub_case_id = case_result.get("case_id", "CASE_UNKNOWN")
 
         # 注意：stub fallback 不再伪造 MCPCallRecord
         state["workflow_result"] = case_result

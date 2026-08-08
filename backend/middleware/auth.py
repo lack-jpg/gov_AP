@@ -124,9 +124,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app, **kwargs)
 
     async def dispatch(self, request: Request, call_next):
-        # 跳过健康检查、文档端点和 A2A 外部回调（回调用 HMAC 签名校验，而非 JWT）
+        # 跳过健康检查、文档端点、指标抓取和 A2A 外部回调（回调用 HMAC 签名校验，而非 JWT）
         if request.url.path in (
-            "/health", "/docs", "/redoc", "/openapi.json", "/api/a2a/callback",
+            "/health", "/docs", "/redoc", "/openapi.json", "/metrics", "/api/a2a/callback",
         ):
             return await call_next(request)
 

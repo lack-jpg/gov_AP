@@ -404,4 +404,4 @@ if __name__ == "__main__":
         exit(1)
     else:
         print(" — all good")
-        print(f"\n  Run with: python -m tools.a2a.registry")
+        print("\n  Run with: python -m tools.a2a.registry")

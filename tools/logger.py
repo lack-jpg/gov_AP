@@ -774,4 +774,4 @@ if __name__ == "__main__":
     else:
         print(" — 日志系统正常")
     print(f"{'='*60}")
-    print(f"  运行方式: python tools/logger.py\n")
+    print("  运行方式: python tools/logger.py\n")

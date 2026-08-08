@@ -19,7 +19,6 @@ from sqlalchemy import (
     JSON,
     String,
     Text,
-    func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 

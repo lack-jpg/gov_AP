@@ -8,8 +8,6 @@ Task: Implement A2A Task state machine and lifecycle management
 """
 from __future__ import annotations
 
-import asyncio
-import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
@@ -442,4 +440,4 @@ if __name__ == "__main__":
         exit(1)
     else:
         print(" — all good")
-        print(f"\n  Run with: python -m tools.a2a.task")
+        print("\n  Run with: python -m tools.a2a.task")

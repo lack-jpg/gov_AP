@@ -214,6 +214,48 @@ services:
     networks:
       - gov_agent_net
 
+  # ──────────────────────────────────────
+  # Prometheus — 指标抓取（端口 9090）
+  # ──────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: gov_agent_prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    depends_on:
+      - api
+    networks:
+      - gov_agent_net
+
+  # ──────────────────────────────────────
+  # Grafana — 可视化看板（端口 3000）
+  # ──────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: gov_agent_grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - gov_agent_net
+
 # ──────────────────────────────────────
 # Named Volumes
 # ──────────────────────────────────────
@@ -224,6 +266,10 @@ volumes:
     name: gov_agent_redisdata
   milvusdata:
     name: gov_agent_milvusdata
+  promdata:
+    name: gov_agent_promdata
+  grafanadata:
+    name: gov_agent_grafanadata
 
 # ──────────────────────────────────────
 # Network

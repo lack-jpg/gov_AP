@@ -8,7 +8,7 @@ Date: 2026/8/4
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from tools.logger import get_logger
 
@@ -67,7 +67,7 @@ def create_llm_judge_async(llm: Any) -> Callable[[str], str]:
                 return "0.0"
 
         try:
-            loop = asyncio.get_running_loop()
+            _ = asyncio.get_running_loop()
             # 已有运行中的 loop → 创建新 loop
             new_loop = asyncio.new_event_loop()
             try:

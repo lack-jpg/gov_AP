@@ -691,7 +691,7 @@ if __name__ == "__main__":
             exit(1)
         else:
             print(" — all good")
-            print(f"\n  Run with: python -m backend.middleware.tracing")
+            print("\n  Run with: python -m backend.middleware.tracing")
             if not otel_available:
                 print("  ℹ OpenTelemetry SDK 未安装，Tracing 使用 NoOp 模式")
                 print("    安装命令: pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp")

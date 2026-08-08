@@ -16,8 +16,6 @@ import httpx
 from tools.logger import get_logger
 from tools.a2a.protocol import (
     A2ATaskRequest,
-    A2ATaskResponse,
-    A2ATaskStatus,
     AgentCard,
 )
 from tools.a2a.registry import get_external_registry, ExternalAgentRegistry
@@ -518,6 +516,6 @@ if __name__ == "__main__":
             exit(1)
         else:
             print(" — all good")
-            print(f"\n  Run with: python -m tools.a2a.connector")
+            print("\n  Run with: python -m tools.a2a.connector")
 
     asyncio.run(main())

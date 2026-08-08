@@ -8,7 +8,7 @@ Task: Agent package initialization and registry
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from tools.logger import get_logger
 

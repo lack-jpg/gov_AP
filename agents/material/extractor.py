@@ -573,7 +573,7 @@ if __name__ == "__main__":
             exit(1)
         else:
             print(" — all good")
-            print(f"\n  Run with: python -m agents.material.extractor")
+            print("\n  Run with: python -m agents.material.extractor")
             if not ner_available:
                 print("  ℹ transformers 未安装，NER 使用 regex 模式")
                 print("    安装命令: pip install transformers torch")

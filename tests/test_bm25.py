@@ -3,7 +3,6 @@ test_bm25 - BM25 sparse retrieval tests
 """
 from __future__ import annotations
 
-import pytest
 
 from rag.bm25 import SimpleBM25
 

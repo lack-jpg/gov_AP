@@ -9,6 +9,7 @@ Task: Implement input/output security scanning
 from __future__ import annotations
 
 import re
+from typing import Optional
 
 from orchestration.langgraph.state import GuardrailResult
 from tools.logger import get_logger

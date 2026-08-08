@@ -16,7 +16,6 @@ from typing import Any, Optional, Sequence
 
 from governance.evaluation.metrics import (
     AgentMetricResult,
-    EvalReport,
     RAGMetricResult,
     compute_agent_metrics,
     compute_intent_accuracy,
@@ -402,7 +401,7 @@ class EvaluationEngine:
 
         if rag_questions:
             # 使用第一个有完整数据的 case 计算 RAG 指标
-            for i, (q, a, ctx) in enumerate(zip(rag_questions, rag_answers, rag_contexts_list)):
+            for (q, a, ctx) in zip(rag_questions, rag_answers, rag_contexts_list):
                 if ctx:  # 有上下文的 case
                     ragt = compute_rag_metrics(
                         question=q, answer=a, contexts=ctx, reference_answer="",
@@ -520,8 +519,8 @@ class EvaluationEngine:
             "",
             "## Summary",
             "",
-            f"| Metric | Value |",
-            f"|--------|-------|",
+            "| Metric | Value |",
+            "|--------|-------|",
             f"| Overall Score | **{result.overall_score:.2%}** |",
             f"| Total Cases | {result.total_cases} |",
             f"| Passed Cases | {result.passed_cases} |",
@@ -532,8 +531,8 @@ class EvaluationEngine:
             "",
             "## RAG Metrics",
             "",
-            f"| Metric | Score |",
-            f"|--------|-------|",
+            "| Metric | Score |",
+            "|--------|-------|",
             f"| Faithfulness | {result.rag.faithfulness:.2%} |",
             f"| Answer Relevance | {result.rag.answer_relevance:.2%} |",
             f"| Context Recall | {result.rag.context_recall:.2%} |",
@@ -542,8 +541,8 @@ class EvaluationEngine:
             "",
             "## Agent Metrics",
             "",
-            f"| Metric | Value |",
-            f"|--------|-------|",
+            "| Metric | Value |",
+            "|--------|-------|",
             f"| Task Success Rate | {result.agent.task_success_rate:.2%} |",
             f"| Tool Accuracy | {result.agent.tool_accuracy:.2%} |",
             f"| Avg Latency | {result.agent.avg_latency_ms:.1f}ms |",
@@ -1142,7 +1141,7 @@ def _smoke_test() -> None:
     assert d["case_id"] == "test"
     assert d["intent_match"] is True
     passed += 1
-    print(f"  [OK] EvalCaseRecord.to_dict()")
+    print("  [OK] EvalCaseRecord.to_dict()")
 
     # Test 12: EvaluationResult.to_json
     total += 1

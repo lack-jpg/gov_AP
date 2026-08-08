@@ -12,8 +12,7 @@ import contextvars
 import time
 import uuid
 from contextlib import asynccontextmanager, contextmanager
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, AsyncIterator, Iterator
 
@@ -656,7 +655,6 @@ def record_tool_call(
 # ============================================================
 
 if __name__ == "__main__":
-    import asyncio
 
     passed = 0
     failed = 0

@@ -9,7 +9,7 @@ Task: Implement FastAPI dependency injection for common resources
 from __future__ import annotations
 
 import uuid
-from typing import AsyncGenerator, Optional
+from typing import Optional
 
 from fastapi import Depends, Header, HTTPException, Request, status
 from langgraph.graph import StateGraph
@@ -295,7 +295,6 @@ async def execute_agent(
     """
     from orchestration.langgraph.state import create_initial_state
     from orchestration.langgraph.runtime import (
-        AgentRuntime,
         create_runtime_from_settings,
         RuntimeExceededError,
         RuntimeTimeoutError,
@@ -429,7 +428,6 @@ async def stream_agent(
     既拿节点名，又拿最终状态，避免重复执行。
     """
     from orchestration.langgraph.state import create_initial_state
-    from orchestration.langgraph.runtime import create_runtime_from_settings
 
     initial_state = create_initial_state(user_query=user_query, trace_id=trace_id)
     graph = await get_agent_graph(settings)

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from langchain_core.language_models import BaseChatModel
 
 from orchestration.langgraph.state import AgentState
 from tools.logger import get_logger, log_mcp_call
@@ -142,7 +141,6 @@ class WorkflowAgent:
         logger.info("Workflow 完成: case_id={}", case_id)
 
         # 将 case_id 写回 state
-        import json
         return {
             **state,
             "workflow_result": {

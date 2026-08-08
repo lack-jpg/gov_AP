@@ -458,7 +458,7 @@ def filter_output(text: str) -> tuple[str, list[GuardFinding]]:
         if f.guard_type == GuardType.SECRET_LEAK:
             # 删除包含密钥的行
             lines = filtered.split("\n")
-            lines = [l for l in lines if (f.matched_text or "")[:20] not in l]
+            lines = [line for line in lines if (f.matched_text or "")[:20] not in line]
             filtered = "\n".join(lines)
         elif f.guard_type == GuardType.ERROR_LEAK:
             # 替换错误详情为通用提示
@@ -557,9 +557,6 @@ class GuardrailRunner:
         # 判断是否通过
         has_critical = any(
             f.severity == GuardSeverity.CRITICAL for f in findings
-        )
-        has_error = any(
-            f.guard_type == GuardType.ERROR_LEAK for f in findings
         )
 
         return GuardrailResult(

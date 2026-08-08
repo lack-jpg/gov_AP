@@ -256,7 +256,6 @@ async def seed_agents(dry_run: bool = False) -> int:
     Returns:
         插入的行数
     """
-    import json
     from sqlalchemy import select
     from database.connection import get_session_factory
     from database.models import Agent as AgentModel

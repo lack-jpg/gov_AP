@@ -17,7 +17,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.supervisor.prompts import PLANNER_SYSTEM_PROMPT, PLANNER_USER_PROMPT
 from prompts.registry import get_registry
-from orchestration.langgraph.state import AgentState, Task, TaskStatus, RiskLevel
+from orchestration.langgraph.state import AgentState, Task, TaskStatus
 
 
 # ============================================================

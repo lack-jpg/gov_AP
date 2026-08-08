@@ -1,0 +1,15 @@
+# =====================================================
+# Prometheus 配置 — 抓取 API 容器的 /metrics
+# 挂载: docker-compose.yml prometheus 服务 → /etc/prometheus/prometheus.yml
+# =====================================================
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "gov-agent-api"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8002"]
+        labels:
+          service: "gov-agent-api"

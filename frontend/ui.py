@@ -318,7 +318,6 @@ def capability_card(emoji: str, name: str, tag: str, desc: str, page: str) -> No
 
 def status_card(ok: bool, title: str, detail: str = "") -> None:
     """状态卡：左侧语义色边条 + 状态点。ok=True 绿色 / False 琥珀"""
-    tone = "green" if ok else "amber"
     c = C_GREEN if ok else C_AMBER
     detail_html = (
         f'<div style="color:#64748B; font-size:13px; margin-top:4px;">{_esc(detail)}</div>'

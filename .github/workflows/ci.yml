@@ -1,0 +1,123 @@
+# =====================================================
+# CI/CD — lint → pytest → build image → push
+# 每次 push / PR：lint + test（174 测试）
+# master push：构建并推送 api 镜像到 GHCR
+# 手动触发：端到端集成测试（需完整 docker 栈）
+# =====================================================
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/api
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install ruff
+        run: pip install "ruff>=0.9.0,<1.0"
+      - name: Run ruff
+        run: ruff check .
+
+  test:
+    name: Test (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install dependencies
+        run: pip install -r requirements/requirements.txt
+      - name: Run tests
+        run: pytest tests/ -q
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log
+          path: |
+            pytest.txt
+          if-no-files-found: ignore
+
+  build:
+    name: Build & push api image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  e2e:
+    name: E2E (full stack)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install test deps
+        run: pip install httpx
+      - name: Start docker stack
+        run: docker compose up -d --build
+      - name: Wait for api healthy
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8002/health >/dev/null; then echo "api ready"; exit 0; fi
+            sleep 5
+          done
+          echo "api not ready"; exit 1
+      - name: Run e2e integration
+        run: python scripts/e2e_integration_test.py
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          docker compose logs api > api.log 2>&1 || true
+          docker compose logs mcp-server > mcp.log 2>&1 || true
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: |
+            api.log
+            mcp.log
+          if-no-files-found: ignore

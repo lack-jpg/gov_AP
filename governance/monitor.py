@@ -8,8 +8,6 @@ Task: Implement agent monitoring with Prometheus metrics export
 """
 from __future__ import annotations
 
-import time
-from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -401,7 +399,6 @@ class MetricsCollector:
         Returns:
             平均延迟（毫秒）
         """
-        labels = {"agent": agent_name} if agent_name else {}
         sum_val = 0.0
         count_val = 0.0
         for mv in self._agent_latency.values:

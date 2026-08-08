@@ -8,15 +8,12 @@ Task: Implement search_policy and get_policy_detail using RAG stubs + template f
 """
 from __future__ import annotations
 
-import uuid
 from typing import Any
 
 from tools.logger import get_logger
 from tools.mcp.schema import (
-    SearchPolicyInput,
     SearchPolicyOutput,
     PolicyDocument,
-    GetPolicyDetailInput,
     GetPolicyDetailOutput,
 )
 

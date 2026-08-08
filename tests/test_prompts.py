@@ -6,7 +6,6 @@ from __future__ import annotations
 import pytest
 
 from prompts.registry import (
-    PromptRegistry,
     PromptTemplate,
     get_registry,
     get_prompt,

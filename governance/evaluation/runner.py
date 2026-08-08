@@ -18,7 +18,6 @@ from datetime import datetime, timezone
 from typing import Any, Optional, Sequence
 
 from governance.evaluation.benchmark import BenchmarkResult, BenchmarkRunner
-from governance.evaluation.evaluator import EvaluationEngine, EvaluationResult
 
 
 # ============================================================
@@ -266,7 +265,7 @@ class EvalRunner:
                     writer.write_console(benchmark)
                 elif self.config.output_format == "all":
                     files = writer.write_all(benchmark, basename)
-                    print(f"\nReports written:")
+                    print("\nReports written:")
                     for fmt, path in files.items():
                         if fmt != "console":
                             print(f"  [{fmt}] {path}")
@@ -524,7 +523,7 @@ async def handle_run(args: argparse.Namespace) -> int:
         fail_threshold=args.fail_threshold,
     )
 
-    print(f"Starting evaluation run...")
+    print("Starting evaluation run...")
     print(f"  Version:        {config.version}")
     print(f"  Cases dir:      {config.cases_dir}")
     print(f"  Datasets:       {config.dataset_filter or 'all'}")
@@ -540,7 +539,7 @@ async def handle_run(args: argparse.Namespace) -> int:
     if result.success:
         b = result.benchmark
         if b:
-            print(f"\nEvaluation completed successfully.")
+            print("\nEvaluation completed successfully.")
             print(f"  Overall Score: {b.overall_score:.2%}")
             print(f"  Total Cases:   {b.total_cases}")
             print(f"  Passed Cases:  {b.passed_cases}")
@@ -741,7 +740,7 @@ def _smoke_test() -> None:
     assert config.output_format == "all"
     assert config.fail_threshold == 0.0
     passed += 1
-    print(f"  [OK] RunnerConfig defaults")
+    print("  [OK] RunnerConfig defaults")
 
     # Test 2: EvalRunner execute success
     total += 1
@@ -868,7 +867,7 @@ def _smoke_test() -> None:
     assert args.version == "test"
     assert args.output == "none"
     passed += 1
-    print(f"  [OK] CLI parser run command")
+    print("  [OK] CLI parser run command")
 
     # Test 9: CLI parser compare
     total += 1
@@ -876,14 +875,14 @@ def _smoke_test() -> None:
     assert args.command == "compare"
     assert args.versions == "v1,v2"
     passed += 1
-    print(f"  [OK] CLI parser compare command")
+    print("  [OK] CLI parser compare command")
 
     # Test 10: CLI parser list
     total += 1
     args = parser.parse_args(["list"])
     assert args.command == "list"
     passed += 1
-    print(f"  [OK] CLI parser list command")
+    print("  [OK] CLI parser list command")
 
     # Test 11: RunnerResult to_dict
     total += 1
@@ -893,7 +892,7 @@ def _smoke_test() -> None:
     assert d["success"] is True
     assert d["config"]["version"] == "v1"
     passed += 1
-    print(f"  [OK] RunnerResult to_dict")
+    print("  [OK] RunnerResult to_dict")
 
     # Test 12: handle_list
     total += 1

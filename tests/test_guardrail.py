@@ -9,7 +9,6 @@ from governance.guardrail import (
     GuardType,
     check_error_leak,
     check_injection,
-    check_prompt_leak,
     check_sensitive,
     filter_output,
     quick_check_input,

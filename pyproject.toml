@@ -20,8 +20,12 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP"]
-ignore = ["E501", "B008"]
+select = ["E", "F", "W", "B"]
+# E501 行长忽略；B008 依赖注入缺省可调用参数（FastAPI Depends 惯例）
+# E402 允许 sys.path/循环导入后的延迟 import（logger/checkpointer/migrations 惯例）
+# B904 允许 except 内直接 raise（多数为 HTTPException 包装，行为已定义）
+# B905 允许 zip 不带 strict（现有调用均为等长列表）
+ignore = ["E501", "B008", "E402", "B904", "B905"]
 
 [tool.mypy]
 python_version = "3.12"

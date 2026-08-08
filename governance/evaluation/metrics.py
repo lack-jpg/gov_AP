@@ -9,8 +9,6 @@ Task: Implement all RAG and Agent evaluation metric calculations
 """
 from __future__ import annotations
 
-import json
-import math
 import re
 from dataclasses import dataclass, field
 from typing import Any, Optional, Sequence
@@ -853,14 +851,14 @@ def _smoke_test() -> None:
     score = compute_faithfulness("这是一段回答", [])
     assert score == 0.0, f"Expected 0.0, got {score}"
     passed += 1
-    print(f"  [OK] faithfulness empty contexts -> 0.0")
+    print("  [OK] faithfulness empty contexts -> 0.0")
 
     # Test 2: faithfulness - empty answer
     total += 1
     score = compute_faithfulness("", ["上下文"])
     assert score == 0.0, f"Expected 0.0, got {score}"
     passed += 1
-    print(f"  [OK] faithfulness empty answer -> 0.0")
+    print("  [OK] faithfulness empty answer -> 0.0")
 
     # Test 3: faithfulness - perfect match
     total += 1
@@ -900,28 +898,28 @@ def _smoke_test() -> None:
     )
     assert score == 0.0, f"Expected 0.0, got {score}"
     passed += 1
-    print(f"  [OK] answer_relevance refusal -> 0.0")
+    print("  [OK] answer_relevance refusal -> 0.0")
 
     # Test 7: answer_relevance - empty answer
     total += 1
     score = compute_answer_relevance("问题", "")
     assert score == 0.0, f"Expected 0.0, got {score}"
     passed += 1
-    print(f"  [OK] answer_relevance empty -> 0.0")
+    print("  [OK] answer_relevance empty -> 0.0")
 
     # Test 8: context_recall - empty contexts
     total += 1
     score = compute_context_recall([], "参考答案")
     assert score == 0.0, f"Expected 0.0, got {score}"
     passed += 1
-    print(f"  [OK] context_recall empty contexts -> 0.0")
+    print("  [OK] context_recall empty contexts -> 0.0")
 
     # Test 9: context_recall - empty reference
     total += 1
     score = compute_context_recall(["上下文"], "")
     assert score == 1.0, f"Expected 1.0, got {score}"
     passed += 1
-    print(f"  [OK] context_recall empty reference -> 1.0")
+    print("  [OK] context_recall empty reference -> 1.0")
 
     # Test 10: context_recall - match
     total += 1
@@ -971,7 +969,7 @@ def _smoke_test() -> None:
     rate = compute_task_success_rate([])
     assert rate == 0.0, f"Expected 0.0, got {rate}"
     passed += 1
-    print(f"  [OK] task_success_rate empty -> 0.0")
+    print("  [OK] task_success_rate empty -> 0.0")
 
     # Test 14: tool_accuracy
     total += 1
@@ -989,14 +987,14 @@ def _smoke_test() -> None:
     accuracy = compute_tool_accuracy(traces2, None)
     assert accuracy == 1.0, f"Expected 1.0, got {accuracy}"
     passed += 1
-    print(f"  [OK] tool_accuracy no expected -> 1.0")
+    print("  [OK] tool_accuracy no expected -> 1.0")
 
     # Test 16: tool_accuracy - empty traces
     total += 1
     accuracy = compute_tool_accuracy([], ["search_policy"])
     assert accuracy == 0.0, f"Expected 0.0, got {accuracy}"
     passed += 1
-    print(f"  [OK] tool_accuracy empty traces -> 0.0")
+    print("  [OK] tool_accuracy empty traces -> 0.0")
 
     # Test 17: tool_accuracy with tool_calls list
     total += 1
@@ -1031,7 +1029,7 @@ def _smoke_test() -> None:
     avg_lat = compute_avg_latency_ms([])
     assert avg_lat == 0.0, f"Expected 0.0, got {avg_lat}"
     passed += 1
-    print(f"  [OK] avg_latency_ms empty -> 0.0")
+    print("  [OK] avg_latency_ms empty -> 0.0")
 
     # Test 20: avg_step_count
     total += 1
@@ -1077,21 +1075,21 @@ def _smoke_test() -> None:
     acc = compute_intent_accuracy("business_license", "business_license")
     assert acc == 1.0, f"Expected 1.0, got {acc}"
     passed += 1
-    print(f"  [OK] intent_accuracy match -> 1.0")
+    print("  [OK] intent_accuracy match -> 1.0")
 
     # Test 24: intent_accuracy mismatch
     total += 1
     acc = compute_intent_accuracy("policy_query", "business_license")
     assert acc == 0.0, f"Expected 0.0, got {acc}"
     passed += 1
-    print(f"  [OK] intent_accuracy mismatch -> 0.0")
+    print("  [OK] intent_accuracy mismatch -> 0.0")
 
     # Test 25: intent_accuracy empty expected
     total += 1
     acc = compute_intent_accuracy("business_license", "")
     assert acc == 1.0, f"Expected 1.0, got {acc}"
     passed += 1
-    print(f"  [OK] intent_accuracy empty expected -> 1.0")
+    print("  [OK] intent_accuracy empty expected -> 1.0")
 
     # Test 26: intent_accuracy_batch
     total += 1
@@ -1107,10 +1105,10 @@ def _smoke_test() -> None:
     total += 1
     try:
         compute_intent_accuracy_batch(["a"], ["a", "b"])
-        print(f"  [FAIL] intent_accuracy_batch should have raised ValueError")
+        print("  [FAIL] intent_accuracy_batch should have raised ValueError")
     except ValueError:
         passed += 1
-        print(f"  [OK] intent_accuracy_batch length mismatch -> ValueError")
+        print("  [OK] intent_accuracy_batch length mismatch -> ValueError")
 
     # --- Composite ---
     print("\n" + "=" * 60)
@@ -1152,7 +1150,7 @@ def _smoke_test() -> None:
     score = compute_faithfulness("answer", None)  # type: ignore
     assert score == 0.0, f"Expected 0.0, got {score}"
     passed += 1
-    print(f"  [OK] faithfulness None contexts -> 0.0 (graceful)")
+    print("  [OK] faithfulness None contexts -> 0.0 (graceful)")
 
     # Test 31: tool_accuracy_from_mcp_history
     total += 1
@@ -1173,7 +1171,7 @@ def _smoke_test() -> None:
     acc = compute_tool_accuracy_from_mcp_history([], ["search_policy"])
     assert acc == 0.0, f"Expected 0.0, got {acc}"
     passed += 1
-    print(f"  [OK] tool_accuracy_from_mcp_history empty -> 0.0")
+    print("  [OK] tool_accuracy_from_mcp_history empty -> 0.0")
 
     # Test 33: combine all metrics with mixed case
     total += 1

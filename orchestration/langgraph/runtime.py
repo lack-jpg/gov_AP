@@ -12,10 +12,10 @@ import asyncio
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Optional
 
 from tools.logger import get_logger
-from orchestration.langgraph.state import AgentState, MCPCallStatus, RiskLevel
+from orchestration.langgraph.state import AgentState, RiskLevel
 
 logger = get_logger(__name__)
 
@@ -183,7 +183,6 @@ class AgentRuntime:
             config["recursion_limit"] = self.config.max_steps + 2
 
         try:
-            state = initial_state
             # 注意：graph.ainvoke 内部已有 recursion_limit 保护
             # 我们在此基础上增加 per-step 检查
             result = await asyncio.wait_for(
@@ -494,4 +493,4 @@ if __name__ == "__main__":
     else:
         print(" — Runtime 安全护栏正常")
     print(f"{'='*60}")
-    print(f"  运行方式: python -m orchestration.langgraph.runtime\n")
+    print("  运行方式: python -m orchestration.langgraph.runtime\n")

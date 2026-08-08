@@ -101,13 +101,13 @@ def download_from_modelscope(model: dict, dry_run: bool = False) -> bool:
     if dry_run:
         print(f"  [{model['name']}] 需要下载: {model['model_id']} ({model['size_hint']})")
         print(f"          目标路径: {local_path}")
-        print(f"          来源: ModelScope (国内镜像)")
+        print("          来源: ModelScope (国内镜像)")
         return False
 
     print(f"  [{model['name']}] 正在从 ModelScope 下载 {model['model_id']}...")
     print(f"          目标路径: {local_path}")
     print(f"          预计大小: {model['size_hint']}")
-    print(f"          首次下载需要几分钟，请耐心等待...")
+    print("          首次下载需要几分钟，请耐心等待...")
 
     try:
         # 确保父目录存在
@@ -173,7 +173,7 @@ def download_from_huggingface(model: dict, dry_run: bool = False) -> bool:
 
     except Exception as e:
         print(f"  [{model['name']}] 下载失败: {e}")
-        print(f"          提示: 设置 HF_ENDPOINT=https://hf-mirror.com 使用镜像")
+        print("          提示: 设置 HF_ENDPOINT=https://hf-mirror.com 使用镜像")
         return False
 
 
@@ -246,7 +246,7 @@ def main():
     print("=" * 60)
     print(f"  完成: {success} 成功, {failed} 失败, {len(targets)} 总计")
     if failed > 0:
-        print(f"  提示: 失败可重试，已下载的部分不会丢失")
+        print("  提示: 失败可重试，已下载的部分不会丢失")
     print("=" * 60)
     print()
 

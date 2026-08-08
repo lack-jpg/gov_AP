@@ -23,7 +23,6 @@ from backend.api.dependencies import (
 from backend.api.schemas import (
     A2ACallbackRequest,
     A2ACallbackResponse,
-    AgentStatusRequest,
     AgentStatusResponse,
     ChatRequest,
     ChatResponse,

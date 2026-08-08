@@ -200,6 +200,18 @@ def create_app() -> FastAPI:
             "log_level": settings.log_level,
         }
 
+    # ── Prometheus 指标（供 Prometheus 抓取，无需认证） ──
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics():
+        """返回 Prometheus 文本格式的运行指标（取自 MetricsCollector）。"""
+        from fastapi.responses import PlainTextResponse
+        from governance.monitor import export_prometheus_metrics
+
+        return PlainTextResponse(
+            export_prometheus_metrics(),
+            media_type="text/plain; version=0.0.4",
+        )
+
     logger = get_logger(__name__)
     logger.info(f"FastAPI app构建完成: {settings.app_name} v{settings.app_version}")
     return app

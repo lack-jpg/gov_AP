@@ -343,7 +343,6 @@ def split_train_val(
     seed: int = 42,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     """按标签分层切分 train/val，保证每个标签至少 1 条在 val 中。"""
-    from sklearn.model_selection import train_test_split
 
     random.seed(seed)
     train, val = [], []
@@ -573,7 +572,7 @@ def verify(model_path: str) -> bool:
         print("[FAIL] classifier.is_model_loaded = False — 模型未被加载")
         return False
 
-    print(f"[OK] 模型已加载: source check OK")
+    print("[OK] 模型已加载: source check OK")
 
     # 对 golden cases 逐个推理
     import asyncio

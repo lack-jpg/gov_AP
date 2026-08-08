@@ -3,10 +3,8 @@ test_state - AgentState definition and helper function tests
 """
 from __future__ import annotations
 
-import pytest
 
 from orchestration.langgraph.state import (
-    AgentState,
     Evidence,
     IntentResult,
     MCPCallRecord,

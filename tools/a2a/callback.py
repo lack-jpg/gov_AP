@@ -13,7 +13,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, status
 
 from tools.logger import get_logger
-from tools.a2a.protocol import A2ATaskResponse, A2ATaskStatus
+from tools.a2a.protocol import A2ATaskStatus
 from tools.a2a.task import get_task_store, TaskStore
 from tools.a2a.registry import get_external_registry, ExternalAgentRegistry
 
@@ -359,7 +359,7 @@ if __name__ == "__main__":
     async def main():
         # 准备测试数据
         from tools.a2a.task import TaskStore
-        from orchestration.langgraph.state import A2ATaskRecord, A2ATaskStatus as StateA2AStatus
+        from orchestration.langgraph.state import A2ATaskRecord
 
         store = TaskStore()
         record = A2ATaskRecord(
@@ -487,6 +487,6 @@ if __name__ == "__main__":
             exit(1)
         else:
             print(" — all good")
-            print(f"\n  Run with: python -m tools.a2a.callback")
+            print("\n  Run with: python -m tools.a2a.callback")
 
     asyncio.run(main())

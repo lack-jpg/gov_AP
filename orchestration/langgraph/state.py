@@ -707,7 +707,6 @@ RouterFunction = Any  # Callable[[AgentState], str]
 
 if __name__ == "__main__":
     import json
-    import traceback
     from typing import get_type_hints
 
     passed = 0
@@ -1131,8 +1130,8 @@ if __name__ == "__main__":
     print(f"\n  {passed}/{total} passed", end="")
     if failed > 0:
         print(f", {failed} FAILED")
-        print(f"\n  Run with: python -m orchestration.langgraph.state")
+        print("\n  Run with: python -m orchestration.langgraph.state")
         exit(1)
     else:
-        print(f" — all good")
-        print(f"\n  Run with: python -m orchestration.langgraph.state")
+        print(" — all good")
+        print("\n  Run with: python -m orchestration.langgraph.state")

@@ -582,7 +582,8 @@ if __name__ == "__main__":
         # ── 6. recognize 结构化结果 ──
         section("6. recognize 结构化结果")
         # 构造一个最小的 1x1 PNG 来测试图片处理路径
-        import struct, zlib
+        import struct
+        import zlib
 
         def make_minimal_png() -> bytes:
             """创建一个最小合法的 1x1 白色 PNG"""
@@ -656,7 +657,7 @@ if __name__ == "__main__":
             exit(1)
         else:
             print(" — all good")
-            print(f"\n  Run with: python -m agents.material.ocr")
+            print("\n  Run with: python -m agents.material.ocr")
             if not paddle_available:
                 print("  ℹ PaddleOCR 未安装，OCR 使用 stub 模式")
                 print("    安装命令: pip install paddleocr")

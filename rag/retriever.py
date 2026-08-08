@@ -153,7 +153,6 @@ class HybridRetriever:
         """
         try:
             import asyncio
-            from pymilvus import Collection
 
             def _search() -> list[dict]:
                 nprobe = 10
