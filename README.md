@@ -1677,6 +1677,28 @@ governance_node（末尾节点）
 
 # 20. 更新日志
 
+## 2026-08-08 — 测试覆盖 + MCP 链路修复
+
+### 测试覆盖（PLAN #10）
+
+| 测试 | 文件 | 说明 |
+| --- | --- | --- |
+| governance 模块 | `tests/test_governance_agents.py`（33 项） | SecurityChecker / BehaviorAnalyzer / Optimizer / GovernanceAgent |
+| 评测指标 | `tests/test_evaluation_metrics.py`（34 项） | RAG 三指标 + Agent 指标 + 意图准确率 + 综合评分 |
+| 评测引擎 | `tests/test_evaluation_engine.py`（9 项） | evaluate_from_traces/cases/json、compare_versions、markdown、嵌套用例 |
+| A2A connector | `tests/test_a2a_connector.py`（6→11 项） | check_status / cancel_task 各分支 |
+| 端到端集成 | `scripts/e2e_integration_test.py`（23 断言） | docker compose 全栈：健康/单轮/多轮/历史/看板/SSE/评测，**23/23 通过** |
+
+`pytest tests/` 累计 **174 通过**。
+
+### MCP 链路修复（端到端测试发现）
+
+| Bug | 修复 |
+| --- | --- |
+| MCP 容器缺 `python-jose` → Gateway JWT 校验 500 | `deploy/Dockerfile.mcp` 加 `python-jose` |
+| MCP Gateway 认证失败（api 未带 JWT + mcp 用默认密钥）→ 401 | `backend/api/dependencies.py` 传 `admin` JWT；`docker-compose.yml` mcp-server 共享 `JWT_SECRET_KEY` |
+| workflow 完成后直接进治理 → `final_answer` 空 | `orchestration/langgraph/edges.py` `route_after_workflow` 先回 supervisor 合成 |
+
 ## 2026-08-08 — 前端中文显示修复
 
 修复本地/容器前端部分页面出现英文的问题：
