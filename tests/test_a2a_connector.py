@@ -201,3 +201,84 @@ async def test_send_task_unknown_skill_uses_stub():
         assert result["task_id"].startswith("a2a_")
     finally:
         await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_check_status_after_stub_send():
+    """stub 完成后 check_status 返回 completed + artifact。"""
+    # 用真实 httpx 客户端（不注入 MockTransport），127.0.0.1:9 不可达 → stub
+    store = TaskStore()
+    conn = A2AConnector(
+        registry=_make_registry(endpoint="http://127.0.0.1:9"),
+        task_store=store,
+    )
+    try:
+        result = await conn.send_task("query_property", {"owner_name": "张三"})
+        assert result["mode"] == "stub"
+        status = await conn.check_status(result["task_id"])
+        assert status["status"] == "completed"
+        assert status["artifact"] is not None
+        assert status["task_id"] == result["task_id"]
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_check_status_unknown_task():
+    """不存在的任务 → status=unknown。"""
+    conn, _ = _make_connector(handler=lambda req: httpx.Response(200, json={}))
+    try:
+        status = await conn.check_status("nonexistent_task")
+        assert status["status"] == "unknown"
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_cancel_task_submitted():
+    """提交中的异步任务可取消。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = _req_body(request)
+        return httpx.Response(200, json={
+            "task_id": body["task_id"], "status": "submitted", "agent_name": "housing_agent",
+        })
+
+    conn, _ = _make_connector(handler)
+    try:
+        result = await conn.send_task("query_property", {"owner_name": "张三"})
+        cancel = await conn.cancel_task(result["task_id"])
+        assert cancel["cancelled"] is True
+        # 取消后状态为 failed（终态）
+        status = await conn.check_status(result["task_id"])
+        assert status["status"] == "failed"
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_cancel_task_completed_not_allowed():
+    """已完成（stub 终态）的任务不能取消。"""
+    store = TaskStore()
+    conn = A2AConnector(
+        registry=_make_registry(endpoint="http://127.0.0.1:9"),  # 不可达 → stub 完成
+        task_store=store,
+    )
+    try:
+        result = await conn.send_task("query_property", {"owner_name": "张三"})
+        assert result["mode"] == "stub"
+        cancel = await conn.cancel_task(result["task_id"])
+        assert cancel["cancelled"] is False
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_cancel_task_not_found():
+    """不存在的任务取消返回 False。"""
+    conn, _ = _make_connector(handler=lambda req: httpx.Response(200, json={}))
+    try:
+        cancel = await conn.cancel_task("nonexistent_task")
+        assert cancel["cancelled"] is False
+    finally:
+        await conn.close()

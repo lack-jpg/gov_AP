@@ -136,6 +136,10 @@ services:
       - "12301:12301"
       - "12302:12302"
       - "12303:12303"
+    environment:
+      # 与 api 共享 JWT 密钥：Gateway 校验 MCP Client 的 Bearer Token 必须用同一密钥
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-changeme}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
     networks:
       - gov_agent_net
 

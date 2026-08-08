@@ -228,11 +228,17 @@ async def get_agent_graph(
         except Exception:
             pass
 
-    # MCP Client（激活整条 MCP 工具调用链路）
+    # MCP Client（激活整条 MCP 工具调用链路；带 admin JWT 通过 Gateway 认证/RBAC）
     mcp_client = None
     try:
+        from backend.middleware.auth import create_access_token
         from tools.mcp.client import MCPClient
-        mcp_client = MCPClient(gateway_url=settings.mcp_gateway_url)
+
+        mcp_token = create_access_token(user_id="mcp_client", role="admin")
+        mcp_client = MCPClient(
+            gateway_url=settings.mcp_gateway_url,
+            auth_token=mcp_token,
+        )
         logger = None
         try:
             from tools.logger import get_logger as _get_logger

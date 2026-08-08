@@ -189,6 +189,9 @@ def route_after_workflow(state: AgentState) -> str:
         user_query = state.get("user_query", "")
         if _needs_a2a(intent, user_query):
             return NodeName.A2A_CHECK.value
+        # 尚未合成最终答案 → 先回 supervisor 汇总（含 workflow 等结果），否则直接治理
+        if not state.get("final_answer", ""):
+            return NodeName.SUPERVISOR.value
         return NodeName.GOVERNANCE.value
 
     return route_after_supervisor(state)
