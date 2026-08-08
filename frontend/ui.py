@@ -192,6 +192,13 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 /* ── 可访问性：可见焦点 ── */
 :focus-visible { outline: 3px solid rgba(30, 64, 175, 0.5) !important; outline-offset: 2px; }
 
+/* ── 隐藏 Streamlit 原生英文 UI（Deploy / Made with Streamlit / 汉堡菜单） ── */
+[data-testid="stAppDeployButton"] { display: none !important; }
+[data-testid="stToolbar"] { visibility: hidden; }
+footer { visibility: hidden; }
+#MainMenu { visibility: hidden; }
+header[data-testid="stHeader"] { background: transparent; }
+
 /* ── 动画降级 ── */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {

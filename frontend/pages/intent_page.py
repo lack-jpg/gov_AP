@@ -90,11 +90,11 @@ if st.button("🎯 识别意图", type="primary", use_container_width=True, disa
 
         c1, c2, c3 = st.columns(3)
         with c1:
-            ui.metric_card("🏷️ 意图标签", result.label, accent="blue")
+            ui.metric_card("🏷️ 意图", LABELS.get(result.label, result.label_name or result.label), accent="blue")
         with c2:
-            ui.metric_card("📛 中文名", LABELS.get(result.label, result.label_name or "-"), accent="green")
+            ui.metric_card("📛 英文标签", result.label, accent="gray")
         with c3:
-            ui.metric_card("🔍 识别来源", SOURCE_NAMES.get(result.source, result.source), accent="gray")
+            ui.metric_card("🔍 识别来源", SOURCE_NAMES.get(result.source, result.source), accent="green")
 
         with st.container(border=True):
             st.markdown("**置信度**")
