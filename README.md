@@ -1675,6 +1675,72 @@ governance_node（末尾节点）
 
 # 20. 更新日志
 
+## 🏛️ 2026-08-13 — 里程碑 v3.0 发布
+
+> 政务多智能体平台 v3.0 完成全部规划任务，正式进入里程碑节点。
+>
+> 定位：面向政务「高效办成一件事」场景的企业级多智能体协同与治理平台。
+> 技术栈：Python 3.12 + FastAPI + LangGraph 1.x + MCP + A2A + RAG + AgentOps。
+
+### 核心指标
+
+| 指标 | 数值 |
+| --- | --- |
+| 代码规模 | 38,551 行 Python |
+| 提交数 | 54 |
+| 自动化测试 | **174** pytest + 端到端 **23/23** |
+| 意图识别准确率 | BERT 微调 **99.5%**（3500 用例） |
+| 性能优化 | LLM 二次请求 **18.4s → 0.26s**（缓存命中） |
+| CI/CD | ruff lint + pytest + GHCR 镜像构建推送 |
+| 可观测性 | Prometheus + Grafana + Alertmanager（4 条告警规则） |
+
+### 架构五层（全部落地）
+
+```
+用户 → FastAPI Gateway → Supervisor Agent（LangGraph StateGraph 编排）
+                            ↓
+                    Intent / Policy / Material / Workflow / A2A / Governance
+                            ↓
+                       MCP Gateway（JWT+RBAC）
+                            ↓
+              policy / material / workflow 三个 MCP Server
+```
+
+- **Agent 层**：6 类 Agent（supervisor / intent / policy / material / workflow / governance）
+- **编排层**：LangGraph 1.x StateGraph + PostgresCheckpointer + A2A 挂起/恢复
+- **协议层**：MCP（3 Server 标准化工具）+ A2A（HMAC 签名回调 + PostgresTaskStore 持久化）
+- **知识层**：BGE embedding/reranker + Milvus HNSW + BM25 混合检索 + RRF 融合
+- **治理层**：PII 脱敏 / Prompt 注入 / 敏感词护栏前置 / AgentOps 全链路 Trace
+
+### 已交付能力
+
+| 阶段 | 内容 | 状态 |
+| --- | --- | --- |
+| P1 核心框架 | LangGraph 工作流 + FastAPI + AgentState + Trace | ✅ |
+| P2 知识系统 | RAG 管线 + MCP 协议 + 3 Servers | ✅ |
+| P3 跨域协同 | A2A 真实系统对接（异步回调 + 状态持久化 + Docker 化） | ✅ |
+| P4 治理评测 | AgentOps + Evaluation 平台（DB/文件双通道） | ✅ |
+| P5 性能 | LLM 缓存 / Milvus 索引调优 / SSE 流式 | ✅ |
+| P6 前端 | 8 页 Streamlit + 多轮对话 + 历史持久化 + 中文修复 + stub 降级 | ✅ |
+| P7 质量 | 174 测试 + 3 个真实 bug 修复 + ruff 全绿 | ✅ |
+| P8 企业级 | 监控告警 + CI/CD + Docker 端口规范化（12001~12431） | ✅ |
+
+### Docker 部署拓扑
+
+```
+api 12401 │ mcp-server 12001/12011/12021/12031 │ a2a-mock 12101/12111
+postgres 12221 │ redis 12201 │ milvus 12211 │ frontend 12345
+prometheus 12411 │ grafana 12421 │ alertmanager 12431
+```
+
+### 当前状态
+
+- PLAN.md 全部任务 ✅ 完成
+- 搁置项：政务领域 LLM/embedding 微调（无真实数据）、k8s 生产部署（无集群）
+- 里程碑：tag `v3.0.0` + GitHub Release（2026-08-13）
+
+---
+
 ## 2026-08-08 — 监控告警（Prometheus + Grafana）+ CI/CD（GitHub Actions）
 
 ### 监控告警
@@ -1693,7 +1759,7 @@ governance_node（末尾节点）
 `.github/workflows/ci.yml`：
 - `lint`：`ruff check .`
 - `test`：`pytest tests/`（174 个，离线/DB-free）
-- `build`：master push 时构建并推送 api 镜像到 GHCR（`ghcr.io/lack-jpg/gov_AP/api`）
+- `build`：master push 时构建并推送 api 镜像到 GHCR（`ghcr.io/lack-jpg/gov_ap/api`，仓库名转小写）
 - `e2e`：手动触发，docker compose 全栈跑 `scripts/e2e_integration_test.py`
 
 ### 其他
