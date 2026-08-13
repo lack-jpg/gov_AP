@@ -1348,11 +1348,11 @@ governance_node（末尾节点）
   LLM          MCP           A2A
   │             │             │
   ├─可用        ├─可用         ├─可用
-  │  real LLM   │  MCP Server  │  HTTP async
-  │             │              │
-  ├─不可用       ├─不可用        ├─不可用
-  │  stub 模板  │  stub 回答    │  mock Agent
-  │             │              │
+  │  real LLM   │  MCP Server │  HTTP async
+  │             │             │
+  ├─不可用       ├─不可用       ├─不可用
+  │  stub 模板  │  stub 回答   │  mock Agent
+  │             │             │
   ▼             ▼             ▼
  最终回答       最终回答       外部结果
 
