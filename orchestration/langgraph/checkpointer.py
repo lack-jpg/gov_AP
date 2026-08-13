@@ -96,35 +96,60 @@ class PostgresCheckpointer(BaseCheckpointSaver):
         self,
         config: dict,
         *,
-        limit: Optional[int] = None,
+        filter: Optional[dict] = None,
         before: Optional[dict] = None,
+        limit: Optional[int] = None,
     ) -> AsyncIterator[CheckpointTuple]:
         """
-        列出指定 thread 的 checkpoint 历史。
+        列出指定 thread 的 checkpoint 历史（从新到旧）。
 
         Args:
-            config: LangGraph config
+            config: LangGraph config（含 thread_id）
+            filter: 按 metadata 精确匹配过滤（langgraph-checkpoint 3.x 新增）
+            before: 仅返回此 checkpoint（checkpoint_id 更小）之前的记录
             limit: 返回数量限制
-            before: 仅返回此 checkpoint 之前的记录
 
         Yields:
-            CheckpointTuple（从旧到新）
+            CheckpointTuple（从新到旧）
         """
         thread_id = config.get("configurable", {}).get("thread_id", "")
+
+        before_checkpoint_id = ""
+        if before:
+            before_checkpoint_id = (
+                before.get("configurable", {}).get("checkpoint_id", "") or ""
+            )
 
         async with self._session_factory() as session:
             stmt = (
                 select(_CheckpointRow)
                 .where(_CheckpointRow.thread_id == thread_id)
-                .order_by(_CheckpointRow.checkpoint_id.asc())
+                .order_by(_CheckpointRow.checkpoint_id.desc())
             )
-            if limit:
-                stmt = stmt.limit(limit)
+            if before_checkpoint_id:
+                stmt = stmt.where(
+                    _CheckpointRow.checkpoint_id < before_checkpoint_id
+                )
 
             result = await session.execute(stmt)
             rows = result.scalars().all()
 
+            # filter 在 Python 层过滤 metadata；limit 在过滤后计数，语义与官方 InMemorySaver 一致
+            count = 0
             for row in rows:
+                if filter:
+                    metadata = self._deserialize_typed(row.metadata_json)
+                    if not isinstance(metadata, dict):
+                        metadata = {}
+                    if not all(
+                        query_value == metadata.get(query_key)
+                        for query_key, query_value in filter.items()
+                    ):
+                        continue
+
+                if limit is not None and count >= limit:
+                    break
+                count += 1
                 yield self._row_to_tuple(row)
 
     async def aput(
@@ -229,13 +254,20 @@ class PostgresCheckpointer(BaseCheckpointSaver):
     def get_tuple(self, config: dict) -> Optional[CheckpointTuple]:
         raise NotImplementedError("Use aget_tuple for async")
 
-    def list(self, config: dict, *, limit=None, before=None) -> Iterator[CheckpointTuple]:
+    def list(
+        self,
+        config: dict,
+        *,
+        filter: Optional[dict] = None,
+        before: Optional[dict] = None,
+        limit: Optional[int] = None,
+    ) -> Iterator[CheckpointTuple]:
         raise NotImplementedError("Use alist for async")
 
-    def put(self, config, checkpoint, metadata) -> dict:
+    def put(self, config, checkpoint, metadata, new_versions) -> dict:
         raise NotImplementedError("Use aput for async")
 
-    def put_writes(self, config, writes, task_id) -> None:
+    def put_writes(self, config, writes, task_id, task_path="") -> None:
         raise NotImplementedError("Use aput_writes for async")
 
     def delete_thread(self, thread_id: str) -> None:
