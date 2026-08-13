@@ -784,7 +784,7 @@ python >=3.12
 | --- | --- | --- |
 | **MCP** | Gateway / Policy / Material / Workflow | **12001 / 12011 / 12021 / 12031** |
 | **A2A** | housing / fund（Docker `a2a-mock`） | **12101 / 12111** |
-| **数据库** | Redis / Milvus / Postgres | **12101 / 12211 / 12221** |
+| **数据库** | Redis / Milvus / Postgres | **12201 / 12211 / 12221** |
 | **前端** | Streamlit | **12345**（固定） |
 | **其他** | FastAPI API / Prometheus / Grafana / Alertmanager | **12401 / 12411 / 12421 / 12431** |
 | A2A Callback | `/api/a2a/callback`（HMAC 校验，Docker 内 `http://api:12401`） | **api:12401** |
