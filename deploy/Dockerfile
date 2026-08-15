@@ -30,8 +30,9 @@ RUN pip install --no-cache-dir --prefix=/install \
     -r requirements.txt || pip install --no-cache-dir --prefix=/install \
     fastapi uvicorn[standard] pydantic pydantic-settings \
     langchain langchain-core langchain-community langgraph \
-    langchain-openai openai httpx sqlalchemy asyncpg redis \
-    python-jose passlib[bcrypt] python-dotenv loguru pymilvus
+    langchain-openai openai httpx sqlalchemy asyncpg psycopg[binary] redis \
+    python-jose passlib[bcrypt] bcrypt python-dotenv loguru pymilvus \
+    alembic
 
 # ──────────────────────────────────────
 # Stage 2: Runtime — 运行应用
