@@ -151,6 +151,7 @@ PUBLIC_ENDPOINTS: set[str] = {
     "/openapi.json",
     "/api/a2a/callback",  # A2A callback 通常来自内部系统，RBAC 在 callback handler 内部处理
     "/api/auth/dev-login",  # 开发登录（仅 AUTH_DEV_LOGIN_ENABLED=true 时启用）
+    "/api/auth/login",  # 用户名密码登录（登录前无 Token，须公开）
 }
 
 

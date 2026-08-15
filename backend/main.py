@@ -62,6 +62,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("PostgreSQL 初始化失败（将以无DB模式运行）: {}", e)
 
+    # 初始化默认管理员账号（User 表为空时创建）
+    try:
+        from database.auth_service import seed_default_admin
+        await seed_default_admin()
+    except Exception as e:
+        logger.warning("默认管理员账号初始化失败: {}", e)
+
     # 恢复 A2A 任务存储（重启后回调仍能定位原任务）
     try:
         from tools.a2a.task import get_task_store

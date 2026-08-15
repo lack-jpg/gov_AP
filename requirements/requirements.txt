@@ -192,6 +192,9 @@ python-jose[cryptography]>=3.3.0,<4.0
 
 passlib[bcrypt]>=1.7.4,<2.0
 
+# 登录密码哈希（database/auth_service.py 直接 import bcrypt，不依赖 passlib 传递依赖）
+bcrypt>=4.0.0,<6.0
+
 
 
 # =====================================================

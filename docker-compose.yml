@@ -71,6 +71,10 @@ services:
       A2A_HTTP_RETRIES: ${A2A_HTTP_RETRIES:-2}
       # 安全基线：JWT 密钥缺失或为空时直接拒绝启动，禁止 changeme 兜底
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY 必须设置且不能使用默认值 changeme}
+      # 默认管理员账号（启动时 User 表为空才 seed；生产务必通过 .env 覆盖 AUTH_ADMIN_PASSWORD）
+      AUTH_ADMIN_USERNAME: ${AUTH_ADMIN_USERNAME:-admin}
+      AUTH_ADMIN_PASSWORD: ${AUTH_ADMIN_PASSWORD:-admin123}
+      AUTH_ADMIN_TENANT_ID: ${AUTH_ADMIN_TENANT_ID:-default}
     volumes:
       - ./models:/app/models
       - ./data:/app/data

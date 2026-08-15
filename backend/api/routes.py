@@ -29,6 +29,8 @@ from backend.api.schemas import (
     ChatResponse,
     ErrorResponse,
     EvidenceItem,
+    LoginRequest,
+    LoginResponse,
 )
 from backend.config import Settings
 from tools.logger import get_logger
@@ -73,6 +75,44 @@ async def dev_login(
         "role": settings.auth_dev_role,
         "tenant_id": settings.auth_dev_tenant_id,
     }
+
+
+# ============================================================
+# POST /api/auth/login — 用户名密码登录
+# ============================================================
+
+
+@router.post(
+    "/auth/login",
+    response_model=LoginResponse,
+    summary="用户登录",
+    description="用户名密码登录，校验通过签发 JWT Bearer Token。默认账号见配置 AUTH_ADMIN_USERNAME / AUTH_ADMIN_PASSWORD。",
+)
+async def login(body: LoginRequest) -> LoginResponse:
+    """用户登录：校验用户名密码 → 签发 JWT。"""
+    from database.auth_service import get_user_by_username, verify_password
+
+    user = await get_user_by_username(body.username)
+    if user is None or not verify_password(body.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户名或密码错误",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    from backend.middleware.auth import create_access_token
+
+    token = create_access_token(
+        user_id=user.username,
+        role=user.role,
+        tenant_id=user.tenant_id,
+    )
+    return LoginResponse(
+        access_token=token,
+        user_id=user.username,
+        role=user.role,
+        tenant_id=user.tenant_id,
+    )
 
 
 # ============================================================

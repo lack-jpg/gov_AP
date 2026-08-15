@@ -39,6 +39,31 @@ class ChatRequest(BaseModel):
     )
 
 
+class LoginRequest(BaseModel):
+    """用户名密码登录请求"""
+
+    username: str = Field(
+        description="登录用户名",
+        min_length=1,
+        max_length=64,
+    )
+    password: str = Field(
+        description="登录密码",
+        min_length=1,
+        max_length=128,
+    )
+
+
+class LoginResponse(BaseModel):
+    """登录响应（JWT Bearer Token）"""
+
+    access_token: str = Field(description="JWT Token，后续请求放入 Authorization: Bearer")
+    token_type: str = Field(default="bearer", description="Token 类型")
+    user_id: str = Field(description="登录用户 ID（= username）")
+    role: str = Field(description="角色")
+    tenant_id: str = Field(description="租户 ID")
+
+
 class AgentStatusRequest(BaseModel):
     """Agent执行状态查询请求"""
 

@@ -26,6 +26,43 @@ BASE_URL = os.getenv("API_BASE_URL", "http://localhost:12401")
 _TOKEN: str | None = None
 
 
+def set_token(token: str) -> None:
+    """注入认证 Token（登录成功后调用，写入模块级缓存）。"""
+    global _TOKEN
+    _TOKEN = token
+
+
+def logout() -> None:
+    """清除本地认证 Token。"""
+    global _TOKEN
+    _TOKEN = None
+
+
+def login(username: str, password: str) -> tuple[int, dict]:
+    """
+    用户登录（POST /api/auth/login）。
+
+    Returns:
+        (status_code, data)
+        - 200: data 含 access_token / user_id / role / tenant_id
+        - 401: data 含 error（用户名或密码错误）
+        - 0:   后端不可达
+    """
+    try:
+        r = httpx.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"username": username, "password": password},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            set_token(data.get("access_token", ""))
+            return 200, data
+        return r.status_code, {"error": r.text[:300]}
+    except Exception as e:
+        return 0, {"error": str(e)}
+
+
 def _get_token() -> str:
     """获取认证 Token（环境注入或开发登录接口换取）。"""
     global _TOKEN

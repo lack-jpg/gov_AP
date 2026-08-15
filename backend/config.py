@@ -378,6 +378,21 @@ class Settings(BaseSettings):
         alias="AUTH_DEV_TENANT_ID",
         description="开发登录接口签发的租户ID",
     )
+    auth_admin_username: str = Field(
+        default="admin",
+        alias="AUTH_ADMIN_USERNAME",
+        description="默认管理员账号用户名（User 表为空时 seed）",
+    )
+    auth_admin_password: str = Field(
+        default="admin123",
+        alias="AUTH_ADMIN_PASSWORD",
+        description="默认管理员账号密码（生产环境务必修改）",
+    )
+    auth_admin_tenant_id: str = Field(
+        default="default",
+        alias="AUTH_ADMIN_TENANT_ID",
+        description="默认管理员账号租户 ID",
+    )
 
     # ── 限流与请求治理 ──
     rate_limit_enabled: bool = Field(

@@ -581,3 +581,35 @@ class Case(Base):
 
     def __repr__(self) -> str:
         return f"<Case(case_id={self.case_id!r}, user={self.user_id!r}, status={self.status!r})>"
+
+
+class User(Base):
+    """平台登录用户（用户名密码登录 → 签发 JWT，密码 bcrypt 哈希存储）"""
+
+    __tablename__ = "user"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    username: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True,
+        comment="登录用户名",
+    )
+    password_hash: Mapped[str] = mapped_column(
+        String(128), nullable=False,
+        comment="bcrypt 密码哈希（不存明文）",
+    )
+    role: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="user",
+        comment="角色: admin | agent | user | guest",
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="default", index=True,
+        comment="租户 ID",
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow,
+    )
+
+    def __repr__(self) -> str:
+        return f"<User(username={self.username!r}, role={self.role!r})>"
