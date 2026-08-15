@@ -898,13 +898,12 @@ streamlit run frontend/app.py
 ```
 Agent (LangGraph Node)
     │
-    ├─ MCP Client ✅ (优先: 通过 MCP Server 获取真实能力)
-    │   ├─ Gateway (12001) ──→ Policy Server (12011)
-    │   │                     Material Server (12021)
-    │   │                     Workflow Server (12031)
-    │   └─ Direct 直连 ────→ Policy Server (12011)  ← Gateway fallback
+    ├─ MCP Client ✅ (唯一通道: 经 Gateway 获取真实能力)
+    │   └─ Gateway (12001) ──→ Policy Server (12011)
+    │                          Material Server (12021)
+    │                          Workflow Server (12031)
     │
-    └─ Stub 降级 ✅ (MCP 不可用时保留基本功能)
+    └─ Stub 降级 ✅ (MCP 不可用时显式降级保留基本功能)
 ```
 
 ---
@@ -1118,11 +1117,11 @@ Intent 回环：`intent_node → supervisor_node` 为**静态边**，意图识�
 
 ## 16.4 专业 Agent 执行
 
-| 节点              | Agent         | MCP Server              | 工具                                   | 降级行为                       |
-| --------------- | ------------- | ----------------------- | ------------------------------------ | -------------------------- |
-| `policy_node`   | PolicyAgent   | `policy_server:12011`   | `search_policy`, `get_policy_detail` | stub 模板回答（预置5种导向回答）        |
-| `material_node` | MaterialAgent | `material_server:12021` | `extract_entity`, `check_material`   | `passed=True` + 提示 stub 模式 |
-| `workflow_node` | WorkflowAgent | `workflow_server:12031` | `create_case`, `query_status`        | `CASE_{uuid}` 模拟办件号        |
+| 节点              | Agent         | MCP Server              | 工具                                   | 降级行为（真实优先）                  |
+| --------------- | ------------- | ----------------------- | ------------------------------------ | ---------------------------- |
+| `policy_node`   | PolicyAgent   | `policy_server:12011`   | `search_policy`, `get_policy_detail` | 真实 RAG 检索（mode=rag/bm25），空结果显式降级 stub |
+| `material_node` | MaterialAgent | `material_server:12021` | `extract_entity`, `check_material`   | 真实 OCR + 字段抽取，失败返回明确错误          |
+| `workflow_node` | WorkflowAgent | `workflow_server:12031` | `create_case`, `query_status`        | PostgreSQL 落库办件（case 表）           |
 
 每节点执行后：
 
@@ -1166,12 +1165,7 @@ await checkpointer.suspend_for_a2a(thread_id, ..., a2a_task_id)
 
 > **Docker 部署**：`docker compose up` 会同时启动 `a2a-mock`（housing 12101 / fund 12111），api 通过 `A2A_HOUSING_URL` / `A2A_FUND_URL` 指向它。外部真实系统只需把这两个地址换成真实 Agent 的 HTTP 端点即可（协议一致）。
 
-**同步模式（stub fallback）**：
-
-```python
-result = await _a2a_stub_call(skill, input_data)  # 本地 Mock Agent
-# 直接继续流程，无需挂起
-```
+**同步模式**：外部 Agent 快速返回 `completed` 时直接继续流程，无需挂起。**降级 stub 仅在显式开启（`a2a_allow_stub`）时生效**，生产默认禁止静默返回假结果，外部系统故障时任务状态可追踪、可重试。
 
 ## 16.6 安全护栏与最终回答
 
@@ -1200,9 +1194,9 @@ result = await _a2a_stub_call(skill, input_data)  # 本地 Mock Agent
 | L1 基础设施 | Milvus        | 连接失败           | BM25 关键词检索（纯内存 TF-IDF）                        |
 | L2 模型层  | LLM API       | 无 API Key / 超时 | 规则模板回答（模板引擎 + 关键词匹配）                          |
 | L2 模型层  | BERT          | 模型未加载          | 关键词匹配 fallback（18条规则）                         |
-| L2 模型层  | PaddleOCR     | pip 未安装        | stub 文本生成（"模拟营业执照内容..."）                      |
-| L3 协议层  | MCP Server    | HTTP 不可达       | stub 模板回答（预置政策/材料/办件数据）                       |
-| L3 协议层  | A2A Connector | 外部 Agent 不可达   | 本地 Mock Agent（模拟房产/公积金数据）                     |
+| L2 模型层  | PaddleOCR     | 引擎缺失/失败       | 显式降级（生产禁止静默 mock，返回明确错误）                       |
+| L3 协议层  | MCP Server    | HTTP 不可达       | 显式降级到离线 stub（结果标注 mode=stub）                     |
+| L3 协议层  | A2A Connector | 外部 Agent 不可达   | 显式降级（开关控制，生产默认禁止静默 fallback）                  |
 
 ---
 
@@ -1220,13 +1214,13 @@ result = await _a2a_stub_call(skill, input_data)  # 本地 Mock Agent
 
 依赖注入一览：
 
-| 参数              | 类型                    | 注入节点                         | stub 行为           |
-| --------------- | --------------------- | ---------------------------- | ----------------- |
-| `llm`           | `BaseChatModel`       | 全部 7 节点                      | 纯 stub 模式（关键词+规则） |
-| `mcp_client`    | `MCPClient`           | policy / material / workflow | stub 模板回答         |
-| `a2a_connector` | `A2AConnector`        | a2a                          | 本地 Mock Agent     |
-| `checkpointer`  | `BaseCheckpointSaver` | a2a（挂起/恢复）                   | 无持久化（不支持 A2A 异步）  |
-| `supervisor`    | `SupervisorAgent`     | supervisor                   | 自动用 llm 构建        |
+| 参数              | 类型                    | 注入节点                         | 降级行为（真实优先）        |
+| --------------- | --------------------- | ---------------------------- | ------------------ |
+| `llm`           | `BaseChatModel`       | 全部 7 节点                      | 无 API Key 时纯 stub（关键词+规则） |
+| `mcp_client`    | `MCPClient`           | policy / material / workflow | 真实检索/落库，失败显式降级 stub   |
+| `a2a_connector` | `A2AConnector`        | a2a                          | HTTP 真实对接，失败显式降级（开关） |
+| `checkpointer`  | `BaseCheckpointSaver` | a2a（挂起/恢复）                   | 无持久化（不支持 A2A 异步）   |
+| `supervisor`    | `SupervisorAgent`     | supervisor                   | 自动用 llm 构建         |
 
 所有节点通过 `async def _xxx_wrapper(state)` 闭包注入依赖后在 `graph.add_node()` 注册。
 
@@ -1236,10 +1230,10 @@ result = await _a2a_stub_call(skill, input_data)  # 本地 Mock Agent
 | ----------------- | --------------- | ------------------------------------------------------- | --------------------------- | ------------------ |
 | `supervisor_node` | SupervisorAgent | `orchestrate(state)` → Planner 生成 task_plan → Router 决策 | llm, supervisor             | 无 MCP、关键词 fallback |
 | `intent_node`     | IntentAgent     | BERT → 关键词 → LLM 三级分类                                   | llm                         | stub 关键词匹配         |
-| `policy_node`     | PolicyAgent     | MCP `search_policy` → Milvus+BM25                       | llm, mcp_client             | stub 模板回答          |
-| `material_node`   | MaterialAgent   | MCP `check_material` → OCR+NED                          | llm, mcp_client             | `passed=True`      |
-| `workflow_node`   | WorkflowAgent   | MCP `create_case` → 办件号                                 | llm, mcp_client             | `CASE_{uuid}`      |
-| `a2a_node`        | A2AConnector    | `send_task` → 挂起 OR `_a2a_stub_call`                    | a2a_connector, checkpointer | 本地 Mock            |
+| `policy_node`     | PolicyAgent     | MCP `search_policy` → 真实 RAG（Milvus+BM25+重排）            | llm, mcp_client             | 真实检索，空结果降级 stub   |
+| `material_node`   | MaterialAgent   | MCP `check_material` → 真实 OCR+NED                       | llm, mcp_client             | 真实识别，失败返回明确错误   |
+| `workflow_node`   | WorkflowAgent   | MCP `create_case` → PostgreSQL 落库办件                     | llm, mcp_client             | DB 落库（case 表）     |
+| `a2a_node`        | A2AConnector    | `send_task` → 挂起 OR 显式降级（开关控制）                     | a2a_connector, checkpointer | 生产默认禁止静默 fallback |
 | `governance_node` | GuardrailRunner | PII + 注入 + 敏感词 + 输出过滤                                   | 无                           | 异常时自动放行            |
 
 每个节点执行前：
@@ -1401,11 +1395,11 @@ governance_node（末尾节点）
 ✅ policy/schema.py           — PolicyResult + PolicyEvidence（28行）
 ✅ policy/agent.py            — PolicyAgent（LLM+模板双模式，5种业务回答，165行）
 ✅ material/prompts.py        — 材料审核Prompt模板（Phase 2）
-✅ material/ocr.py            — OCREngine（stub，支持图片/文本格式检测，Phase 2）
+✅ material/ocr.py            — OCREngine（PaddleOCR 真实引擎优先 + 显式降级，Phase 2）
 ✅ material/extractor.py      — EntityExtractor（6种正则模式，PII脱敏，Phase 2）
 ✅ material/validator.py      — MaterialValidator（5种业务材料清单，别名匹配，格式校验，Phase 2）
 ✅ material/agent.py          — MaterialAgent（5种业务材料清单，规则校验，118行）
-✅ workflow/agent.py          — WorkflowAgent（MCP stub，create_case/query_status，114行）
+✅ workflow/agent.py          — WorkflowAgent（MCP 落库办件，create_case/query_status，114行）
 ✅ governance/security.py     — SecurityChecker（PII/注入/敏感词/泄露 4类检测，165行）
 ✅ governance/behavior.py     — BehaviorAnalyzer（循环/步数/Token异常检测，93行）
 ✅ governance/optimizer.py    — Optimizer（失败率/步数/延迟/Tool分析，127行）
@@ -1423,7 +1417,7 @@ governance_node（末尾节点）
 ✅ api/schemas.py              — 10个Pydantic API模型（225行）
 ✅ api/dependencies.py         — 5个DI函数（140行）
 ✅ api/routes.py               — 5个API端点（/chat, /status, /a2a, /dashboard, /eval，244行）
-✅ middleware/auth.py           — JWT Bearer + X-User-Id 降级 + Token生成 + Fallthrough 容错（~170行）
+✅ middleware/auth.py           — JWT Bearer 强制认证（无有效 JWT 一律 401，无 X-User-Id 降级）+ Token生成（~170行）
 ✅ services/agent_service.py   — AgentService（注册+执行+恢复，159行）
 ✅ middleware/rbac.py           — RBAC权限（4角色+16权限+MCP Tool鉴权+FastAPI依赖注入，~390行）
 ✅ middleware/tracing.py        — OpenTelemetry（Trace/Span创建、W3C传播、Agent/Tool instrumentation、NoOp降级，~440行）
@@ -1447,7 +1441,7 @@ governance_node（末尾节点）
 ✅ schemas.py                  — CRUD Pydantic模型（Create/Response，133行）
 ```
 
-### RAG管线 (rag/) — 5/5 完成（框架就绪，stub待接入真实模型）
+### RAG管线 (rag/) — 5/5 完成（已接入真实模型，Embedding/Milvus/Reranker 进程级常驻）
 
 ```
 ✅ embedding.py                — EmbeddingEngine（BGE-large-zh-v1.5，支持本地路径加载，~100行）
@@ -1463,7 +1457,7 @@ governance_node（末尾节点）
 
 > **完成日期**: 2026-07-30
 > **架构**: Agent → MCPClient → MCPGateway (12001) → MCP Server (12011/12021/12031) → Business Logic
-> **降级策略**: MCP 不可用时自动 fallback 到 stub 模式，保证系统可用
+> **降级策略**: MCP 不可用时显式降级到 stub 模式（结果标注 mode），保证系统可用
 
 ### MCP 工具 Schema (tools/mcp/schema.py) — 1/1 完成
 
@@ -1492,7 +1486,7 @@ governance_node（末尾节点）
 
 ```
 ✅ agents/material/prompts.py  — 材料审核 + 实体抽取Prompt模板
-✅ agents/material/ocr.py      — OCREngine（stub: 图片magic bytes检测 + 模拟文本生成）
+✅ agents/material/ocr.py      — OCREngine（PaddleOCR 真实引擎优先 + 显式降级）
 ✅ agents/material/extractor.py — EntityExtractor（6种正则模式: 姓名/身份证/手机号/地址/事项/信用代码 + PII脱敏）
 ✅ agents/material/validator.py — MaterialValidator（5类业务材料清单、10+别名映射、身份证/手机号格式校验）
 ```
@@ -1514,7 +1508,7 @@ governance_node（末尾节点）
 ### LangGraph 集成更新 — 2/2 完成
 
 ```
-✅ orchestration/langgraph/nodes.py  — policy_node/material_node/workflow_node 接入 MCPClient，MCP优先 + stub降级
+✅ orchestration/langgraph/nodes.py  — policy_node/material_node/workflow_node 接入 MCPClient，真实优先 + 显式降级 stub
 ✅ orchestration/langgraph/graph.py  — build_graph() 新增 mcp_client 参数注入
 ```
 
@@ -1524,7 +1518,7 @@ governance_node（末尾节点）
 
 > **完成日期**: 2026-08-02
 > **架构**: Agent → A2AConnector → External Agent (Mock/HTTP) → Callback → Checkpointer → Resume LangGraph
-> **降级策略**: 外部 Agent 不可用时自动 fallback 到 stub（本地 Mock Agent 直接调用）
+> **降级策略**: 外部 Agent 不可用时显式降级到 stub（本地 Mock Agent，生产默认禁止静默 fallback）
 
 ### A2A 协议 (tools/a2a/protocol.py) — 1/1 完成
 
@@ -1551,8 +1545,8 @@ governance_node（末尾节点）
 ### A2A 连接器 (tools/a2a/connector.py) — 1/1 完成
 
 ```
-✅ connector.py               — A2AConnector（send_task→HTTP/stub, check_status, cancel_task）
-                                 + httpx.AsyncClient HTTP连接池 + stub fallback 自动降级（smoke test: 14 passed）
+✅ connector.py               — A2AConnector（send_task→HTTP 真实对接, check_status, cancel_task）
+                                 + httpx.AsyncClient HTTP连接池 + 超时/重试 + 显式降级开关（smoke test: 14 passed）
 ```
 
 ### A2A 回调处理器 (tools/a2a/callback.py) — 1/1 完成
