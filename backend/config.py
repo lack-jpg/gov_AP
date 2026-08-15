@@ -149,6 +149,31 @@ class Settings(BaseSettings):
         description="BERT-NER 命名实体识别模型本地路径（空则使用regex模式）",
     )
 
+    # ── OCR（P1-4 真实化与降级策略） ──
+    ocr_stub_enabled: bool = Field(
+        default=False,
+        alias="OCR_STUB_ENABLED",
+        description=(
+            "是否允许 stub 模拟 OCR 文本。仅限本地开发调试；"
+            "生产必须 False，禁止静默生成模拟 OCR 数据（P1-4）"
+        ),
+    )
+    ocr_timeout_seconds: int = Field(
+        default=30,
+        alias="OCR_TIMEOUT_SECONDS",
+        description="单次 OCR 调用超时时间（秒），超时视为失败",
+    )
+    ocr_max_image_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        alias="OCR_MAX_IMAGE_BYTES",
+        description="OCR 单张图片最大字节数，超过返回明确错误",
+    )
+    ocr_retry_times: int = Field(
+        default=2,
+        alias="OCR_RETRY_TIMES",
+        description="OCR 失败重试次数（真实引擎内部重试，stub 不重试）",
+    )
+
     # ── PostgreSQL ──
     postgres_host: str = Field(
         default="localhost",
@@ -302,6 +327,21 @@ class Settings(BaseSettings):
         alias="A2A_HMAC_SECRET",
         description="A2A 回调 HMAC 共享密钥，外部 Agent 凭此签名回调请求",
     )
+    a2a_allow_stub: bool = Field(
+        default=False,
+        alias="A2A_ALLOW_STUB",
+        description=(
+            "是否允许 A2A stub 降级（外部 Agent 不可达时返回本地模拟结果）。"
+            "生产必须为 False：外部系统故障时任务明确失败并记录原因，禁止静默返回假结果"
+        ),
+    )
+    a2a_http_retries: int = Field(
+        default=2,
+        alias="A2A_HTTP_RETRIES",
+        ge=0,
+        le=5,
+        description="A2A HTTP 发送失败重试次数（连接错误/5xx/429 才重试，4xx 客户端错误不重试）",
+    )
 
     # ── JWT ──
     jwt_secret_key: str = Field(
@@ -317,6 +357,48 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = Field(
         default=1440,
         description="JWT过期时间（分钟），默认24小时",
+    )
+    auth_dev_login_enabled: bool = Field(
+        default=False,
+        alias="AUTH_DEV_LOGIN_ENABLED",
+        description="是否开放开发登录接口 /api/auth/dev-login（仅限本地开发，生产必须关闭）",
+    )
+    auth_dev_user_id: str = Field(
+        default="demo_user",
+        alias="AUTH_DEV_USER_ID",
+        description="开发登录接口签发的用户ID",
+    )
+    auth_dev_role: str = Field(
+        default="user",
+        alias="AUTH_DEV_ROLE",
+        description="开发登录接口签发的角色（admin | agent | user | guest）",
+    )
+    auth_dev_tenant_id: str = Field(
+        default="default",
+        alias="AUTH_DEV_TENANT_ID",
+        description="开发登录接口签发的租户ID",
+    )
+
+    # ── 限流与请求治理 ──
+    rate_limit_enabled: bool = Field(
+        default=True,
+        alias="RATE_LIMIT_ENABLED",
+        description="是否启用按用户/IP 的请求限流，超限返回 429",
+    )
+    rate_limit_requests: int = Field(
+        default=120,
+        alias="RATE_LIMIT_REQUESTS",
+        description="时间窗口内每个用户/IP 允许的最大请求数",
+    )
+    rate_limit_window_seconds: int = Field(
+        default=60,
+        alias="RATE_LIMIT_WINDOW_SECONDS",
+        description="限流时间窗口长度（秒）",
+    )
+    max_request_body_bytes: int = Field(
+        default=2 * 1024 * 1024,
+        alias="MAX_REQUEST_BODY_BYTES",
+        description="请求体最大字节数（上传/OCR 等接口的通用防护），超限返回 413",
     )
 
     # ── OpenTelemetry ──
@@ -358,6 +440,23 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """获取配置单例（带缓存，避免重复读.env）"""
     return Settings()
+
+
+def validate_security_config(settings: Settings | None = None) -> None:
+    """
+    启动时校验安全配置。
+
+    非 debug 环境禁止使用默认/空 JWT 密钥，缺失时直接拒绝启动，
+    避免生产环境以不安全默认值运行。
+    """
+    s = settings or get_settings()
+    if s.debug:
+        return
+    if not s.jwt_secret_key or s.jwt_secret_key == "changeme":
+        raise RuntimeError(
+            "非 debug 环境必须通过环境变量 JWT_SECRET_KEY 配置强密钥，"
+            "禁止使用默认值 'changeme' 或空密钥启动"
+        )
 
 
 # 模块级便捷引用

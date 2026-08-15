@@ -255,6 +255,16 @@ class SupervisorAgent:
             if a2a_parts:
                 parts.append("\n" + "\n".join(a2a_parts))
 
+        # P1-6：A2A 失败如实告知用户（外部系统故障时不静默，原因可追踪）
+        a2a_failed = [t for t in a2a_tasks if t.get("status") in ("failed", "timeout")]
+        if a2a_failed:
+            fail_parts = [
+                f"{t.get('target_agent', '外部系统')}查询未完成"
+                + (f"（{t.get('error_message') or '未知原因'}）" if t.get("error_message") else "（未知原因）")
+                for t in a2a_failed
+            ]
+            parts.append("\n" + "；".join(fail_parts))
+
         final_answer = "\n".join(parts) if parts else "抱歉，未能处理您的请求，请稍后重试或联系人工客服。"
         return set_final_answer(state, final_answer)
 

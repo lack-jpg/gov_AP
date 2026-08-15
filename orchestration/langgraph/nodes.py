@@ -46,6 +46,15 @@ from governance.monitor import get_collector, record_agent_call
 logger = get_logger(__name__)
 
 
+def _mcp_user_context(state: AgentState) -> dict:
+    """从 AgentState 提取当前用户身份，供 MCPClient 按用户签发 Gateway Token。"""
+    return {
+        "user_id": state.get("user_id", "anonymous"),
+        "role": state.get("user_role", "user"),
+        "tenant_id": state.get("tenant_id", "default"),
+    }
+
+
 # ============================================================
 # Supervisor Node
 # ============================================================
@@ -250,6 +259,8 @@ async def policy_node(
                     "policy_server",
                     "search_policy",
                     {"query": user_query, "top_k": 5},
+                    trace_id=state.get("trace_id", ""),
+                    user_context=_mcp_user_context(state),
                 )
                 docs = search_result.get("documents", [])
                 answer = _build_answer_from_mcp(docs, intent, user_query)
@@ -446,6 +457,8 @@ async def material_node(
                     "material_server",
                     "check_material",
                     {"business_type": intent, "materials": []},
+                    trace_id=state.get("trace_id", ""),
+                    user_context=_mcp_user_context(state),
                 )
                 result = MaterialCheckResult(
                     passed=material_result.get("passed", True),
@@ -544,6 +557,18 @@ async def material_node(
 # ============================================================
 
 
+def _mark_workflow_task(state: AgentState, status: TaskStatus) -> None:
+    """将 task_plan 中 workflow 的 pending 任务标记为指定状态。"""
+    task_plan = state.get("task_plan", [])
+    updated_plan: list[dict] = []
+    for t in task_plan:
+        agent = t.get("agent", "")
+        if agent == AgentName.WORKFLOW.value and t.get("status") == TaskStatus.PENDING.value:
+            t = {**t, "status": status.value}
+        updated_plan.append(t)
+    state["task_plan"] = updated_plan
+
+
 async def workflow_node(
     state: AgentState,
     llm: Optional[BaseChatModel] = None,
@@ -552,12 +577,14 @@ async def workflow_node(
     """
     Workflow节点 — 流程执行。
 
-    优先通过 MCP Client 调用 workflow_server/create_case，
-    MCP 不可用时 fallback 到 stub 模拟。
+    P1-5：办件经 workflow_server 落库（MCP → Gateway → Server → PostgreSQL），
+    创建成功后把 case_id 回写 AgentState。MCP 调用失败时**禁止静默 mock**
+    （不再生成模拟办件），将 workflow 任务标记为 FAILED 并记录错误，
+    由 supervisor 如实告知用户。
 
     Args:
         state: 当前AgentState
-        llm: LLM实例
+        llm: LLM实例（保留接口兼容）
         mcp_client: MCPClient 实例（可选）
 
     Returns:
@@ -569,36 +596,41 @@ async def workflow_node(
     try:
         _start = time.perf_counter()
         intent = state.get("intent", "unknown")
+        user_id = state.get("user_id", "anonymous")
+        tenant_id = state.get("tenant_id", "default")
 
-        # Phase 2: 通过 MCP Client 调用 Workflow Server
+        # ── 主链路：MCP Client → Gateway → workflow_server → PostgreSQL ──
         if mcp_client is not None:
             try:
                 case_result = await mcp_client.call_tool(
                     "workflow_server",
                     "create_case",
-                    {"user_id": "default_user", "service": intent},
+                    {"user_id": user_id, "service": intent, "tenant_id": tenant_id},
+                    trace_id=state.get("trace_id", ""),
+                    user_context=_mcp_user_context(state),
                 )
 
                 mcp = MCPCallRecord(
                     trace_id=state["trace_id"],
                     server_name="workflow_server",
                     tool_name="create_case",
-                    input_args={"user_id": "default_user", "service": intent},
+                    input_args={"user_id": user_id, "service": intent},
                     output_result=case_result,
                     latency_ms=0.0,
                     status=MCPCallStatus.SUCCESS,
                 )
                 state = record_mcp_call(state, mcp)
 
-                # 标记任务完成
-                task_plan = state.get("task_plan", [])
-                updated_plan: list[dict] = []
-                for t in task_plan:
-                    agent = t.get("agent", "")
-                    if agent == AgentName.WORKFLOW.value and t.get("status") == TaskStatus.PENDING.value:
-                        t = {**t, "status": TaskStatus.COMPLETED.value}
-                    updated_plan.append(t)
-                state["task_plan"] = updated_plan
+                # P1-5: 回写 case_id 到 AgentState（供状态查询与审计关联）
+                case_id = (case_result or {}).get("case_id", "")
+                state["case_id"] = case_id
+                state["workflow_result"] = {
+                    "case_id": case_id,
+                    "service": intent,
+                    "status": (case_result or {}).get("status", "created"),
+                }
+
+                _mark_workflow_task(state, TaskStatus.COMPLETED)
 
                 record_agent_call(
                     AgentName.WORKFLOW.value,
@@ -609,33 +641,47 @@ async def workflow_node(
                 return state
 
             except Exception as e:
-                logger.warning("MCP workflow call failed, falling back to stub: {}", e)
+                # P1-5: 办件创建失败 → 明确失败，禁止静默 mock
+                logger.error("办件创建失败（P1-5 禁止静默 mock）: {}", e)
+                state = record_mcp_call(state, MCPCallRecord(
+                    trace_id=state["trace_id"],
+                    server_name="workflow_server",
+                    tool_name="create_case",
+                    input_args={"user_id": user_id, "service": intent},
+                    output_result=None,
+                    latency_ms=(time.perf_counter() - _start) * 1000.0,
+                    status=MCPCallStatus.FAILED,
+                    error_message=str(e),
+                ))
+                state["case_id"] = ""
+                state["workflow_result"] = {
+                    "case_id": "",
+                    "service": intent,
+                    "status": "failed",
+                    "error": str(e),
+                }
+                _mark_workflow_task(state, TaskStatus.FAILED)
+                record_agent_call(
+                    AgentName.WORKFLOW.value,
+                    success=False,
+                    latency_ms=(time.perf_counter() - _start) * 1000.0,
+                    trace_id=state.get("trace_id"),
+                )
+                return state
 
-        # ── Fallback: WorkflowAgent ──
-        from agents.workflow.agent import WorkflowAgent
-
-        agent = WorkflowAgent(mcp_client=mcp_client)
-        case_result = await agent.create_case(
-            user_id="default_user",
-            service=intent,
-        )
-
-        # 注意：stub fallback 不再伪造 MCPCallRecord
-        state["workflow_result"] = case_result
-
-        # 标记workflow任务完成
-        task_plan = state.get("task_plan", [])
-        updated_plan: list[dict] = []
-        for t in task_plan:
-            agent = t.get("agent", "")
-            if agent == AgentName.WORKFLOW.value and t.get("status") == TaskStatus.PENDING.value:
-                t = {**t, "status": TaskStatus.COMPLETED.value}
-            updated_plan.append(t)
-        state["task_plan"] = updated_plan
-
+        # ── MCP 未配置：明确失败，不再生成模拟办件 ──
+        logger.error("MCP Client 未配置，无法创建办件（P1-5）")
+        state["case_id"] = ""
+        state["workflow_result"] = {
+            "case_id": "",
+            "service": intent,
+            "status": "failed",
+            "error": "MCP Client 未配置，办件服务不可用",
+        }
+        _mark_workflow_task(state, TaskStatus.FAILED)
         record_agent_call(
             AgentName.WORKFLOW.value,
-            success=True,
+            success=False,
             latency_ms=(time.perf_counter() - _start) * 1000.0,
             trace_id=state.get("trace_id"),
         )
@@ -686,7 +732,7 @@ async def governance_node(
             node_name=NodeName.GOVERNANCE.value,
         ) as span:
             from governance.guardrail import GuardrailRunner, GuardType
-            from governance.pii import detect_pii
+            from governance.pii import detect_pii, mask_pii
 
             user_query = state.get("user_query", "")
             final_answer = state.get("final_answer", "")
@@ -695,8 +741,24 @@ async def governance_node(
             runner = GuardrailRunner()
             input_result = runner.run_input(user_query)
 
+            # P1-8 输入侧兜底脱敏：execute_agent 已在入口脱敏，此处防御性再脱敏一次，
+            #      确保 state.user_query / 日志 / trace 不残留明文 PII
+            masked_query = input_result.output_text or user_query
+            if masked_query != user_query:
+                state["user_query"] = masked_query
+                user_query = masked_query
+
+            # P1-8 输出侧脱敏：最终答案中的 PII 同样脱敏后再返回
+            if final_answer:
+                masked_answer = mask_pii(final_answer)
+                if masked_answer != final_answer:
+                    state = set_final_answer(state, masked_answer)
+                    final_answer = masked_answer
+
             # ── 2. PII 检测（独立于 guardrail，获取详细匹配列表） ──
             pii_result = detect_pii(user_query)
+            # 入口已脱敏时 user_query 无明文 PII，合并 execute_agent 记录的命中类型做审计
+            entry_pii = state.get("safety_check", {}).get("pii_detected", []) or []
 
             # ── 3. 输出护栏 ──
             output_result = None
@@ -720,7 +782,7 @@ async def governance_node(
 
             safety = merged.to_dict()  # 含: passed, blocked, block_reason, highest_severity 等
             # 补充 state.py GuardrailResult schema 兼容字段
-            safety["pii_detected"] = [m.pii_type.value for m in pii_result.matches]
+            safety["pii_detected"] = sorted(set(entry_pii + [m.pii_type.value for m in pii_result.matches]))
             safety["injection_detected"] = any(
                 f.guard_type == GuardType.INJECTION for f in input_result.input_findings
             )
@@ -855,6 +917,12 @@ async def a2a_node(
                 result = await _a2a_stub_call(skill, skill_input)
 
             # 记录 A2A 任务（task_id 必须与 Connector 创建的一致，供回调恢复匹配）
+            # P1-6：把真实 status/error_message 记录进 a2a_tasks，失败原因可追踪
+            result_status = result.get("status", "submitted")
+            try:
+                a2a_status = A2ATaskStatus(result_status)
+            except ValueError:
+                a2a_status = A2ATaskStatus.SUBMITTED
             a2a_record = A2ATaskRecord(
                 task_id=result.get("task_id", ""),
                 source_agent="workflow",
@@ -863,6 +931,8 @@ async def a2a_node(
                 skill=skill,
                 input=skill_input,
                 artifact=result.get("artifact"),
+                status=a2a_status,
+                error_message=result.get("error_message"),
             )
             state["a2a_tasks"] = state.get("a2a_tasks", []) + [a2a_record.model_dump()]
 
@@ -940,7 +1010,14 @@ def _detect_a2a_skills(intent: str, user_query: str) -> list[str]:
     if intent in ("fund_query",):
         skills.append("query_fund")
 
-    return skills
+    # P1-6 去重：同一次请求对同一技能只发送一次外部任务（避免重复调用跨域系统）
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for s in skills:
+        if s not in seen:
+            seen.add(s)
+            deduped.append(s)
+    return deduped
 
 
 def _build_a2a_input(skill: str, state: AgentState) -> dict:
@@ -963,7 +1040,7 @@ def _build_a2a_input(skill: str, state: AgentState) -> dict:
         }
     elif skill.startswith("query_fund"):
         return {
-            "user_id": "001",  # TODO: 从认证信息中获取真实 user_id
+            "user_id": state.get("user_id", "anonymous"),
             "user_query": user_query,
         }
     return {"user_query": user_query}

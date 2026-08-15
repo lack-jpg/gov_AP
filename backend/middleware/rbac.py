@@ -125,6 +125,7 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.TOOL_POLICY_SEARCH,
         Permission.TOOL_MATERIAL_CHECK,
         Permission.TOOL_WORKFLOW_STATUS,
+        Permission.TOOL_WORKFLOW_CREATE,  # 用户可自助创建自己的办件
     },
     Role.GUEST: {
         # 访客：仅限公开查询
@@ -149,6 +150,7 @@ PUBLIC_ENDPOINTS: set[str] = {
     "/redoc",
     "/openapi.json",
     "/api/a2a/callback",  # A2A callback 通常来自内部系统，RBAC 在 callback handler 内部处理
+    "/api/auth/dev-login",  # 开发登录（仅 AUTH_DEV_LOGIN_ENABLED=true 时启用）
 }
 
 
@@ -346,9 +348,13 @@ def check_mcp_tool_access(role: str, tool_name: str, raise_on_deny: bool = False
     """
     permission = MCP_TOOL_PERMISSIONS.get(tool_name)
     if permission is None:
-        # 未知 Tool — 默认允许（或按安全策略改为拒绝）
-        logger.warning("MCP Tool 未注册权限: {}", tool_name)
-        return True
+        # 未知 Tool — 默认拒绝（最小权限原则），并记录审计日志
+        logger.warning("MCP Tool 未注册权限，默认拒绝: {}", tool_name)
+        if raise_on_deny:
+            raise PermissionError(
+                f"MCP Tool '{tool_name}' 未注册权限，默认拒绝调用"
+            )
+        return False
 
     if not has_permission(role, permission):
         if raise_on_deny:
@@ -537,7 +543,7 @@ if __name__ == "__main__":
     check("user: chat:send", has_permission(Role.USER, Permission.CHAT_SEND))
     check("user: agent:status", has_permission(Role.USER, Permission.AGENT_STATUS))
     check("user: dashboard:view → NO", not has_permission(Role.USER, Permission.DASHBOARD_VIEW))
-    check("user: tool:workflow:create → NO", not has_permission(Role.USER, Permission.TOOL_WORKFLOW_CREATE))
+    check("user: tool:workflow:create → YES", has_permission(Role.USER, Permission.TOOL_WORKFLOW_CREATE))
 
     check("guest: agent:status", has_permission(Role.GUEST, Permission.AGENT_STATUS))
     check("guest: chat:send → NO", not has_permission(Role.GUEST, Permission.CHAT_SEND))
@@ -575,10 +581,10 @@ if __name__ == "__main__":
         check("guest → create_case (raise) — PermissionError raised", True)
 
     check("user → query_status", check_mcp_tool_access("user", "query_status"))
-    check("user → create_case → False", not check_mcp_tool_access("user", "create_case"))
+    check("user → create_case → True", check_mcp_tool_access("user", "create_case"))
 
-    # 未知 Tool 默认允许
-    check("unknown tool → True (默认允许)", check_mcp_tool_access("guest", "unknown_tool"))
+    # 未知 Tool 默认拒绝
+    check("unknown tool → False (默认拒绝)", not check_mcp_tool_access("guest", "unknown_tool"))
 
     # ── 7. 端点权限映射 ──
     section("7. ENDPOINT_PERMISSIONS 映射")

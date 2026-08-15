@@ -133,7 +133,7 @@ class WorkflowAgent:
         Returns:
             更新后的 AgentState（含 case_id 和 workflow_result）
         """
-        user_id = "default_user"
+        user_id = state.get("user_id", "default_user")
         intent = state.get("intent", "business_license")
 
         result = await self.create_case(user_id=user_id, service=intent)

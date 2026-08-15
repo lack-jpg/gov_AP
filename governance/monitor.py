@@ -40,6 +40,7 @@ class Metric:
     type: str                    # counter | gauge | histogram | summary
     help: str                    # HELP 描述
     values: list[MetricValue] = field(default_factory=list)
+    buckets: list[float] = field(default_factory=list)  # histogram 上界（不含 +Inf）
 
     def set(self, value: float, labels: dict[str, str] | None = None) -> None:
         """设置 Gauge 值（替换同标签的已有值）"""
@@ -60,7 +61,7 @@ class Metric:
         self.values.append(MetricValue(labels=labels, value=amount))
 
     def observe(self, value: float, labels: dict[str, str] | None = None) -> None:
-        """记录 Histogram 观测值（存储 sum + count + buckets）"""
+        """记录 Histogram 观测值（存储 sum + count + 累计 buckets）"""
         labels = labels or {}
         # 对于 histogram，多次观测会更新 sum/count
         sum_key = {**labels, "__stat__": "sum"}
@@ -80,6 +81,17 @@ class Metric:
         else:
             self.values.append(MetricValue(labels=count_key, value=1.0))
 
+        # 累计 bucket：value <= bound 的所有桶 +1（+Inf 由 count 表示）
+        for bound in self.buckets:
+            if value <= bound:
+                bucket_key = {**labels, "__bucket_le__": str(bound)}
+                for mv in self.values:
+                    if mv.labels == bucket_key:
+                        mv.value += 1.0
+                        break
+                else:
+                    self.values.append(MetricValue(labels=bucket_key, value=1.0))
+
     def get_value(self, labels: dict[str, str] | None = None) -> float | None:
         """获取指定标签的值"""
         labels = labels or {}
@@ -88,32 +100,59 @@ class Metric:
                 return mv.value
         return None
 
+    def _histogram_lines(self) -> list[str]:
+        """生成 histogram 的 _bucket / _sum / _count 样本行（含 le 标签）。"""
+        # 以 sum 项为基准推导各标签组合（去除内部标记键）
+        base_sets: list[dict[str, str]] = []
+        for mv in self.values:
+            if mv.labels.get("__stat__") == "sum":
+                base = {
+                    k: v for k, v in mv.labels.items()
+                    if k not in ("__stat__", "__bucket_le__")
+                }
+                base_sets.append(base)
+
+        out: list[str] = []
+        for base in base_sets:
+            count = self.get_value({**base, "__stat__": "count"}) or 0.0
+            sum_val = self.get_value({**base, "__stat__": "sum"}) or 0.0
+
+            # 累计 bucket（按上界升序）
+            for bound in sorted(self.buckets):
+                bucket_val = self.get_value({**base, "__bucket_le__": str(bound)}) or 0.0
+                le_labels = _format_labels({**base, "le": str(bound)})
+                out.append(f"{self.name}_bucket{{{le_labels}}} {float(bucket_val)}")
+
+            # +Inf（= count）
+            le_inf = _format_labels({**base, "le": "+Inf"})
+            out.append(f"{self.name}_bucket{{{le_inf}}} {float(count)}")
+
+            base_str = _format_labels(base)
+            if base_str:
+                out.append(f"{self.name}_sum{{{base_str}}} {float(sum_val)}")
+                out.append(f"{self.name}_count{{{base_str}}} {float(count)}")
+            else:
+                out.append(f"{self.name}_sum {float(sum_val)}")
+                out.append(f"{self.name}_count {float(count)}")
+
+        return out
+
     def to_prometheus_text(self) -> str:
         """转为 Prometheus 文本格式"""
         lines: list[str] = []
         lines.append(f"# HELP {self.name} {self.help}")
         lines.append(f"# TYPE {self.name} {self.type}")
+
+        if self.type == MetricType.HISTOGRAM:
+            lines.extend(self._histogram_lines())
+            return "\n".join(lines)
+
         for mv in self.values:
-            if "__stat__" in mv.labels:
-                continue  # sum/count 在 histogram 中特殊处理
             label_str = _format_labels(mv.labels)
             if label_str:
                 lines.append(f"{self.name}{{{label_str}}} {float(mv.value)}")
             else:
                 lines.append(f"{self.name} {float(mv.value)}")
-
-            # Histogram: 附加 sum 和 count
-            if self.type == MetricType.HISTOGRAM:
-                sum_key = {**mv.labels, "__stat__": "sum"}
-                count_key = {**mv.labels, "__stat__": "count"}
-                sum_val = next((v.value for v in self.values if v.labels == sum_key), 0.0)
-                count_val = next((v.value for v in self.values if v.labels == count_key), 0.0)
-                if label_str:
-                    lines.append(f"{self.name}_sum{{{label_str}}} {float(sum_val)}")
-                    lines.append(f"{self.name}_count{{{label_str}}} {float(count_val)}")
-                else:
-                    lines.append(f"{self.name}_sum {float(sum_val)}")
-                    lines.append(f"{self.name}_count {float(count_val)}")
 
         return "\n".join(lines)
 
@@ -125,6 +164,17 @@ def _format_labels(labels: dict[str, str]) -> str:
     return ",".join(
         f'{k}="{v}"' for k, v in sorted(labels.items())
     )
+
+
+# ============================================================
+# Histogram bucket 边界（供 Grafana histogram_quantile / 告警规则使用）
+# ============================================================
+
+# 延迟上界（毫秒）：覆盖 50ms ~ 30s，p95 告警阈值 5000ms 落在桶内
+_LATENCY_BUCKETS: list[float] = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 30000]
+
+# 步骤数上界：Agent 步数上限 10，桶覆盖 1~20
+_STEP_BUCKETS: list[float] = [1, 2, 3, 5, 10, 20]
 
 
 # ============================================================
@@ -162,11 +212,12 @@ class MetricsCollector:
             type=MetricType.COUNTER,
             help="Total number of failed agent calls.",
         )
-        # Agent 延迟 (histogram)
+        # Agent 延迟 (histogram，含分位 bucket 供 Grafana/告警 histogram_quantile 使用)
         self._agent_latency = Metric(
             name="agent_latency_ms",
             type=MetricType.HISTOGRAM,
             help="Agent call latency in milliseconds.",
+            buckets=_LATENCY_BUCKETS,
         )
         # Agent 当前并发 (gauge)
         self._agent_active = Metric(
@@ -179,6 +230,7 @@ class MetricsCollector:
             name="agent_steps_total",
             type=MetricType.HISTOGRAM,
             help="Agent execution step count.",
+            buckets=_STEP_BUCKETS,
         )
         # LLM Token 用量 (counter)
         self._llm_tokens_total = Metric(
@@ -210,6 +262,7 @@ class MetricsCollector:
             name="tool_latency_ms",
             type=MetricType.HISTOGRAM,
             help="Tool call latency in milliseconds.",
+            buckets=_LATENCY_BUCKETS,
         )
 
         # Guardrail 阻断计数 (counter)
@@ -217,6 +270,44 @@ class MetricsCollector:
             name="guardrail_blocks_total",
             type=MetricType.COUNTER,
             help="Total number of guardrail blocks.",
+        )
+
+        # HTTP 请求计数 (counter，按 method/path/status 标签)
+        self._http_requests_total = Metric(
+            name="http_requests_total",
+            type=MetricType.COUNTER,
+            help="Total number of HTTP requests.",
+        )
+        # HTTP 请求耗时 (histogram)
+        self._http_request_duration = Metric(
+            name="http_request_duration_ms",
+            type=MetricType.HISTOGRAM,
+            help="HTTP request latency in milliseconds.",
+            buckets=_LATENCY_BUCKETS,
+        )
+
+        # LLM 缓存命中/未命中 (counter)
+        self._llm_cache_hits_total = Metric(
+            name="llm_cache_hits_total",
+            type=MetricType.COUNTER,
+            help="Total number of LLM cache hits.",
+        )
+        self._llm_cache_misses_total = Metric(
+            name="llm_cache_misses_total",
+            type=MetricType.COUNTER,
+            help="Total number of LLM cache misses.",
+        )
+
+        # 内存水位 (gauge)
+        self._process_rss_bytes = Metric(
+            name="process_rss_bytes",
+            type=MetricType.GAUGE,
+            help="Process resident set size in bytes (memory watermark).",
+        )
+        self._trace_spans_gauge = Metric(
+            name="gov_trace_spans_in_memory",
+            type=MetricType.GAUGE,
+            help="Number of spans held in TraceRecorder memory (unbounded list watermark).",
         )
 
         # 运行中 span 计数
@@ -325,6 +416,54 @@ class MetricsCollector:
             severity: 严重等级
         """
         self._guardrail_blocks_total.inc(1, {"type": guard_type, "severity": severity})
+
+    def record_request(
+        self,
+        method: str,
+        path: str,
+        status_code: int,
+        latency_ms: float = 0.0,
+    ) -> None:
+        """
+        记录一次 HTTP 请求。
+
+        Args:
+            method: HTTP 方法（GET/POST/...）
+            path: 请求路径（原始 path，高基数可后续归一化）
+            status_code: 响应状态码
+            latency_ms: 耗时（毫秒）
+        """
+        labels = {"method": method, "path": path, "status": str(status_code)}
+        self._http_requests_total.inc(1, labels)
+        self._http_request_duration.observe(latency_ms, labels)
+
+    def record_cache_hit(self) -> None:
+        """记录一次 LLM 缓存命中。"""
+        self._llm_cache_hits_total.inc(1)
+
+    def record_cache_miss(self) -> None:
+        """记录一次 LLM 缓存未命中。"""
+        self._llm_cache_misses_total.inc(1)
+
+    def update_memory_gauges(self) -> None:
+        """
+        刷新内存水位 gauge（供 Prometheus 抓取时拉取最新值）。
+
+        内存水位来源：
+        - process_rss_bytes：进程 RSS（真实内存占用）
+        - gov_trace_spans_in_memory：TraceRecorder 内存 span 数（无界列表水位）
+        """
+        try:
+            import psutil
+            self._process_rss_bytes.set(float(psutil.Process().memory_info().rss))
+        except Exception:
+            pass
+
+        try:
+            from governance.trace import get_trace_recorder
+            self._trace_spans_gauge.set(float(len(get_trace_recorder().spans)))
+        except Exception:
+            pass
 
     def start_span(self, span_id: str) -> None:
         """标记一个 span 开始执行（并发计数+1）"""
@@ -485,6 +624,12 @@ class MetricsCollector:
             self._tool_failure_total,
             self._tool_latency,
             self._guardrail_blocks_total,
+            self._http_requests_total,
+            self._http_request_duration,
+            self._llm_cache_hits_total,
+            self._llm_cache_misses_total,
+            self._process_rss_bytes,
+            self._trace_spans_gauge,
         ]
 
     def export_prometheus(self) -> str:
@@ -494,6 +639,9 @@ class MetricsCollector:
         Returns:
             Prometheus exposition 文本
         """
+        # 抓取前刷新内存水位 gauge（拉模型：抓取时取最新值）
+        self.update_memory_gauges()
+
         lines: list[str] = []
         for metric in self.get_all_metrics():
             text = metric.to_prometheus_text()
@@ -568,6 +716,31 @@ def record_tool_call(
         success=success,
         latency_ms=latency_ms,
     )
+
+
+def record_request(
+    method: str,
+    path: str,
+    status_code: int,
+    latency_ms: float = 0.0,
+) -> None:
+    """快速记录一次 HTTP 请求（使用全局 collector）"""
+    get_collector().record_request(
+        method=method,
+        path=path,
+        status_code=status_code,
+        latency_ms=latency_ms,
+    )
+
+
+def record_cache_hit() -> None:
+    """快速记录一次 LLM 缓存命中（使用全局 collector）"""
+    get_collector().record_cache_hit()
+
+
+def record_cache_miss() -> None:
+    """快速记录一次 LLM 缓存未命中（使用全局 collector）"""
+    get_collector().record_cache_miss()
 
 
 def get_metrics_snapshot() -> dict[str, Any]:

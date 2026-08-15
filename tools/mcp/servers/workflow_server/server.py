@@ -3,23 +3,30 @@ mcp.servers.workflow_server.server - Workflow MCP Server: serve create_case and 
 
 Author: le
 Date: 2026/7/30
-Version: 0.2
+Version: 0.3
 Task: Implement Workflow MCP Server with FastAPI
+
+P1-5：从请求头读取 Gateway 转发的调用者身份（X-User-Id / X-Role / X-Tenant-Id），
+传递到工具层做办件归属校验。
 """
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 
 from tools.mcp.schema import ToolCallRequest, ToolCallResponse
-from tools.mcp.servers.workflow_server.tools import create_case, query_status
+from tools.mcp.servers.workflow_server.tools import (
+    create_case,
+    query_status,
+    _caller_from_headers,
+)
 from tools.logger import get_logger
 
 logger = get_logger(__name__)
 
 app = FastAPI(
     title="Workflow MCP Server",
-    version="0.2.0",
-    description="流程执行 MCP Server — 提供 create_case 和 query_status 能力",
+    version="0.3.0",
+    description="流程执行 MCP Server — 提供 create_case 和 query_status 能力（办件落库）",
 )
 
 
@@ -35,7 +42,7 @@ async def list_tools():
 
 
 @app.post("/tools/call")
-async def call_tool(request: ToolCallRequest):
+async def call_tool(request: ToolCallRequest, http_request: Request):
     tool_name = request.tool_name
     args = request.arguments
 
@@ -47,6 +54,9 @@ async def call_tool(request: ToolCallRequest):
                 user_id=args.get("user_id", ""),
                 service=args.get("service", ""),
                 materials=args.get("materials"),
+                tenant_id=args.get("tenant_id", ""),
+                trace_id=request.trace_id,
+                caller=_caller_from_headers(dict(http_request.headers)),
             )
             return ToolCallResponse(
                 success=True,
@@ -56,7 +66,10 @@ async def call_tool(request: ToolCallRequest):
             )
 
         elif tool_name == "query_status":
-            result = await query_status(case_id=args.get("case_id", ""))
+            result = await query_status(
+                case_id=args.get("case_id", ""),
+                caller=_caller_from_headers(dict(http_request.headers)),
+            )
             return ToolCallResponse(
                 success=True,
                 result=result.model_dump(),

@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from backend.api.dependencies import (
     execute_agent,
     get_config,
+    get_current_identity,
     get_trace_id,
     get_user_id,
 )
@@ -38,6 +39,43 @@ router = APIRouter(tags=["Agent Platform"])
 
 
 # ============================================================
+# POST /api/auth/dev-login — 开发模式登录（显式开关）
+# ============================================================
+
+
+@router.post(
+    "/auth/dev-login",
+    include_in_schema=False,
+    summary="开发模式登录",
+    description="仅当 AUTH_DEV_LOGIN_ENABLED=true 时可用，为本地开发签发 JWT。生产环境必须关闭。",
+)
+async def dev_login(
+    settings: Settings = Depends(get_config),
+) -> dict:
+    """开发模式登录：返回可用于 /api/chat 等接口的 JWT。"""
+    if not settings.auth_dev_login_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="开发登录接口未启用（设置 AUTH_DEV_LOGIN_ENABLED=true 后可用）",
+        )
+
+    from backend.middleware.auth import create_access_token
+
+    token = create_access_token(
+        user_id=settings.auth_dev_user_id,
+        role=settings.auth_dev_role,
+        tenant_id=settings.auth_dev_tenant_id,
+    )
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user_id": settings.auth_dev_user_id,
+        "role": settings.auth_dev_role,
+        "tenant_id": settings.auth_dev_tenant_id,
+    }
+
+
+# ============================================================
 # POST /api/chat — 用户对话（核心端点）
 # ============================================================
 
@@ -55,7 +93,7 @@ router = APIRouter(tags=["Agent Platform"])
 )
 async def chat(
     request: ChatRequest,
-    user_id: str = Depends(get_user_id),
+    identity: dict = Depends(get_current_identity),
     trace_id: str = Depends(get_trace_id),
     settings: Settings = Depends(get_config),
 ) -> ChatResponse:
@@ -66,7 +104,7 @@ async def chat(
 
     Args:
         request: 对话请求体
-        user_id: 从Header提取的用户ID
+        identity: 从 JWT 提取的用户身份
         trace_id: 自动生成或客户端传入的trace_id
         settings: 应用配置
 
@@ -74,6 +112,7 @@ async def chat(
         ChatResponse (trace_id, answer, evidence, intent, risk_level, elapsed_ms)
     """
     start = time.perf_counter()
+    user_id = identity["user_id"]
 
     # 使用客户端传入的trace_id（如果有）
     effective_trace_id = request.trace_id or trace_id
@@ -90,11 +129,19 @@ async def chat(
                 load_history,
             )
 
-            prior_messages = await load_history(conversation_id)
-            if await get_conversation(conversation_id) is None:
+            existing = await get_conversation(conversation_id)
+            if existing is not None and existing.get("user_id") != user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="会话不存在或无权访问",
+                )
+            if existing is None:
                 await create_conversation(
                     user_id, title=request.user_query[:50], conversation_id=conversation_id,
                 )
+            prior_messages = await load_history(conversation_id)
+        except HTTPException:
+            raise
         except Exception:
             prior_messages = []
 
@@ -107,6 +154,8 @@ async def chat(
             settings=settings,
             conversation_id=conversation_id,
             prior_messages=prior_messages,
+            tenant_id=identity["tenant_id"],
+            user_role=identity["role"],
         )
     except Exception as e:
         logger.error(f"[{effective_trace_id}] Agent execution failed: {e}", exc_info=True)
@@ -192,7 +241,7 @@ _NODE_LABELS: dict[str, str] = {
 )
 async def chat_stream(
     request: ChatRequest,
-    user_id: str = Depends(get_user_id),
+    identity: dict = Depends(get_current_identity),
     trace_id: str = Depends(get_trace_id),
     settings: Settings = Depends(get_config),
 ):
@@ -208,12 +257,44 @@ async def chat_stream(
     from backend.api.dependencies import stream_agent
 
     effective_trace_id = request.trace_id or trace_id
+    user_id = identity["user_id"]
+    conversation_id = request.conversation_id or None
 
     async def event_generator():
         start = time.perf_counter()
+
+        # ── P1-7 多轮：加载历史上下文 + 确保会话存在（与 /api/chat 对齐）──
+        prior_messages: list[dict] = []
+        if conversation_id:
+            try:
+                from backend.services.conversation_service import (
+                    create_conversation,
+                    get_conversation,
+                    load_history,
+                )
+
+                existing = await get_conversation(conversation_id)
+                if existing is not None and existing.get("user_id") != user_id:
+                    yield f"data: {json.dumps({'event': 'error', 'message': '会话不存在或无权访问'}, ensure_ascii=False)}\n\n"
+                    return
+                if existing is None:
+                    await create_conversation(
+                        user_id, title=request.user_query[:50], conversation_id=conversation_id,
+                    )
+                prior_messages = await load_history(conversation_id)
+            except Exception:
+                prior_messages = []
+
         try:
             async for kind, payload in stream_agent(
-                request.user_query, user_id, effective_trace_id, settings,
+                request.user_query,
+                user_id,
+                effective_trace_id,
+                settings,
+                tenant_id=identity["tenant_id"],
+                user_role=identity["role"],
+                conversation_id=conversation_id,
+                prior_messages=prior_messages,
             ):
                 if kind == "node":
                     label = _NODE_LABELS.get(payload, payload)
@@ -223,6 +304,7 @@ async def chat_stream(
                     final_event = {
                         "event": "final",
                         "trace_id": effective_trace_id,
+                        "conversation_id": conversation_id,
                         "answer": payload.get("final_answer", "抱歉，未能生成回答。"),
                         "intent": payload.get("intent", ""),
                         "risk_level": payload.get("risk_level", "low"),
@@ -232,6 +314,28 @@ async def chat_stream(
                         "error": payload.get("error"),
                     }
                     yield f"data: {json.dumps(final_event, ensure_ascii=False, default=str)}\n\n"
+
+                    # ── P1-7 SSE 结束后持久化 user / assistant 消息（与 /api/chat 对齐）──
+                    if conversation_id:
+                        try:
+                            from backend.services.conversation_service import (
+                                add_message,
+                                get_conversation,
+                                update_conversation_title,
+                            )
+
+                            await add_message(conversation_id, "user", request.user_query)
+                            answer_text = payload.get("final_answer", "")
+                            if answer_text:
+                                await add_message(
+                                    conversation_id, "assistant", answer_text,
+                                    trace_id=effective_trace_id,
+                                )
+                            conv = await get_conversation(conversation_id)
+                            if conv and conv.get("title", "新对话") == "新对话":
+                                await update_conversation_title(conversation_id, request.user_query[:50])
+                        except Exception as e:
+                            logger.warning("SSE 对话消息持久化失败: {}", e)
                 elif kind == "error":
                     yield f"data: {json.dumps({'event': 'error', 'message': str(payload)}, ensure_ascii=False)}\n\n"
         except Exception as e:
@@ -286,9 +390,15 @@ async def get_conversation_messages(
     conversation_id: str,
     user_id: str = Depends(get_user_id),
 ) -> dict:
-    from backend.services.conversation_service import list_messages
+    from backend.services.conversation_service import get_conversation, list_messages
 
-    messages = await list_messages(conversation_id)
+    conv = await get_conversation(conversation_id, user_id=user_id)
+    if conv is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="会话不存在或无权访问",
+        )
+    messages = await list_messages(conversation_id, user_id=user_id)
     return {"conversation_id": conversation_id, "messages": messages}
 
 
@@ -324,7 +434,7 @@ async def get_agent_status(
     Returns:
         AgentStatusResponse
     """
-    # ── 1. 从数据库 trace 表查询 ──
+    # ── 1. 从数据库 trace 表查询（按 user_id 过滤，防止越权读取） ──
     try:
         from database.connection import get_session_factory
         from database.models import Trace
@@ -335,6 +445,7 @@ async def get_agent_status(
             stmt = (
                 select(Trace)
                 .where(Trace.trace_id == trace_id)
+                .where(Trace.user_id == user_id)
                 .order_by(Trace.created_at.asc())
             )
             result = await session.execute(stmt)
@@ -342,15 +453,43 @@ async def get_agent_status(
 
         if rows:
             return _aggregate_status_from_db(trace_id, rows)
+
+        # 无本人记录：若该 trace 存在但属于其他用户，返回 404 而非泄露存在性
+        try:
+            async with factory() as session:
+                any_stmt = (
+                    select(Trace.trace_id)
+                    .where(Trace.trace_id == trace_id)
+                    .limit(1)
+                )
+                exists = (await session.execute(any_stmt)).scalars().first()
+            if exists:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="未找到该执行状态或无权访问",
+                )
+        except HTTPException:
+            raise
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning("查询 trace 表失败，回退内存: {}", e)
 
-    # ── 2. 回退：内存 TraceRecorder ──
+    # ── 2. 回退：内存 TraceRecorder（按 user_id 归属校验） ──
     try:
         from governance.trace import get_trace_recorder
         spans = get_trace_recorder().get_spans_by_trace(trace_id)
         if spans:
-            return _aggregate_status_from_spans(trace_id, spans)
+            owned_spans = [
+                s for s in spans
+                if not s.user_id or s.user_id == user_id
+            ]
+            if not owned_spans:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="未找到该执行状态或无权访问",
+                )
+            return _aggregate_status_from_spans(trace_id, owned_spans)
     except Exception:
         pass
 
@@ -486,41 +625,47 @@ async def a2a_callback(
     import hmac
     import time as _time
 
-    if settings.a2a_hmac_secret:
-        now_ts = int(_time.time())
-        req_ts = request.timestamp
-
-        # 时间窗口校验（±300 秒防重放）
-        if abs(now_ts - req_ts) > 300:
-            logger.warning(
-                "A2A callback 时间戳过期: task_id={task_id} req_ts={req_ts} now={now}",
-                task_id=request.task_id, req_ts=req_ts, now=now_ts,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="请求时间戳过期，请重新签名",
-            )
-
-        # 计算期望签名
-        sign_payload = f"{request.task_id}|{request.status}|{request.timestamp}"
-        expected_sig = hmac.new(
-            settings.a2a_hmac_secret.encode("utf-8"),
-            sign_payload.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-
-        if not hmac.compare_digest(expected_sig, request.signature):
-            logger.warning(
-                "A2A callback 签名验证失败: task_id={task_id}",
-                task_id=request.task_id,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="HMAC 签名验证失败",
-            )
-    else:
+    if not settings.a2a_hmac_secret:
         logger.warning(
-            "A2A HMAC secret 未配置，跳过回调签名验证（不安全的配置）"
+            "A2A HMAC secret 未配置，拒绝回调: task_id={task_id}",
+            task_id=request.task_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="A2A HMAC secret 未配置，拒绝处理回调（请设置 A2A_HMAC_SECRET）",
+        )
+
+    now_ts = int(_time.time())
+    req_ts = request.timestamp
+
+    # 时间窗口校验（±300 秒防重放）
+    if abs(now_ts - req_ts) > 300:
+        logger.warning(
+            "A2A callback 时间戳过期: task_id={task_id} req_ts={req_ts} now={now}",
+            task_id=request.task_id, req_ts=req_ts, now=now_ts,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="请求时间戳过期，请重新签名",
+        )
+
+    # 计算期望签名（含 request_id/nonce，防重放）
+    replay_id = request.request_id or request.nonce or ""
+    sign_payload = f"{replay_id}|{request.task_id}|{request.status}|{request.timestamp}"
+    expected_sig = hmac.new(
+        settings.a2a_hmac_secret.encode("utf-8"),
+        sign_payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not hmac.compare_digest(expected_sig, request.signature):
+        logger.warning(
+            "A2A callback 签名验证失败: task_id={task_id}",
+            task_id=request.task_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="HMAC 签名验证失败",
         )
 
     task_id = request.task_id
@@ -534,6 +679,8 @@ async def a2a_callback(
             status_str=request.status,
             artifact=request.artifact,
             error_message=request.error_message,
+            request_id=request.request_id,
+            nonce=request.nonce,
         )
 
         logger.info(

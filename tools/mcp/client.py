@@ -18,6 +18,22 @@ from tools.logger import get_logger, log_mcp_call
 logger = get_logger(__name__)
 
 
+def _record_tool_metric(tool_name: str, success: bool, latency_ms: float) -> None:
+    """记录 MCP 工具调用指标（P2-2，agent 归属取自当前 trace 上下文，失败静默）。"""
+    try:
+        from governance.monitor import record_tool_call as _record
+        from governance.trace import get_current_agent_name as _agent_name
+
+        _record(
+            tool_name=tool_name,
+            agent_name=_agent_name(),
+            success=success,
+            latency_ms=latency_ms,
+        )
+    except Exception:
+        pass
+
+
 class MCPToolError(Exception):
     """MCP 工具调用返回错误"""
 
@@ -42,14 +58,6 @@ class MCPClient:
             result = await client.call_tool(...)
     """
 
-    # ── Server → Gateway 端口映射 ──
-    # 当 Gateway 不可用时，Client 可以直连 Server（fallback）
-    SERVER_PORTS: dict[str, int] = {
-        "policy_server": 12011,
-        "material_server": 12021,
-        "workflow_server": 12031,
-    }
-
     def __init__(
         self,
         gateway_url: str = "http://localhost:12001",
@@ -62,11 +70,34 @@ class MCPClient:
         self._client: Optional[httpx.AsyncClient] = None
         self._tool_cache: dict[str, list[dict]] = {}
 
-    def _auth_headers(self) -> dict[str, str]:
-        """构建认证请求头"""
-        if self._auth_token:
-            return {"Authorization": f"Bearer {self._auth_token}"}
-        return {}
+    def _auth_headers(
+        self,
+        trace_id: str = "",
+        user_context: Optional[dict] = None,
+    ) -> dict[str, str]:
+        """构建认证请求头（Bearer Token + 可选 trace_id 透传）。
+
+        user_context 提供 {user_id, role, tenant_id} 时，以当前用户身份签发
+        Gateway 调用 Token，保证办件/审计中的用户身份与请求用户一致。
+        """
+        token = self._auth_token
+        if user_context:
+            try:
+                from backend.middleware.auth import create_access_token
+                token = create_access_token(
+                    user_id=user_context.get("user_id", "unknown"),
+                    role=user_context.get("role", "user"),
+                    tenant_id=user_context.get("tenant_id", "default"),
+                )
+            except Exception as e:
+                logger.warning("按用户上下文签发 MCP Token 失败，回退默认 Token: {}", e)
+
+        headers: dict[str, str] = {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        if trace_id:
+            headers["X-Trace-Id"] = trace_id
+        return headers
 
     async def __aenter__(self):
         self._client = httpx.AsyncClient(timeout=self._timeout)
@@ -85,15 +116,19 @@ class MCPClient:
 
     # ── 工具发现 ──
 
-    async def list_tools(self, server_name: str) -> list[dict]:
+    async def list_tools(self, server_name: str, trace_id: str = "") -> list[dict]:
         """
         发现指定 Server 上的所有工具。
 
         Args:
             server_name: "policy_server" | "material_server" | "workflow_server"
+            trace_id: 链路追踪 ID（透传给 Gateway 用于审计关联）
 
         Returns:
             工具定义列表 [{name, description, input_schema, output_schema}]
+
+        Raises:
+            MCPToolError: Gateway 不可用或返回错误时快速失败
         """
         if server_name in self._tool_cache:
             return self._tool_cache[server_name]
@@ -103,28 +138,7 @@ class MCPClient:
             resp = await client.post(
                 f"{self._gateway_url}/api/tools/list",
                 json={"server_name": server_name},
-                headers=self._auth_headers(),
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            tools = data.get("tools", [])
-            self._tool_cache[server_name] = tools
-            return tools
-        except httpx.HTTPError:
-            # Gateway 不可用 → 尝试直连 Server
-            return await self._list_tools_direct(server_name)
-
-    async def _list_tools_direct(self, server_name: str) -> list[dict]:
-        """直连 MCP Server 获取工具列表（Gateway fallback）"""
-        port = self.SERVER_PORTS.get(server_name)
-        if not port:
-            return []
-
-        client = await self._ensure_client()
-        try:
-            resp = await client.post(
-                f"http://localhost:{port}/tools/list",
-                json={},
+                headers=self._auth_headers(trace_id=trace_id),
             )
             resp.raise_for_status()
             data = resp.json()
@@ -132,8 +146,10 @@ class MCPClient:
             self._tool_cache[server_name] = tools
             return tools
         except Exception as e:
-            logger.warning("Failed to list tools from {}: {}", server_name, e)
-            return []
+            logger.error("MCP Gateway 工具发现失败（不再直连 Server）: {} {}", server_name, e)
+            raise MCPToolError(
+                f"{server_name} 工具发现失败，MCP Gateway 不可用或返回错误: {e}"
+            ) from e
 
     # ── 工具调用 ──
 
@@ -142,6 +158,8 @@ class MCPClient:
         server_name: str,
         tool_name: str,
         arguments: dict[str, Any],
+        trace_id: str = "",
+        user_context: Optional[dict] = None,
     ) -> dict[str, Any]:
         """
         调用指定工具。
@@ -150,6 +168,8 @@ class MCPClient:
             server_name: Server 名称
             tool_name: 工具名称
             arguments: 调用参数
+            trace_id: 链路追踪 ID（透传给 Gateway 用于审计关联）
+            user_context: 当前用户身份 {user_id, role, tenant_id}，用于按用户签发 Token
 
         Returns:
             工具返回结果 dict
@@ -161,9 +181,14 @@ class MCPClient:
         start = time.perf_counter()
 
         try:
-            result = await self._call_via_gateway(server_name, tool_name, arguments)
+            result = await self._call_via_gateway(
+                server_name, tool_name, arguments,
+                trace_id=trace_id,
+                user_context=user_context,
+            )
             elapsed_ms = (time.perf_counter() - start) * 1000
             log_mcp_call(server_name, tool_name, arguments, result, elapsed_ms, "success")
+            _record_tool_metric(tool_name, success=True, latency_ms=elapsed_ms)
             return result
 
         except (MCPToolError, MCPToolTimeout):
@@ -172,23 +197,22 @@ class MCPClient:
         except httpx.TimeoutException:
             elapsed_ms = (time.perf_counter() - start) * 1000
             log_mcp_call(server_name, tool_name, arguments, None, elapsed_ms, "timeout")
+            _record_tool_metric(tool_name, success=False, latency_ms=elapsed_ms)
             raise MCPToolTimeout(f"{server_name}/{tool_name}: timeout after {self._timeout}s")
 
         except Exception as e:
-            # Gateway 失败 → 尝试直连 Server
-            logger.info("Gateway call failed, trying direct connection: {}", e)
-            try:
-                result = await self._call_direct(server_name, tool_name, arguments)
-                elapsed_ms = (time.perf_counter() - start) * 1000
-                log_mcp_call(server_name, tool_name, arguments, result, elapsed_ms, "success")
-                return result
-            except Exception as e2:
-                elapsed_ms = (time.perf_counter() - start) * 1000
-                log_mcp_call(server_name, tool_name, arguments, None, elapsed_ms, "failed", str(e2))
-                raise MCPToolError(f"{server_name}/{tool_name}: {e2}")
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            log_mcp_call(server_name, tool_name, arguments, None, elapsed_ms, "failed", str(e))
+            _record_tool_metric(tool_name, success=False, latency_ms=elapsed_ms)
+            raise MCPToolError(f"{server_name}/{tool_name}: {e}") from e
 
     async def _call_via_gateway(
-        self, server_name: str, tool_name: str, arguments: dict
+        self,
+        server_name: str,
+        tool_name: str,
+        arguments: dict,
+        trace_id: str = "",
+        user_context: Optional[dict] = None,
     ) -> dict:
         """通过 Gateway 转发调用"""
         client = await self._ensure_client()
@@ -199,34 +223,16 @@ class MCPClient:
                 "tool_name": tool_name,
                 "arguments": arguments,
             },
-            headers=self._auth_headers(),
+            headers=self._auth_headers(trace_id=trace_id, user_context=user_context),
         )
-        resp.raise_for_status()
-        data = resp.json()
-
-        if not data.get("success", True):
-            raise MCPToolError(data.get("error", "Unknown error"))
-
-        return data.get("result", {})
-
-    async def _call_direct(
-        self, server_name: str, tool_name: str, arguments: dict
-    ) -> dict:
-        """直连 MCP Server（Gateway fallback）"""
-        port = self.SERVER_PORTS.get(server_name)
-        if not port:
-            raise MCPToolError(f"Unknown server: {server_name}")
-
-        client = await self._ensure_client()
-        resp = await client.post(
-            f"http://localhost:{port}/tools/call",
-            json={
-                "server_name": server_name,
-                "tool_name": tool_name,
-                "arguments": arguments,
-            },
-        )
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            try:
+                detail = resp.json().get("detail", resp.text)
+            except Exception:
+                detail = resp.text
+            raise MCPToolError(
+                f"Gateway 拒绝调用 {server_name}/{tool_name}: HTTP {resp.status_code} {detail}"
+            )
         data = resp.json()
 
         if not data.get("success", True):

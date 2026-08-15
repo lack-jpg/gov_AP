@@ -17,49 +17,68 @@ import httpx
 # 容器部署时设置环境变量 API_BASE_URL=http://api:12401
 BASE_URL = os.getenv("API_BASE_URL", "http://localhost:12401")
 
-# ── Demo Token ──
-# 开发/演示用 JWT Token（避免硬编码 X-User-Id / X-User-Role Header）。
-# 生产环境应使用真实的用户登录流程获取 Token。
-_DEMO_TOKEN: str | None = None
+# ── 认证 Token ──
+# 前端不再自行构造假 Token / X-User-Id Header。
+# Token 来源（按优先级）:
+#   1. FRONTEND_AUTH_TOKEN — 运维注入的真实 JWT（生产推荐）
+#   2. FRONTEND_DEV_AUTH=1 — 开发模式，向后端 /api/auth/dev-login 换取 Token
+# 两者均未配置时，请求直接失败并给出明确提示，避免静默降级。
+_TOKEN: str | None = None
 
 
-def _get_demo_token() -> str:
-    """获取或创建演示用 JWT Token"""
-    global _DEMO_TOKEN
-    if _DEMO_TOKEN is not None:
-        return _DEMO_TOKEN
-    try:
-        from backend.middleware.auth import create_access_token
-        _DEMO_TOKEN = create_access_token(user_id="demo_user", role="user")
-    except Exception:
-        # 无法导入或创建 JWT Token 时（如 Docker 前端、配置缺失），回退生成简单 Token
-        import hashlib
-        import time
-        payload = f"demo_user:{int(time.time())}"
-        _DEMO_TOKEN = f"demo_{hashlib.sha256(payload.encode()).hexdigest()[:32]}"
-    return _DEMO_TOKEN
+def _get_token() -> str:
+    """获取认证 Token（环境注入或开发登录接口换取）。"""
+    global _TOKEN
+    if _TOKEN:
+        return _TOKEN
+
+    injected = os.getenv("FRONTEND_AUTH_TOKEN", "").strip()
+    if injected:
+        _TOKEN = injected
+        return _TOKEN
+
+    dev_auth = os.getenv("FRONTEND_DEV_AUTH", "").strip().lower()
+    if dev_auth in ("1", "true", "yes"):
+        try:
+            r = httpx.post(
+                f"{BASE_URL}/api/auth/dev-login",
+                timeout=10,
+            )
+            if r.status_code != 200:
+                raise RuntimeError(f"开发登录失败: HTTP {r.status_code}")
+            token = (r.json() or {}).get("access_token", "")
+            if not token:
+                raise RuntimeError("开发登录响应缺少 access_token")
+            _TOKEN = token
+            return _TOKEN
+        except RuntimeError:
+            raise
+        except Exception as e:
+            raise RuntimeError(f"开发登录请求失败: {e}") from e
+
+    raise RuntimeError(
+        "未配置认证 Token：请设置 FRONTEND_AUTH_TOKEN，"
+        "或开发环境设置 FRONTEND_DEV_AUTH=1 启用 /api/auth/dev-login"
+    )
 
 
 def _headers() -> dict[str, str]:
-    """构建认证请求头（Bearer Token + X-User-Id 双重兜底）。
-
-    Docker 前端容器无法导入 backend.middleware.auth，会生成非 JWT 的假 Token。
-    后端 AuthMiddleware 的 JWT 校验失败后会 fallthrough 到 X-User-Id 降级路径。
-    """
-    return {
-        "Authorization": f"Bearer {_get_demo_token()}",
-        "X-User-Id": "demo_user",
-        "X-User-Role": "user",
-    }
+    """构建认证请求头（仅 Bearer Token，无 Header 身份兜底）。"""
+    return {"Authorization": f"Bearer {_get_token()}"}
 
 
-def _get(path: str, params: Optional[dict] = None, timeout: float = 10.0) -> Optional[dict]:
+def _get(
+    path: str,
+    params: Optional[dict] = None,
+    timeout: float = 10.0,
+    auth: bool = True,
+) -> Optional[dict]:
     """GET 请求（错误时返回 None）"""
     try:
         r = httpx.get(
             f"{BASE_URL}{path}",
             params=params,
-            headers=_headers(),
+            headers=_headers() if auth else {},
             timeout=timeout,
         )
         return r.json() if r.status_code == 200 else None
@@ -69,7 +88,7 @@ def _get(path: str, params: Optional[dict] = None, timeout: float = 10.0) -> Opt
 
 def health() -> Optional[dict]:
     """后端健康检查"""
-    return _get("/health", timeout=3)
+    return _get("/health", timeout=3, auth=False)
 
 
 def chat(

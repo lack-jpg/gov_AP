@@ -48,6 +48,13 @@ class SearchPolicyOutput(BaseModel):
 
     documents: list[PolicyDocument] = Field(default_factory=list, description="匹配的政策文档列表")
     total_found: int = Field(default=0, description="匹配总数")
+    mode: str = Field(
+        default="stub",
+        description=(
+            "检索模式：rag=Milvus+BM25 真实检索 | bm25=仅 BM25 语料检索 | "
+            "stub=离线关键词降级（无语料）"
+        ),
+    )
 
 
 # ============================================================
@@ -143,6 +150,7 @@ class CreateCaseInput(BaseModel):
     user_id: str = Field(description="用户唯一标识")
     service: str = Field(description="服务类型（对应 intent 标签）")
     materials: Optional[list[str]] = Field(default=None, description="已提交材料列表")
+    tenant_id: str = Field(default="", description="租户 ID（缺省取调用者身份）")
 
 
 class CreateCaseOutput(BaseModel):

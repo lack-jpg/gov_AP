@@ -9,6 +9,7 @@ Task: Implement embedding generation using BGE model
 from __future__ import annotations
 
 import os
+import threading
 from typing import Optional
 
 import numpy as np
@@ -166,3 +167,29 @@ class EmbeddingEngine:
     def model_path(self) -> Optional[str]:
         """本地模型路径"""
         return self._model_path
+
+
+# ============================================================
+# 进程级单例 — P1-2 常驻化：模型只加载一次，后续请求复用
+# ============================================================
+
+_instance: Optional[EmbeddingEngine] = None
+_lock = threading.Lock()
+
+
+def get_embedding_engine() -> EmbeddingEngine:
+    """
+    获取 EmbeddingEngine 进程级单例。
+
+    首次调用时加载模型（加锁，避免并发重复加载），
+    之后所有调用复用同一实例与内存中的模型。
+
+    Returns:
+        EmbeddingEngine 实例
+    """
+    global _instance
+    if _instance is None:
+        with _lock:
+            if _instance is None:
+                _instance = EmbeddingEngine()
+    return _instance

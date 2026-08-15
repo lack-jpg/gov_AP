@@ -296,7 +296,21 @@ class KnowledgeBase:
     # ── 内部 ──
 
     async def _load_file(self, path: str) -> list[dict]:
-        """加载单个文件"""
+        """
+        加载单个文件（真实解析，非空实现）。
+
+        - .txt / .md: UTF-8 直接读取
+        - .pdf: pypdf 逐页提取文本（每页作为一个文档片段，带 page 元数据）
+        - .docx: python-docx 提取段落文本（合并为单文档）
+
+        解析失败记录 warning 并跳过该文件（不静默吞错、不返回空文本）。
+
+        Args:
+            path: 文件路径
+
+        Returns:
+            文档列表 [{title, content, source, page}, ...]
+        """
         ext = os.path.splitext(path)[1].lower()
         title = os.path.basename(path)
 
@@ -304,28 +318,100 @@ class KnowledgeBase:
             if ext == ".txt":
                 with open(path, encoding="utf-8") as f:
                     content = f.read()
-            elif ext == ".md":
+                return [{"title": title, "content": content, "source": path, "page": 1}]
+
+            if ext == ".md":
                 with open(path, encoding="utf-8") as f:
                     content = f.read()
-            elif ext == ".pdf":
-                # TODO: from pypdf import PdfReader
-                # reader = PdfReader(path)
-                # content = "\n".join(p.extract_text() or "" for p in reader.pages)
-                logger.debug("PDF 支持待接入: {}", path)
-                content = ""
-            elif ext == ".docx":
-                # TODO: from docx import Document
-                # doc = Document(path)
-                # content = "\n".join(p.text for p in doc.paragraphs)
-                logger.debug("DOCX 支持待接入: {}", path)
-                content = ""
-            else:
-                logger.debug("不支持的文件格式: {}", path)
-                return []
+                return [{"title": title, "content": content, "source": path, "page": 1}]
+
+            if ext == ".pdf":
+                return self._load_pdf(path, title)
+
+            if ext == ".docx":
+                return self._load_docx(path, title)
+
+            logger.debug("不支持的文件格式: {}", path)
+            return []
         except Exception as e:
             logger.warning("文件加载失败: {} ({})", path, e)
             return []
 
+    # ── 格式解析（真实实现，P1-3） ──
+
+    @staticmethod
+    def _load_pdf(path: str, title: str) -> list[dict]:
+        """
+        使用 pypdf 提取 PDF 文本，逐页返回文档片段。
+
+        依赖缺失或解析失败时记录 warning 并返回空列表（跳过该文件）。
+        """
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            logger.warning("pypdf 未安装，跳过 PDF 解析: {}（pip install pypdf）", path)
+            return []
+
+        try:
+            reader = PdfReader(path)
+        except Exception as e:
+            logger.warning("PDF 打开失败，跳过: {} ({})", path, e)
+            return []
+
+        docs: list[dict] = []
+        for page_idx, page in enumerate(reader.pages, start=1):
+            try:
+                text = page.extract_text() or ""
+            except Exception as e:
+                logger.warning("PDF 第 {} 页提取失败: {} ({})", page_idx, path, e)
+                text = ""
+            # 跳过空页（扫描件无文本层），但保留有内容的页并带 page 元数据
+            if text.strip():
+                docs.append({
+                    "title": f"{title} (第{page_idx}页)",
+                    "content": text.strip(),
+                    "source": path,
+                    "page": page_idx,
+                })
+
+        if not docs:
+            logger.warning("PDF 无文本层或全部页为空（可能是扫描件，可走 OCR）: {}", path)
+        else:
+            logger.info("PDF 解析完成: {} → {} 页", path, len(docs))
+        return docs
+
+    @staticmethod
+    def _load_docx(path: str, title: str) -> list[dict]:
+        """
+        使用 python-docx 提取 DOCX 文本（段落 + 表格单元格），返回单文档。
+        """
+        try:
+            from docx import Document
+        except ImportError:
+            logger.warning("python-docx 未安装，跳过 DOCX 解析: {}（pip install python-docx）", path)
+            return []
+
+        try:
+            doc = Document(path)
+            parts: list[str] = []
+            # 段落
+            for para in doc.paragraphs:
+                if para.text and para.text.strip():
+                    parts.append(para.text.strip())
+            # 表格（常见于表单类材料）
+            for table in doc.tables:
+                for row in table.rows:
+                    cells = [c.text.strip() for c in row.cells if c.text and c.text.strip()]
+                    if cells:
+                        parts.append(" | ".join(cells))
+            content = "\n".join(parts)
+        except Exception as e:
+            logger.warning("DOCX 解析失败，跳过: {} ({})", path, e)
+            return []
+
+        if not content:
+            logger.warning("DOCX 无可用文本: {}", path)
+            return []
         return [{"title": title, "content": content, "source": path, "page": 1}]
 
     @staticmethod

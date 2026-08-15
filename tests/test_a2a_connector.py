@@ -171,34 +171,78 @@ async def test_send_task_default_callback_url_propagated():
 
 @pytest.mark.asyncio
 async def test_send_task_stub_fallback_when_unreachable():
-    """外部 Agent 不可达（真实连接失败）→ 静默回退 stub，任务仍完成且带 artifact。"""
+    """外部 Agent 不可达（真实连接失败）+ 显式开发开关 → 回退 stub，任务仍完成且带 artifact。"""
     store = TaskStore()
     conn = A2AConnector(
         registry=_make_registry(endpoint="http://127.0.0.1:9"),  # 未监听端口
         task_store=store,
+        allow_stub=True,  # 显式开发开关
     )
     try:
         result = await conn.send_task("query_property", {"owner_name": "张三"})
         assert result["mode"] == "stub"
         assert result["status"] == "completed"
         assert result["artifact"] is not None
+        # stub fallback 原因应记录（可追踪，非静默）
+        assert result.get("error_message")
         record = store.get(result["task_id"])
         assert record is not None
         assert record.status == A2ATaskStatus.COMPLETED
+        assert record.error_message  # fallback 原因写入记录
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_send_task_no_stub_fails_when_unreachable():
+    """生产默认（allow_stub=False）外部 Agent 不可达 → 明确失败，禁止 stub 假结果。"""
+    store = TaskStore()
+    conn = A2AConnector(
+        registry=_make_registry(endpoint="http://127.0.0.1:9"),  # 未监听端口
+        task_store=store,
+        allow_stub=False,
+    )
+    try:
+        result = await conn.send_task("query_property", {"owner_name": "张三"})
+        assert result["mode"] == "http"
+        assert result["status"] == "failed"
+        assert result["artifact"] is None
+        assert result.get("error_message"), "失败原因必须可追踪"
+        record = store.get(result["task_id"])
+        assert record is not None
+        assert record.status == A2ATaskStatus.FAILED
+        assert "外部 Agent" in record.error_message
     finally:
         await conn.close()
 
 
 @pytest.mark.asyncio
 async def test_send_task_unknown_skill_uses_stub():
-    """无注册 Agent 的技能 → 直接 stub。"""
+    """无注册 Agent 的技能 + 显式开发开关 → 直接 stub。"""
     reg = ExternalAgentRegistry()  # 空注册中心，无 housing_agent
     store = TaskStore()
-    conn = A2AConnector(registry=reg, task_store=store)
+    conn = A2AConnector(registry=reg, task_store=store, allow_stub=True)
     try:
         result = await conn.send_task("unknown_skill", {"data": "x"})
         assert result["mode"] == "stub"
         assert result["task_id"].startswith("a2a_")
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_send_task_unknown_skill_no_stub_fails():
+    """无注册 Agent 的技能 + 生产禁止 stub → 明确失败。"""
+    reg = ExternalAgentRegistry()  # 空注册中心
+    store = TaskStore()
+    conn = A2AConnector(registry=reg, task_store=store, allow_stub=False)
+    try:
+        result = await conn.send_task("unknown_skill", {"data": "x"})
+        assert result["status"] == "failed"
+        assert result["artifact"] is None
+        assert "未注册" in result["error_message"]
+        record = store.get(result["task_id"])
+        assert record.status == A2ATaskStatus.FAILED
     finally:
         await conn.close()
 
@@ -211,6 +255,7 @@ async def test_check_status_after_stub_send():
     conn = A2AConnector(
         registry=_make_registry(endpoint="http://127.0.0.1:9"),
         task_store=store,
+        allow_stub=True,
     )
     try:
         result = await conn.send_task("query_property", {"owner_name": "张三"})
@@ -263,6 +308,7 @@ async def test_cancel_task_completed_not_allowed():
     conn = A2AConnector(
         registry=_make_registry(endpoint="http://127.0.0.1:9"),  # 不可达 → stub 完成
         task_store=store,
+        allow_stub=True,
     )
     try:
         result = await conn.send_task("query_property", {"owner_name": "张三"})
@@ -280,5 +326,91 @@ async def test_cancel_task_not_found():
     try:
         cancel = await conn.cancel_task("nonexistent_task")
         assert cancel["cancelled"] is False
+    finally:
+        await conn.close()
+
+
+# ============================================================
+# P1-6: 重试与可靠性
+# ============================================================
+
+
+@pytest.mark.asyncio
+async def test_send_http_retries_on_5xx_then_succeeds():
+    """5xx 触发重试，恢复后成功（外部系统瞬时故障可自愈）。"""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if len(calls) == 1:
+            return httpx.Response(500, json={"detail": "temporary failure"})
+        body = _req_body(request)
+        return httpx.Response(200, json={
+            "task_id": body["task_id"],
+            "status": "completed",
+            "artifact": {"total_count": 1},
+            "agent_name": "housing_agent",
+        })
+
+    conn, _ = _make_connector(handler)
+    try:
+        result = await conn.send_task("query_property", {"owner_name": "张三"})
+        assert result["mode"] == "http"
+        assert result["status"] == "completed"
+        assert len(calls) == 2, f"应重试 1 次，实际 {len(calls)} 次"
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_send_http_4xx_does_not_retry():
+    """4xx 客户端错误不重试，任务明确失败。"""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(400, json={"detail": "bad request"})
+
+    conn, _ = _make_connector(handler)
+    try:
+        result = await conn.send_task("query_property", {"owner_name": "张三"})
+        assert result["status"] == "failed"
+        assert len(calls) == 1, f"4xx 不应重试，实际 {len(calls)} 次"
+        assert "400" in result["error_message"]
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_send_http_all_retries_exhausted_fails():
+    """重试用尽仍失败 → 任务 failed 且失败原因可追踪（禁止 stub 假结果）。"""
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(503, json={"detail": "still down"})
+
+    store = TaskStore()
+    conn = A2AConnector(
+        registry=_make_registry(endpoint="http://mock-housing"),
+        task_store=store,
+        allow_stub=False,   # 生产禁止 stub
+        http_retries=2,     # 总尝试 3 次
+        retry_backoff_base=0.0,  # 测试不等待
+    )
+    conn._http_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        timeout=httpx.Timeout(5.0),
+    )
+    try:
+        result = await conn.send_task("query_property", {"owner_name": "张三"})
+        assert result["status"] == "failed"
+        assert result["mode"] == "http"
+        assert result["artifact"] is None
+        assert result.get("error_message")
+        assert len(calls) == 3, f"应重试 2 次共 3 次调用，实际 {len(calls)} 次"
+        record = store.get(result["task_id"])
+        assert record.status == A2ATaskStatus.FAILED
+        assert "503" in record.error_message
     finally:
         await conn.close()

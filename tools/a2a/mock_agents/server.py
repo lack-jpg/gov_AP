@@ -24,6 +24,7 @@ import hashlib
 import hmac
 import os
 import time
+import uuid
 from typing import Any
 
 from fastapi import FastAPI
@@ -49,18 +50,20 @@ def _build_callback_payload(response: A2ATaskResponse) -> dict[str, Any]:
     """
     构造与 backend/api/schemas.A2ACallbackRequest 一致的载荷。
 
-    签名公式: hmac_sha256(A2A_HMAC_SECRET, f"{task_id}|{status}|{timestamp}")
+    签名公式: hmac_sha256(A2A_HMAC_SECRET, f"{request_id}|{task_id}|{status}|{timestamp}")
     """
     secret = os.environ.get("A2A_HMAC_SECRET", "")
     timestamp = int(time.time())
     status = _status_value(response.status)
-    sign_payload = f"{response.task_id}|{status}|{timestamp}"
+    request_id = str(uuid.uuid4())
+    sign_payload = f"{request_id}|{response.task_id}|{status}|{timestamp}"
     signature = (
         hmac.new(secret.encode("utf-8"), sign_payload.encode("utf-8"), hashlib.sha256).hexdigest()
         if secret
         else ""
     )
     return {
+        "request_id": request_id,
         "task_id": response.task_id,
         "status": status,
         "artifact": response.artifact,
@@ -395,6 +398,7 @@ if __name__ == "__main__":
             check("回调状态 completed", received.get("status") == "completed")
             check("回调 artifact 有数据", received.get("artifact", {}).get("total_count", 0) >= 1)
             check("回调含签名/时间戳", "signature" in received and "timestamp" in received)
+            check("回调含 request_id", bool(received.get("request_id")))
         finally:
             cb_server.shutdown()
 

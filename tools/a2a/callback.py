@@ -8,6 +8,8 @@ Task: Implement callback endpoint for external agent task results
 """
 from __future__ import annotations
 
+import threading
+import time
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, status
@@ -63,14 +65,67 @@ class A2ACallbackHandler:
         self,
         task_store: Optional[TaskStore] = None,
         registry: Optional[ExternalAgentRegistry] = None,
+        replay_window_seconds: float = 600.0,
+        max_replay_entries: int = 10000,
     ):
         """
         Args:
             task_store: 任务存储
             registry: 外部 Agent 注册中心
+            replay_window_seconds: 回调请求 ID 去重的保留时间窗口（秒）
+            max_replay_entries: 去重缓存最大条目数，超出后先清理过期项
         """
         self._task_store = task_store or get_task_store()
         self._registry = registry or get_external_registry()
+        self._replay_window_seconds = replay_window_seconds
+        self._max_replay_entries = max_replay_entries
+        self._recent_request_ids: dict[str, float] = {}
+        self._replay_lock = threading.Lock()
+
+    # ── 防重放批处理 ──
+
+    def _is_replayed(self, request_id: str) -> bool:
+        """
+        检查请求 ID 是否已成功处理。
+
+        Args:
+            request_id: 回调请求唯一 ID
+
+        Returns:
+            True 表示已在时间窗口内处理过（重放）
+        """
+        if not request_id:
+            return False
+        with self._replay_lock:
+            now = time.monotonic()
+            self._prune_replay_ids(now)
+            return request_id in self._recent_request_ids
+
+    def _mark_processed(self, request_id: str) -> None:
+        """记录已成功处理的请求 ID。"""
+        if not request_id:
+            return
+        with self._replay_lock:
+            now = time.monotonic()
+            self._prune_replay_ids(now)
+            self._recent_request_ids[request_id] = now
+
+    def _prune_replay_ids(self, now: float) -> None:
+        """清理过期 ID，当数量超限时也剔除最旧的记录。"""
+        expired = [
+            rid for rid, seen_at in self._recent_request_ids.items()
+            if now - seen_at > self._replay_window_seconds
+        ]
+        for rid in expired:
+            self._recent_request_ids.pop(rid, None)
+        if len(self._recent_request_ids) > self._max_replay_entries:
+            sorted_ids = sorted(
+                self._recent_request_ids,
+                key=lambda rid: self._recent_request_ids[rid],
+            )
+            excess = len(self._recent_request_ids) - self._max_replay_entries
+            for rid in sorted_ids[:excess]:
+                self._recent_request_ids.pop(rid, None)
 
     # ── 核心接口 ──
 
@@ -80,6 +135,8 @@ class A2ACallbackHandler:
         status_str: str,
         artifact: Optional[dict[str, Any]] = None,
         error_message: Optional[str] = None,
+        request_id: str = "",
+        nonce: str = "",
     ) -> dict[str, Any]:
         """
         处理外部 Agent 回调。
@@ -89,6 +146,8 @@ class A2ACallbackHandler:
             status_str: 任务状态字符串（completed | failed | timeout）
             artifact: 任务结果数据
             error_message: 错误信息
+            request_id: 回调请求唯一 ID，已处理过则直接返回幂等 no-op
+            nonce: 一次性随机数，与 request_id 至少提供一个
 
         Returns:
             {
@@ -99,6 +158,22 @@ class A2ACallbackHandler:
                 "final_state": {...} | None,
             }
         """
+        # 0. 防重放：同一 request_id 已处理过则直接返回幂等（避免重复恢复任务）
+        replay_id = request_id or nonce
+        if replay_id and self._is_replayed(replay_id):
+            logger.info(
+                "A2A 回调去重命中: {replay_id} 已处理，忽略重复回调: task={task_id}",
+                replay_id=replay_id,
+                task_id=task_id,
+            )
+            return {
+                "success": True,
+                "message": "Callback already processed (idempotent no-op)",
+                "task_id": task_id,
+                "checkpoint_resumed": False,
+                "final_state": None,
+            }
+
         # 1. 查找任务记录
         record = self._task_store.get(task_id)
         if record is None:
@@ -129,6 +204,7 @@ class A2ACallbackHandler:
             new_status in (A2ATaskStatus.COMPLETED, A2ATaskStatus.FAILED, A2ATaskStatus.TIMEOUT)
             and tsm.status == new_status
         ):
+            self._mark_processed(replay_id)
             logger.info(
                 "A2A 回调幂等命中: {task_id} 已是 {status}，忽略重复回调",
                 task_id=task_id, status=new_status.value,
@@ -169,6 +245,9 @@ class A2ACallbackHandler:
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"State transition failed: {e}",
             )
+
+        # 状态更新成功后才记录处理完成，失败时允许同 request_id 重试
+        self._mark_processed(replay_id)
 
         # 4. 尝试恢复 LangGraph（如果 checkpointer 可用）
         checkpoint_resumed = False
@@ -249,6 +328,14 @@ class CallbackRequest(BaseModel):
     """A2A 回调请求体（与 backend.api.schemas.A2ACallbackRequest 对应）"""
 
     task_id: str = PydanticField(description="A2A 任务 ID")
+    request_id: str = PydanticField(
+        default="",
+        description="回调请求唯一 ID（防重放，建议使用 UUID）",
+    )
+    nonce: str = PydanticField(
+        default="",
+        description="一次性随机数（防重放），与 request_id 至少提供一个",
+    )
     status: str = PydanticField(description="任务状态: completed | failed | timeout")
     artifact: Optional[dict[str, Any]] = PydanticField(
         default=None, description="外部 Agent 返回的结果数据"
@@ -304,6 +391,8 @@ def create_callback_router(handler: Optional[A2ACallbackHandler] = None) -> APIR
             status_str=request.status,
             artifact=request.artifact,
             error_message=request.error_message,
+            request_id=request.request_id,
+            nonce=request.nonce,
         )
         return CallbackResponse(
             success=result["success"],

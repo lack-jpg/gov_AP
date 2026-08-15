@@ -34,6 +34,24 @@ logger = get_logger(__name__)
 _PREFIX = "llmc:"
 
 
+def _record_cache_hit() -> None:
+    """记录一次缓存命中（P2-2 指标，失败静默——指标不阻断缓存逻辑）。"""
+    try:
+        from governance.monitor import record_cache_hit
+        record_cache_hit()
+    except Exception:
+        pass
+
+
+def _record_cache_miss() -> None:
+    """记录一次缓存未命中（P2-2 指标，失败静默）。"""
+    try:
+        from governance.monitor import record_cache_miss
+        record_cache_miss()
+    except Exception:
+        pass
+
+
 # ============================================================
 # LlmCache — Redis 优先 + 内存回退
 # ============================================================
@@ -158,8 +176,10 @@ class CachingChatOpenAI(ChatOpenAI):
             cached = None
 
         if cached is not None:
+            _record_cache_hit()
             return AIMessage(content=cached)
 
+        _record_cache_miss()
         response = await super().ainvoke(messages, config=config, **kwargs)
         if isinstance(getattr(response, "content", None), str) and response.content:
             try:

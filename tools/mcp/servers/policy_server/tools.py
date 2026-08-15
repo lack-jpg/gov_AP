@@ -145,23 +145,70 @@ _STUB_POLICIES: list[dict[str, Any]] = [
 # ============================================================
 
 
-async def search_policy(query: str, top_k: int = 5) -> SearchPolicyOutput:
+async def search_policy(
+    query: str,
+    top_k: int = 5,
+    trace_id: str = "",
+) -> SearchPolicyOutput:
     """
     搜索政策文档。
 
-    当前为 stub 实现：基于关键词匹配从本地语料库检索。
-    后续接入 rag/ 模块的完整 RAG 管线（Embedding → Milvus → BM25 → Reranker）。
+    主链路（P1-1）: rag.pipeline 真实检索（Embedding → Milvus/BM25 → Reranker），
+    返回语料中的文档并标注 mode。无语料/检索为空时显式降级到离线关键词 stub。
 
     Args:
         query: 用户查询文本
         top_k: 返回文档数量
+        trace_id: 链路追踪 ID（透传，供审计关联）
 
     Returns:
-        SearchPolicyOutput
+        SearchPolicyOutput（含 mode: rag | bm25 | stub）
     """
-    logger.info("search_policy called: query='{}' top_k={}", query[:80], top_k)
+    logger.info(
+        "search_policy called: query='{}' top_k={} trace={}",
+        query[:80], top_k, trace_id or "-",
+    )
 
-    # ── Stub: 关键词匹配 ──
+    # ── 1. 主链路：RAG 管线（常驻化单例） ──
+    try:
+        import time
+
+        from rag.pipeline import get_pipeline
+
+        t0 = time.perf_counter()
+        rag_result = await get_pipeline().retrieve(query, top_k=top_k)
+        latency_ms = (time.perf_counter() - t0) * 1000
+
+        docs = rag_result.get("documents", [])
+        mode = rag_result.get("mode", "empty")
+        if docs:
+            documents = [
+                PolicyDocument(
+                    document_id=_doc_id(d, idx),
+                    title=d.get("title", f"政策文档{idx + 1}"),
+                    content=d.get("content", "")[:300],
+                    source=d.get("source", ""),
+                    score=_normalize_score(d.get("score", d.get("relevance_score", 0.5))),
+                )
+                for idx, d in enumerate(docs[:top_k])
+            ]
+            logger.info(
+                "RAG 检索完成: mode={} docs={} latency={:.1f}ms trace={}",
+                mode, len(documents), latency_ms, trace_id or "-",
+            )
+            return SearchPolicyOutput(
+                documents=documents,
+                total_found=len(docs),
+                mode=mode,
+            )
+        logger.info(
+            "RAG 检索无结果（mode={}），降级到离线关键词 stub (trace={})",
+            mode, trace_id or "-",
+        )
+    except Exception as e:
+        logger.warning("RAG 管线不可用，降级到离线关键词 stub (trace={}): {}", trace_id or "-", e)
+
+    # ── 2. 显式降级：离线关键词匹配 ──
     scored: list[tuple[dict[str, Any], float]] = []
     query_lower = query.lower()
 
@@ -198,7 +245,25 @@ async def search_policy(query: str, top_k: int = 5) -> SearchPolicyOutput:
     return SearchPolicyOutput(
         documents=documents,
         total_found=len(scored),
+        mode="stub",
     )
+
+
+def _doc_id(doc: dict, idx: int) -> str:
+    """从检索结果提取文档 ID（语料无 document_id 时用 title 或序号兜底）。"""
+    did = doc.get("document_id") or doc.get("id")
+    if did:
+        return str(did)
+    return f"POL-{idx + 1:03d}"
+
+
+def _normalize_score(raw: float) -> float:
+    """将 RAG 分数规整到 [0, 1]（RRF 融合分可能小于 0.3）。"""
+    try:
+        score = float(raw)
+    except (TypeError, ValueError):
+        return 0.5
+    return round(max(0.0, min(1.0, score)), 4)
 
 
 def _compute_keyword_score(query: str, keywords: list[str]) -> float:

@@ -64,6 +64,7 @@ async def call_tool(request: ToolCallRequest):
             result = await search_policy(
                 query=input_data.query,
                 top_k=input_data.top_k,
+                trace_id=request.trace_id,
             )
             return ToolCallResponse(
                 success=True,

@@ -411,6 +411,17 @@ logger = _loguru_logger
 # ============================================================
 
 
+def _record_request_metric(
+    method: str, path: str, status_code: int, latency_ms: float
+) -> None:
+    """记录 HTTP 请求指标（P2-2，失败静默——指标不阻断请求处理）。"""
+    try:
+        from governance.monitor import record_request
+        record_request(method, path, status_code, latency_ms)
+    except Exception:
+        pass
+
+
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """
     FastAPI 请求日志中间件。
@@ -445,12 +456,16 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 "<-- {} {} 500 {:.1f}ms",
                 request.method, request.url.path, elapsed,
             )
+            _record_request_metric(request.method, request.url.path, 500, elapsed)
             raise
 
         elapsed = (time.perf_counter() - start) * 1000
         _loguru_logger.info(
             "<-- {} {} {} {:.1f}ms",
             request.method, request.url.path, response.status_code, elapsed,
+        )
+        _record_request_metric(
+            request.method, request.url.path, response.status_code, elapsed
         )
 
         response.headers["X-Trace-Id"] = trace_id

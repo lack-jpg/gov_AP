@@ -103,7 +103,7 @@ async def get_optional_user(
 
 
 # ============================================================
-# 中间件 — 请求级鉴权（兼容 X-User-Id Header）
+# 中间件 — 请求级鉴权（仅接受 JWT）
 # ============================================================
 
 
@@ -111,10 +111,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """
     FastAPI 认证中间件。
 
-    优先级:
-      1. Authorization: Bearer <token> — JWT 认证
-      2. X-User-Id Header — 简化模式（开发/内部调用）
-      3. 无认证信息 — 401
+    只接受 `Authorization: Bearer <token>` 的 JWT 认证；
+    缺失、无效或伪造的凭证一律返回 401。
+    X-User-Id / X-User-Role Header 不再作为身份来源，防止身份伪造。
 
     使用方式:
         app.add_middleware(AuthMiddleware)
@@ -126,11 +125,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # 跳过健康检查、文档端点、指标抓取和 A2A 外部回调（回调用 HMAC 签名校验，而非 JWT）
         if request.url.path in (
-            "/health", "/docs", "/redoc", "/openapi.json", "/metrics", "/api/a2a/callback",
+            "/health", "/docs", "/redoc", "/openapi.json", "/metrics",
+            "/api/a2a/callback", "/api/auth/dev-login",
         ):
             return await call_next(request)
 
-        # 优先 JWT Bearer Token
+        # 仅接受 JWT Bearer Token
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             settings = get_settings()
@@ -145,21 +145,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 request.state.user_tenant = payload.get("tenant_id", "default")
                 return await call_next(request)
             except JWTError:
-                # JWT 无效 → fallthrough 到 X-User-Id 降级（不直接报 401）
-                pass
-
-        # 降级：X-User-Id Header（简化模式 — 开发/内部调用）
-        x_user_id = request.headers.get("X-User-Id", "")
-        if x_user_id:
-            request.state.user_id = x_user_id
-            request.state.user_role = request.headers.get("X-User-Role", "user")
-            request.state.user_tenant = request.headers.get("X-Tenant-Id", "default")
-            return await call_next(request)
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="无效的认证凭证",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
         # 无认证
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="请提供认证信息 (Authorization: Bearer <token> 或 X-User-Id Header)",
+            detail="请提供认证信息 (Authorization: Bearer <token>)",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
 

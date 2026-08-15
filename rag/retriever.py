@@ -8,6 +8,7 @@ Task: Implement hybrid retrieval combining dense and sparse search
 """
 from __future__ import annotations
 
+import threading
 from typing import Optional
 
 import numpy as np
@@ -262,3 +263,29 @@ class HybridRetriever:
             doc["score"] = scores[doc_id]
 
         return result
+
+
+# ============================================================
+# 进程级单例 — P1-2 常驻化：Milvus 连接 + BM25 索引只构建一次
+# ============================================================
+
+_instance: Optional[HybridRetriever] = None
+_lock = threading.Lock()
+
+
+def get_retriever() -> HybridRetriever:
+    """
+    获取 HybridRetriever 进程级单例。
+
+    首次调用时初始化（连接 Milvus），之后所有调用复用同一实例，
+    避免每次请求重复连接数据库与构建检索器。
+
+    Returns:
+        HybridRetriever 实例
+    """
+    global _instance
+    if _instance is None:
+        with _lock:
+            if _instance is None:
+                _instance = HybridRetriever()
+    return _instance

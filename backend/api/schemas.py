@@ -24,6 +24,7 @@ class ChatRequest(BaseModel):
     user_query: str = Field(
         description="用户自然语言输入，如 '我想在成都开一家餐馆需要什么手续'",
         min_length=1,
+        max_length=4000,
     )
     user_id: str = Field(
         description="用户唯一标识，用于权限控制和会话关联",
@@ -49,6 +50,14 @@ class AgentStatusRequest(BaseModel):
 class A2ACallbackRequest(BaseModel):
     """A2A外部Agent回调请求"""
 
+    request_id: str = Field(
+        default="",
+        description="回调请求唯一ID（防重放，建议使用 UUID）",
+    )
+    nonce: str = Field(
+        default="",
+        description="一次性随机数（防重放），与 request_id 至少提供一个",
+    )
     task_id: str = Field(
         description="A2A任务ID，与发送任务时的task_id关联",
     )
@@ -65,7 +74,7 @@ class A2ACallbackRequest(BaseModel):
     )
     signature: str = Field(
         default="",
-        description="HMAC-SHA256 签名 = HMAC(task_id|status|timestamp, secret)",
+        description="HMAC-SHA256 签名 = HMAC(request_id|task_id|status|timestamp, secret)",
     )
     timestamp: int = Field(
         default=0,

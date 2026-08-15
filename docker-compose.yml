@@ -65,7 +65,12 @@ services:
       A2A_HOUSING_URL: http://a2a-mock:12101
       A2A_FUND_URL: http://a2a-mock:12111
       A2A_HMAC_SECRET: ${A2A_HMAC_SECRET:-}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-changeme}
+      # P1-6 A2A 可靠性：生产禁止 stub 降级（外部 Agent 不可达时任务明确失败并记录原因），
+      #                 仅本地开发需演示 stub 时显式设置 A2A_ALLOW_STUB=true
+      A2A_ALLOW_STUB: ${A2A_ALLOW_STUB:-false}
+      A2A_HTTP_RETRIES: ${A2A_HTTP_RETRIES:-2}
+      # 安全基线：JWT 密钥缺失或为空时直接拒绝启动，禁止 changeme 兜底
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY 必须设置且不能使用默认值 changeme}
     volumes:
       - ./models:/app/models
       - ./data:/app/data
@@ -137,8 +142,17 @@ services:
       - "12031:12031"
     environment:
       # 与 api 共享 JWT 密钥：Gateway 校验 MCP Client 的 Bearer Token 必须用同一密钥
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-changeme}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY 必须设置且不能使用默认值 changeme}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      # P1-5 办件落库：workflow_server 经 PostgreSQL 创建/查询办件
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-gov_agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: ${POSTGRES_DB:-gov_agent_platform}
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - gov_agent_net
 

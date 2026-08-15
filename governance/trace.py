@@ -74,6 +74,14 @@ _current_agent_name: contextvars.ContextVar[str] = contextvars.ContextVar(
     "current_agent_name", default="llm"
 )
 
+# 当前请求的用户身份（供 span 落库与数据隔离使用）
+_current_user_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "current_user_id", default=""
+)
+_current_tenant_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "current_tenant_id", default=""
+)
+
 
 def get_current_trace() -> TraceInfo | None:
     """获取当前协程的 trace 信息"""
@@ -95,6 +103,25 @@ def set_current_agent_name(name: str) -> None:
     _current_agent_name.set(name)
 
 
+def set_trace_user(user_id: str, tenant_id: str = "") -> tuple:
+    """设置当前请求的用户身份（供 span 归属与数据隔离），返回恢复用的 token。"""
+    user_token = _current_user_id.set(user_id or "")
+    tenant_token = _current_tenant_id.set(tenant_id or "")
+    return (user_token, tenant_token)
+
+
+def reset_trace_user(tokens: tuple) -> None:
+    """恢复 set_trace_user 之前协程的用户身份上下文。"""
+    user_token, tenant_token = tokens
+    _current_user_id.reset(user_token)
+    _current_tenant_id.reset(tenant_token)
+
+
+def get_trace_user() -> tuple[str, str]:
+    """获取当前请求的用户身份 (user_id, tenant_id)"""
+    return _current_user_id.get(), _current_tenant_id.get()
+
+
 # ============================================================
 # Span 数据类
 # ============================================================
@@ -107,6 +134,8 @@ class SpanRecord:
     span_id: str
     parent_span_id: str | None
     kind: SpanKind
+    user_id: str = ""
+    tenant_id: str = ""
     agent_name: str | None = None       # Agent 名称
     node_name: str | None = None         # LangGraph 节点名
     tool_name: str | None = None         # MCP 工具名
@@ -128,6 +157,8 @@ class SpanRecord:
             "trace_id": self.trace_id,
             "span_id": self.span_id,
             "parent_span_id": self.parent_span_id,
+            "user_id": self.user_id,
+            "tenant_id": self.tenant_id,
             "agent_name": self.agent_name or "",
             "node_name": self.node_name,
             "tool_name": self.tool_name,
@@ -281,6 +312,20 @@ class TraceRecorder:
         """清空内存中的所有 span"""
         self._spans.clear()
 
+    def clear_trace(self, trace_id: str) -> int:
+        """
+        从内存移除指定 trace 的所有 span（成功落库后调用，避免内存无界增长）。
+
+        Args:
+            trace_id: 追踪 ID
+
+        Returns:
+            移除的 span 数量
+        """
+        before = len(self._spans)
+        self._spans = [s for s in self._spans if s.trace_id != trace_id]
+        return before - len(self._spans)
+
 
 # ============================================================
 # 全局 TraceRecorder 单例
@@ -302,6 +347,26 @@ def reset_trace_recorder() -> None:
     """重置全局 TraceRecorder（测试用）"""
     global _trace_recorder
     _trace_recorder = TraceRecorder()
+
+
+async def flush_trace_to_db(trace_id: str) -> int:
+    """
+    请求级落库入口（P2-1）：将指定 trace 的 span 批量写入 Trace 表。
+
+    写入成功后从内存移除对应 span（避免长期运行内存无界增长）；
+    DB 不可用时 span 保留在内存，供 /api/agent/status 降级查询，下次请求可重试。
+
+    Args:
+        trace_id: 请求级 trace_id（来自 X-Trace-Id 或网关生成）
+
+    Returns:
+        实际写入 DB 的 span 数量（0 表示无 span 或 DB 不可达）
+    """
+    recorder = get_trace_recorder()
+    written = await recorder.flush_to_db(trace_id)
+    if written > 0:
+        recorder.clear_trace(trace_id)
+    return written
 
 
 # ============================================================
@@ -364,6 +429,8 @@ class AgentTracer:
             span_id=trace.span_id,
             parent_span_id=trace.parent_span_id,
             kind=kind,
+            user_id=_current_user_id.get(),
+            tenant_id=_current_tenant_id.get(),
             agent_name=agent_name,
             node_name=node_name,
             tool_name=tool_name,
@@ -419,6 +486,8 @@ class AgentTracer:
             span_id=trace.span_id,
             parent_span_id=trace.parent_span_id,
             kind=kind,
+            user_id=_current_user_id.get(),
+            tenant_id=_current_tenant_id.get(),
             agent_name=agent_name,
             node_name=node_name,
             tool_name=tool_name,
@@ -558,6 +627,26 @@ def start_trace(user_query: str | None = None) -> TraceInfo:
     return trace
 
 
+def start_trace_with_id(trace_id: str, user_query: str | None = None) -> TraceInfo:
+    """
+    以指定 trace_id 建立顶层 trace（供请求入口复用请求级 trace_id）。
+
+    supervisor_node 检测到 get_current_trace() 非空时不会重复 start_trace，
+    因此此处设置后，整条 Agent 调用链的 span 均归属该请求 trace_id，
+    使 trace 表与 /api/agent/status/{trace_id} 可按请求 trace_id 关联查询。
+
+    Args:
+        trace_id: 请求级 trace_id（来自 X-Trace-Id 或网关生成）
+        user_query: 用户请求文本（可选）
+
+    Returns:
+        TraceInfo 实例
+    """
+    trace = TraceInfo(trace_id=trace_id, span_id=_gen_span_id())
+    set_current_trace(trace)
+    return trace
+
+
 def end_trace() -> None:
     """结束当前 trace，清除上下文"""
     set_current_trace(None)
@@ -594,6 +683,8 @@ def record_llm_usage(
         span_id=_gen_span_id(),
         parent_span_id=parent_span_id,
         kind=SpanKind.LLM,
+        user_id=_current_user_id.get(),
+        tenant_id=_current_tenant_id.get(),
         agent_name=agent_name,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
@@ -637,6 +728,8 @@ def record_tool_call(
         span_id=_gen_span_id(),
         parent_span_id=parent_span_id,
         kind=SpanKind.TOOL,
+        user_id=_current_user_id.get(),
+        tenant_id=_current_tenant_id.get(),
         agent_name=agent_name,
         tool_name=tool_name,
         input_data=tool_input,

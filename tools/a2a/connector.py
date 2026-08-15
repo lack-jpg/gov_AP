@@ -16,6 +16,7 @@ import httpx
 from tools.logger import get_logger
 from tools.a2a.protocol import (
     A2ATaskRequest,
+    A2ATaskStatus,
     AgentCard,
 )
 from tools.a2a.registry import get_external_registry, ExternalAgentRegistry
@@ -59,6 +60,9 @@ class A2AConnector:
         task_store: Optional[TaskStore] = None,
         http_timeout: float = 30.0,
         default_callback_url: str = "",
+        allow_stub: Optional[bool] = None,
+        http_retries: int = 2,
+        retry_backoff_base: float = 0.5,
     ):
         """
         Args:
@@ -66,12 +70,40 @@ class A2AConnector:
             task_store: 任务存储
             http_timeout: HTTP 请求超时时间（秒）
             default_callback_url: 默认回调地址（外部 Agent 完成后回调），send_task 未显式指定时使用
+            allow_stub: 是否允许 stub 降级（P1-6 生产禁止 silent stub fallback）。
+                        None 时读配置 A2A_ALLOW_STUB（默认 False）；True 仅用于显式开发开关
+            http_retries: HTTP 发送失败重试次数（连接错误/5xx/429 才重试，4xx 不重试）
+            retry_backoff_base: 重试退避基数（秒），第 n 次重试等待 base * 2^(n-1)
         """
         self._registry = registry or get_external_registry()
         self._task_store = task_store or get_task_store()
         self._http_timeout = http_timeout
         self._default_callback_url = default_callback_url
+        self._allow_stub = self._resolve_allow_stub(allow_stub)
+        self._http_retries = max(0, int(http_retries))
+        self._retry_backoff_base = float(retry_backoff_base)
         self._http_client: Optional[httpx.AsyncClient] = None
+
+    @staticmethod
+    def _resolve_allow_stub(allow_stub: Optional[bool]) -> bool:
+        """
+        解析 stub 开关：显式传入优先；否则读配置 A2A_ALLOW_STUB（默认 False，生产禁止）。
+
+        Args:
+            allow_stub: 显式开关（None 表示未指定）
+
+        Returns:
+            True 允许 stub 降级；False 禁止（生产默认）
+        """
+        if allow_stub is not None:
+            return bool(allow_stub)
+        try:
+            from backend.config import get_settings
+
+            return bool(get_settings().a2a_allow_stub)
+        except Exception:
+            pass
+        return False
 
     @property
     def registry(self) -> ExternalAgentRegistry:
@@ -126,6 +158,7 @@ class A2AConnector:
                 "agent_name": "housing_agent",
                 "artifact": {...} | null,     # stub 模式下直接返回结果
                 "mode": "http" | "stub",
+                "error_message": "...",       # 失败/stub fallback 时记录原因（可追踪）
             }
         """
         from tools.a2a.protocol import A2ATaskRequest, A2ATaskRecord
@@ -133,7 +166,9 @@ class A2AConnector:
         # 发现可用 Agent
         agents = self._registry.discover(skill)
         if not agents:
-            logger.warning("未找到技能 {} 的外部 Agent，使用 stub fallback", skill)
+            logger.warning("未找到技能 {} 的外部 Agent，stub 开关={}", skill, self._allow_stub)
+            if not self._allow_stub:
+                return await self._fail_no_agent(skill, input_data, source_trace_id)
             return await self._send_stub(skill, input_data)
 
         # 选择 Agent
@@ -141,7 +176,9 @@ class A2AConnector:
         if prefer_agent:
             target = self._registry.get_agent(prefer_agent)  # type: ignore[assignment]
             if target is None:
-                logger.warning("指定的 Agent {} 不可用", prefer_agent)
+                logger.warning("指定的 Agent {} 不可用，stub 开关={}", prefer_agent, self._allow_stub)
+                if not self._allow_stub:
+                    return await self._fail_no_agent(skill, input_data, source_trace_id)
                 return await self._send_stub(skill, input_data)
         else:
             target = agents[0]
@@ -166,14 +203,51 @@ class A2AConnector:
             timeout_ms=target.timeout_ms,
         )
 
-        # 尝试 HTTP 发送
+        # 尝试 HTTP 发送（含重试）
         if target.endpoint:
             try:
                 result = await self._send_http(request, target)
                 if result is not None:
                     return self._handle_http_response(result, target, tsm)
             except Exception as e:
-                logger.warning("HTTP 发送失败 ({})，fallback to stub: {}", target.name, e)
+                reason = f"{type(e).__name__}: {e}"
+                logger.warning("HTTP 发送失败 ({})，stub 开关={}", target.name, self._allow_stub)
+                logger.debug("HTTP 发送失败详情: {}", reason)
+
+                if not self._allow_stub:
+                    # P1-6 生产禁止 silent stub fallback：任务明确失败，原因可追踪
+                    self._fail_task(tsm, f"外部 Agent {target.name} 不可达: {reason}")
+                    return {
+                        "task_id": tsm.task_id,
+                        "status": tsm.status.value,
+                        "agent_name": target.name,
+                        "artifact": None,
+                        "mode": "http",
+                        "error_message": tsm.record.error_message,
+                    }
+
+                # 显式开发开关 → 保留 stub fallback，但记录 fallback 原因（不静默）
+                await self._send_stub_sync(skill, input_data, tsm, fallback_reason=reason)
+                return {
+                    "task_id": tsm.task_id,
+                    "status": tsm.status.value,
+                    "agent_name": target.name,
+                    "artifact": tsm.record.artifact,
+                    "mode": "stub",
+                    "error_message": tsm.record.error_message,
+                }
+
+        # 未配置 endpoint：真实协议无法对接 → 按 stub 开关处理
+        if not self._allow_stub:
+            self._fail_task(tsm, f"外部 Agent {target.name} 未配置 endpoint，无法对接")
+            return {
+                "task_id": tsm.task_id,
+                "status": tsm.status.value,
+                "agent_name": target.name,
+                "artifact": None,
+                "mode": "http",
+                "error_message": tsm.record.error_message,
+            }
 
         # Stub fallback
         await self._send_stub_sync(skill, input_data, tsm)
@@ -184,6 +258,58 @@ class A2AConnector:
             "artifact": tsm.record.artifact,
             "mode": "stub",
         }
+
+    async def _fail_no_agent(
+        self,
+        skill: str,
+        input_data: dict[str, Any],
+        source_trace_id: str,
+    ) -> dict[str, Any]:
+        """
+        stub 被禁止且无可用外部 Agent → 创建明确失败的任务（原因可追踪）。
+
+        Args:
+            skill: 技能名称
+            input_data: 任务输入
+            source_trace_id: 源系统 trace_id
+
+        Returns:
+            {"task_id": ..., "status": "failed", "mode": "http", "error_message": ...}
+        """
+        from tools.a2a.protocol import A2ATaskRecord
+
+        task_record = A2ATaskRecord(
+            source_agent="workflow",
+            source_trace_id=source_trace_id,
+            target_agent="unregistered",
+            skill=skill,
+            input=input_data,
+        )
+        tsm = self._task_store.create(task_record)
+        reason = f"未注册任何提供技能 '{skill}' 的外部 Agent（stub 已禁用）"
+        self._fail_task(tsm, reason)
+        return {
+            "task_id": tsm.task_id,
+            "status": "failed",
+            "agent_name": "unregistered",
+            "artifact": None,
+            "mode": "http",
+            "error_message": reason,
+        }
+
+    def _fail_task(self, tsm: TaskStateMachine, reason: str) -> None:
+        """
+        将任务状态机推进到 FAILED（兼容 CREATED/SUBMITTED 起点）。
+
+        Args:
+            tsm: 任务状态机
+            reason: 失败原因（写入 error_message，可追踪）
+        """
+        if tsm.status == A2ATaskStatus.CREATED:
+            tsm.submit()
+        if tsm.status == A2ATaskStatus.SUBMITTED:
+            tsm.start_working()
+        tsm.fail(reason)
 
     async def check_status(self, task_id: str) -> dict[str, Any]:
         """
@@ -288,7 +414,20 @@ class A2AConnector:
         target: AgentCard,
     ) -> Optional[dict[str, Any]]:
         """
-        通过 HTTP 向外部 Agent 发送任务。
+        通过 HTTP 向外部 Agent 发送任务（P1-6：带超时与重试）。
+
+        重试策略：连接错误 / 5xx / 408 / 429 重试（指数退避）；
+        4xx 客户端错误不重试（外部 Agent 拒收，重试无意义）。
+
+        Args:
+            request: A2A 任务请求
+            target: 目标 Agent 卡片
+
+        Returns:
+            外部 Agent 的 JSON 响应；无法解析时返回 {"status": "submitted"}
+
+        Raises:
+            httpx.HTTPError: 所有重试用尽后最后一次错误
         """
         client = await self._get_http_client()
 
@@ -301,28 +440,65 @@ class A2AConnector:
             "source_trace_id": request.source_trace_id,
         }
 
-        response = await client.post(url, json=payload)
-        response.raise_for_status()
+        attempts = self._http_retries + 1
+        last_error: Optional[Exception] = None
+        for attempt in range(1, attempts + 1):
+            try:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
 
-        logger.info(
-            "A2A HTTP: {task_id} → {agent} ({url}), status={status}",
-            task_id=request.task_id,
-            agent=target.name,
-            url=url,
-            status=response.status_code,
-        )
+                logger.info(
+                    "A2A HTTP: {task_id} → {agent} ({url}), status={status}",
+                    task_id=request.task_id,
+                    agent=target.name,
+                    url=url,
+                    status=response.status_code,
+                )
+                try:
+                    return response.json()
+                except ValueError:
+                    return {"status": "submitted"}
 
-        try:
-            return response.json()
-        except ValueError:
-            return {"status": "submitted"}
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                code = e.response.status_code
+                # 4xx 客户端错误不重试（408/429 除外）
+                if 400 <= code < 500 and code not in (408, 429):
+                    logger.warning(
+                        "A2A HTTP 客户端错误不重试: {task_id} → {agent}, code={code}, detail={detail}",
+                        task_id=request.task_id, agent=target.name, code=code,
+                        detail=str(getattr(e.response, "text", ""))[:200],
+                    )
+                    raise
+                if attempt >= attempts:
+                    break
+                await self._backoff(attempt)
+            except (httpx.TransportError, httpx.TimeoutException) as e:
+                last_error = e
+                if attempt >= attempts:
+                    break
+                await self._backoff(attempt)
+
+        # 所有重试用尽
+        assert last_error is not None
+        raise last_error
+
+    async def _backoff(self, attempt: int) -> None:
+        """
+        指数退避等待（第 attempt 次失败后）。
+
+        Args:
+            attempt: 当前已失败次数（从 1 开始）
+        """
+        delay = self._retry_backoff_base * (2 ** (attempt - 1))
+        await asyncio.sleep(delay)
 
     async def _send_stub(
         self,
         skill: str,
         input_data: dict[str, Any],
     ) -> dict[str, Any]:
-        """Stub fallback — 本地模拟外部 Agent 调用"""
+        """Stub fallback — 本地模拟外部 Agent 调用（仅 allow_stub=True 时进入）"""
         from tools.a2a.protocol import A2ATaskRecord
 
         task_record = A2ATaskRecord(
@@ -340,12 +516,22 @@ class A2AConnector:
         skill: str,
         input_data: dict[str, Any],
         tsm: TaskStateMachine,
+        fallback_reason: str = "",
     ) -> dict[str, Any]:
         """
         同步执行 stub 调用（无需等待回调）。
+
+        Args:
+            skill: 技能名称
+            input_data: 任务输入
+            tsm: 任务状态机
+            fallback_reason: 触发 stub 降级的原因（HTTP 失败详情），写入 error_message 供追踪
         """
         tsm.submit()
         tsm.start_working()
+
+        if fallback_reason:
+            tsm.record.error_message = fallback_reason
 
         try:
             if skill.startswith("query_property") or skill == "register_property":
@@ -444,7 +630,8 @@ if __name__ == "__main__":
         from tools.a2a.task import TaskStore
         store = TaskStore()
 
-        connector = A2AConnector(registry=reg, task_store=store)
+        # 冒烟测试显式开启 stub 开关（模拟开发环境），生产默认禁止
+        connector = A2AConnector(registry=reg, task_store=store, allow_stub=True)
 
         # ── 1. send_task — query_property (stub fallback) ──
         section("1. send_task — query_property")

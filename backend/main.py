@@ -112,6 +112,10 @@ def create_app() -> FastAPI:
     """
     settings = get_settings()
 
+    # 安全基线校验：非 debug 环境缺失强 JWT 密钥时拒绝启动
+    from backend.config import validate_security_config
+    validate_security_config(settings)
+
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
@@ -144,6 +148,13 @@ def create_app() -> FastAPI:
     except Exception:
         pass
 
+    # ── 限流中间件（按用户 ID/IP 限流，在 Auth 之后执行以获取用户身份） ──
+    try:
+        from backend.middleware.rate_limit import RateLimitMiddleware
+        app.add_middleware(RateLimitMiddleware)
+    except Exception:
+        pass
+
     # ── 认证中间件（JWT Bearer Token → request.state 注入 — 必须在 RBAC 之前执行） ──
     try:
         from backend.middleware.auth import AuthMiddleware
@@ -153,6 +164,13 @@ def create_app() -> FastAPI:
 
     # ── 请求日志中间件（trace_id注入 + 请求/响应日志） ──
     app.add_middleware(RequestLoggingMiddleware)
+
+    # ── 请求体大小限制中间件（最外层，任何业务处理前生效） ──
+    try:
+        from backend.middleware.request_size import RequestSizeLimitMiddleware
+        app.add_middleware(RequestSizeLimitMiddleware)
+    except Exception:
+        pass
 
     # ── 全局异常处理（不拦截 HTTPException — 由 Starlette 原样返回） ──
     @app.exception_handler(Exception)

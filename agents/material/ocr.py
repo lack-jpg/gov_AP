@@ -86,18 +86,59 @@ class OCREngine:
     # PaddleOCR 文档方向分类阈值
     _CLS_THRESH = 0.9
 
-    def __init__(self, model_path: str = "", language: str = "ch", use_gpu: bool = False):
+    def __init__(
+        self,
+        model_path: str = "",
+        language: str = "ch",
+        use_gpu: bool = False,
+        allow_stub: bool | None = None,
+        timeout_seconds: float | None = None,
+        max_image_bytes: int | None = None,
+        retry_times: int | None = None,
+    ):
         """
         Args:
             model_path: PaddleOCR 模型目录（空则使用默认）
             language: OCR 语言，默认 "ch"（中文）
             use_gpu: 是否使用 GPU 推理
+            allow_stub: 是否允许 stub 模拟 OCR。None 时读配置 OCR_STUB_ENABLED，
+                生产环境默认 False（禁止静默 mock，P1-4）
+            timeout_seconds: 单次 OCR 超时（秒），None 读配置
+            max_image_bytes: 单张图片最大字节数，None 读配置
+            retry_times: 真实引擎失败重试次数，None 读配置
         """
+        cfg = self._read_ocr_config()
         self._model_path = model_path
         self._language = language
         self._use_gpu = use_gpu
+        self._allow_stub = bool(allow_stub if allow_stub is not None else cfg.get("stub_enabled", False))
+        self._timeout_seconds = timeout_seconds if timeout_seconds is not None else cfg.get("timeout_seconds", 30)
+        self._max_image_bytes = max_image_bytes if max_image_bytes is not None else cfg.get("max_image_bytes", 10 * 1024 * 1024)
+        self._retry_times = retry_times if retry_times is not None else cfg.get("retry_times", 2)
         self._model_loaded = False
         self._engine: Any = None  # PaddleOCR 实例
+
+    @staticmethod
+    def _read_ocr_config() -> dict:
+        """从 backend.config 读取 OCR 配置（读不到时返回安全默认值）。"""
+        defaults = {
+            "stub_enabled": False,
+            "timeout_seconds": 30,
+            "max_image_bytes": 10 * 1024 * 1024,
+            "retry_times": 2,
+        }
+        try:
+            from backend.config import get_settings
+
+            s = get_settings()
+            return {
+                "stub_enabled": bool(getattr(s, "ocr_stub_enabled", False)),
+                "timeout_seconds": int(getattr(s, "ocr_timeout_seconds", 30) or 30),
+                "max_image_bytes": int(getattr(s, "ocr_max_image_bytes", 10 * 1024 * 1024) or 10 * 1024 * 1024),
+                "retry_times": int(getattr(s, "ocr_retry_times", 2) or 2),
+            }
+        except Exception:
+            return defaults
 
     # ── 公开方法 ──
 
@@ -145,11 +186,29 @@ class OCREngine:
         if file_format == "pdf":
             return await self._ocr_pdf(file_bytes, t_start)
 
+        # ── 图片格式校验（大小/类型，P1-4） ──
+        if file_format in ("png", "jpg", "jpeg", "bmp", "tiff", "gif", "webp"):
+            size_check = self._check_image_size(file_bytes, t_start)
+            if size_check is not None:
+                return size_check
+
         # ── 图片格式 — 尝试 PaddleOCR ──
         if self._ensure_paddleocr():
             return await self._ocr_image_paddle(file_bytes, file_format, t_start)
 
-        # ── Fallback: stub 模式 ──
+        # ── 真实 OCR 不可用：按配置决定 stub 或明确报错（禁止静默 mock） ──
+        if not self._allow_stub:
+            logger.error(
+                "真实 OCR 不可用且 OCR_STUB_ENABLED=false，拒绝生成模拟 OCR 数据 (format={})",
+                file_format,
+            )
+            duration_ms = (time.perf_counter() - t_start) * 1000
+            return OCRResult(
+                pages=[],
+                full_text="",
+                engine="error",
+                duration_ms=duration_ms,
+            )
         return await self._ocr_image_stub(file_bytes, file_format, t_start)
 
     async def recognize_image(
@@ -171,9 +230,28 @@ class OCREngine:
 
         t_start = time.perf_counter()
 
+        # 图片格式/大小校验（P1-4）
+        if image_format in ("png", "jpg", "jpeg", "bmp", "tiff", "gif", "webp"):
+            size_check = self._check_image_size(image_bytes, t_start)
+            if size_check is not None:
+                return size_check
+
         if self._ensure_paddleocr():
             return await self._ocr_image_paddle(image_bytes, image_format, t_start)
 
+        # 真实 OCR 不可用：按配置决定 stub 或明确报错
+        if not self._allow_stub:
+            logger.error(
+                "真实 OCR 不可用且 OCR_STUB_ENABLED=false，拒绝生成模拟 OCR 数据 (format={})",
+                image_format,
+            )
+            duration_ms = (time.perf_counter() - t_start) * 1000
+            return OCRResult(
+                pages=[],
+                full_text="",
+                engine="error",
+                duration_ms=duration_ms,
+            )
         return await self._ocr_image_stub(image_bytes, image_format, t_start)
 
     def is_loaded(self) -> bool:
@@ -208,6 +286,45 @@ class OCREngine:
             logger.warning("PaddleOCR 加载失败: {}，降级到 stub 模式", e)
             return False
 
+    async def _run_paddle_ocr(self, img_array) -> Any:
+        """
+        在线程池中执行 PaddleOCR，带超时与失败重试（P1-4）。
+
+        返回原始识别结果；最终失败返回 None（由调用方处理为空结果）。
+
+        Args:
+            img_array: 图片 numpy 数组
+
+        Returns:
+            PaddleOCR 原始结果或 None
+        """
+        import asyncio
+
+        assert self._engine is not None
+
+        async def _call_once() -> Any:
+            return await asyncio.wait_for(
+                asyncio.to_thread(self._engine.ocr, img_array, cls=True),
+                timeout=self._timeout_seconds,
+            )
+
+        last_error: Exception | None = None
+        for attempt in range(max(1, self._retry_times + 1)):
+            try:
+                return await _call_once()
+            except asyncio.TimeoutError as e:
+                last_error = e
+                logger.warning(
+                    "PaddleOCR 超时 (attempt {}/{}): {:.0f}s",
+                    attempt + 1, self._retry_times + 1, self._timeout_seconds,
+                )
+            except Exception as e:
+                last_error = e
+                logger.warning("PaddleOCR 调用失败 (attempt {}/{}): {}", attempt + 1, self._retry_times + 1, e)
+
+        logger.error("PaddleOCR 重试耗尽，返回空结果: {}", last_error)
+        return None
+
     async def _ocr_image_paddle(
         self,
         image_bytes: bytes,
@@ -226,9 +343,8 @@ class OCREngine:
             image = image.convert("RGB")
         img_array = np.array(image)
 
-        # 执行 OCR
-        assert self._engine is not None
-        raw_result = self._engine.ocr(img_array, cls=True)
+        # 执行 OCR（含超时与重试，P1-4）
+        raw_result = await self._run_paddle_ocr(img_array)
 
         if raw_result is None or (isinstance(raw_result, list) and len(raw_result) == 0):
             duration_ms = (time.perf_counter() - t_start) * 1000
@@ -311,6 +427,13 @@ class OCREngine:
 
             images = convert_from_bytes(file_bytes, dpi=300)
         except ImportError:
+            # PDF OCR 依赖缺失：按配置决定 stub 或明确报错（P1-4 禁止静默 mock）
+            if not self._allow_stub:
+                logger.error("pdf2image 未安装且 OCR_STUB_ENABLED=false，拒绝生成模拟 OCR 数据")
+                return OCRResult(
+                    pages=[], full_text="", engine="error",
+                    duration_ms=(time.perf_counter() - t_start) * 1000,
+                )
             logger.warning("pdf2image 未安装，PDF OCR 降级到 stub 模式（pip install pdf2image）")
             return OCRResult(
                 pages=[OCRPage(page_num=0, text=self._generate_mock_text(len(file_bytes)), confidence=1.0)],
@@ -345,7 +468,7 @@ class OCREngine:
 
             for page_idx, image in enumerate(images):
                 img_array = np.array(image.convert("RGB"))
-                raw = self._engine.ocr(img_array, cls=True)
+                raw = await self._run_paddle_ocr(img_array)
 
                 if not raw:
                     pages.append(OCRPage(page_num=page_idx, text="", confidence=0.0))
@@ -372,7 +495,13 @@ class OCREngine:
                 pages.append(OCRPage(page_num=page_idx, text=page_text, blocks=blocks, confidence=avg_conf))
                 all_texts.append(page_text)
         else:
-            # stub PDF
+            # 真实 OCR 引擎不可用：按配置决定 stub 或明确报错（P1-4 禁止静默 mock）
+            if not self._allow_stub:
+                logger.error("PaddleOCR 不可用且 OCR_STUB_ENABLED=false，拒绝生成模拟 OCR 数据")
+                duration_ms = (time.perf_counter() - t_start) * 1000
+                return OCRResult(
+                    pages=[], full_text="", engine="error", duration_ms=duration_ms,
+                )
             for page_idx, _image in enumerate(images):
                 mock_text = self._generate_mock_text(len(file_bytes), page=page_idx + 1)
                 pages.append(OCRPage(page_num=page_idx, text=mock_text, confidence=1.0))
@@ -427,6 +556,35 @@ class OCREngine:
         )
 
     # ── 文件格式检测 ──
+
+    def _check_image_size(
+        self,
+        file_bytes: bytes,
+        t_start: float,
+    ) -> OCRResult | None:
+        """
+        校验图片大小（P1-4）。超过配置上限返回明确错误，否则返回 None。
+
+        Args:
+            file_bytes: 图片字节
+            t_start: 本次识别起始时间
+
+        Returns:
+            超限时返回 engine="error" 的 OCRResult，否则 None
+        """
+        if len(file_bytes) > self._max_image_bytes:
+            logger.error(
+                "OCR 图片超限: {} bytes > {} bytes，拒绝处理",
+                len(file_bytes), self._max_image_bytes,
+            )
+            duration_ms = (time.perf_counter() - t_start) * 1000
+            return OCRResult(
+                pages=[],
+                full_text="",
+                engine="error",
+                duration_ms=duration_ms,
+            )
+        return None
 
     def _detect_format(self, file_bytes: bytes) -> str:
         """
@@ -603,15 +761,33 @@ if __name__ == "__main__":
         png_bytes = make_minimal_png()
         result_img = await engine.recognize(png_bytes)
         check("图片 → OCRResult", isinstance(result_img, OCRResult))
-        check("engine 字段存在", result_img.engine in ("paddleocr", "stub"))
+        # P1-4：默认 allow_stub=False，真实 OCR 不可用时必须明确返回 error，禁止 mock
+        check("engine 合法值", result_img.engine in ("paddleocr", "stub", "error"), result_img.engine)
         check("avg_confidence ≥ 0", result_img.avg_confidence >= 0.0)
         check("duration_ms ≥ 0", result_img.duration_ms >= 0.0)
+
+        # P1-4：stub 开关显式控制
+        stub_engine = OCREngine(allow_stub=True)
+        result_stub = await stub_engine.recognize(png_bytes)
+        check("allow_stub=True 不返回 error", result_stub.engine in ("paddleocr", "stub"), result_stub.engine)
+        if result_stub.engine == "stub":
+            check("stub 模式含模拟文本", "OCR Stub" in result_stub.full_text)
+        # P1-4：真实 OCR 不可用时禁止静默 mock
+        if engine.is_loaded() is False and result_img.engine != "paddleocr":
+            check("默认配置拒绝 mock", result_img.engine == "error", result_img.engine)
+            check("error 结果 full_text 为空", result_img.full_text == "", result_img.full_text[:50])
 
         # ── 7. recognize_image 接口 ──
         section("7. recognize_image 接口")
         result_img2 = await engine.recognize_image(png_bytes, image_format="png")
         check("recognize_image → OCRResult", isinstance(result_img2, OCRResult))
-        check("full_text 非空", isinstance(result_img2.full_text, str))
+        check("full_text 为字符串", isinstance(result_img2.full_text, str))
+        # recognize_image 与 recognize 的引擎决策一致（P1-4）
+        check(
+            "recognize_image 引擎与 recognize 一致",
+            result_img2.engine == result_img.engine,
+            f"img={result_img2.engine} img2={result_img.engine}",
+        )
 
         # ── 8. OCRBlock/OCRPage/OCRResult 数据模型 ──
         section("8. 数据模型")
@@ -659,7 +835,8 @@ if __name__ == "__main__":
             print(" — all good")
             print("\n  Run with: python -m agents.material.ocr")
             if not paddle_available:
-                print("  ℹ PaddleOCR 未安装，OCR 使用 stub 模式")
+                print("  ℹ PaddleOCR 未安装：默认 allow_stub=False，图片 OCR 返回 engine=error")
                 print("    安装命令: pip install paddleocr")
+                print("    本地调试可设 OCR_STUB_ENABLED=true（生产禁止）")
 
     asyncio.run(main())

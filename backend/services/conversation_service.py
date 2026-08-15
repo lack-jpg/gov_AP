@@ -99,8 +99,11 @@ async def list_conversations(user_id: str, limit: int = 50) -> list[dict[str, An
         return []
 
 
-async def get_conversation(conversation_id: str) -> Optional[dict[str, Any]]:
-    """按 ID 取会话（不存在返回 None）。"""
+async def get_conversation(
+    conversation_id: str,
+    user_id: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    """按 ID 取会话；传入 user_id 时校验归属（越权/不存在返回 None）。"""
     try:
         from database.connection import get_session_factory
         from database.models import Conversation
@@ -108,11 +111,12 @@ async def get_conversation(conversation_id: str) -> Optional[dict[str, Any]]:
 
         session_factory = get_session_factory()
         async with session_factory() as session:
-            row = (
-                await session.execute(
-                    select(Conversation).where(Conversation.conversation_id == conversation_id)
-                )
-            ).scalar_one_or_none()
+            stmt = select(Conversation).where(
+                Conversation.conversation_id == conversation_id
+            )
+            if user_id:
+                stmt = stmt.where(Conversation.user_id == user_id)
+            row = (await session.execute(stmt)).scalar_one_or_none()
         if row is None:
             return None
         return {
@@ -177,21 +181,31 @@ async def add_message(
         logger.warning("追加对话消息失败: {}", e)
 
 
-async def list_messages(conversation_id: str, limit: int = 100) -> list[dict[str, Any]]:
-    """列出会话消息（按时间正序）。"""
+async def list_messages(
+    conversation_id: str,
+    user_id: Optional[str] = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """列出会话消息（按时间正序）；传入 user_id 时仅返回该用户的会话消息。"""
     try:
         from database.connection import get_session_factory
-        from database.models import ConversationMessage
+        from database.models import Conversation, ConversationMessage
         from sqlalchemy import select
 
         session_factory = get_session_factory()
         async with session_factory() as session:
             stmt = (
                 select(ConversationMessage)
+                .join(
+                    Conversation,
+                    Conversation.conversation_id == ConversationMessage.conversation_id,
+                )
                 .where(ConversationMessage.conversation_id == conversation_id)
                 .order_by(ConversationMessage.id.asc())
                 .limit(limit)
             )
+            if user_id:
+                stmt = stmt.where(Conversation.user_id == user_id)
             rows = (await session.execute(stmt)).scalars().all()
         return [
             {

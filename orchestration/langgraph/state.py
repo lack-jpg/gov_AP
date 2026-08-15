@@ -441,6 +441,16 @@ class AgentState(TypedDict):
     trace_id: str
     """全链路追踪ID，在API Gateway层生成，贯穿所有Agent和MCP调用"""
 
+    # ── 用户身份（来自 JWT，禁止使用请求体/Header 伪造） ──
+    user_id: str
+    """当前请求的认证用户ID，用于办件、审计、数据隔离"""
+
+    tenant_id: str
+    """当前用户所属租户ID"""
+
+    user_role: str
+    """当前用户角色（admin | agent | user | guest），供 MCP Gateway 工具级 RBAC 使用"""
+
     # ── 用户输入 ──
     user_query: str
     """用户原始自然语言输入"""
@@ -504,6 +514,10 @@ class AgentState(TypedDict):
     material_result: dict
     """Material Agent审核结果（MaterialCheckResult模型的字典）"""
 
+    # ── 办件 ──
+    case_id: str
+    """workflow_node 创建办件后回写的办件编号 (CASE_XXXXXXXX)，用于状态查询与审计关联"""
+
     # ── 最终输出 ──
     final_answer: str
     """最终返回给用户的答案"""
@@ -540,6 +554,9 @@ def create_initial_state(
     trace_id: Optional[str] = None,
     messages: Optional[list[dict]] = None,
     conversation_history: str = "",
+    user_id: str = "anonymous",
+    tenant_id: str = "default",
+    user_role: str = "user",
 ) -> AgentState:
     """
     创建初始AgentState。
@@ -552,6 +569,9 @@ def create_initial_state(
         trace_id: 链路追踪ID，不传则自动生成
         messages: 多轮对话历史（user/assistant 消息字典列表），单轮为空
         conversation_history: 多轮历史文本（供 LLM 规划/汇总参考）
+        user_id: 认证用户ID（来自 JWT，不信任请求体）
+        tenant_id: 租户ID
+        user_role: 用户角色
 
     Returns:
         初始化后的AgentState
@@ -562,6 +582,10 @@ def create_initial_state(
     return AgentState(
         # 请求标识
         trace_id=trace_id,
+        # 用户身份
+        user_id=user_id,
+        tenant_id=tenant_id,
+        user_role=user_role,
         # 用户输入
         user_query=user_query,
         # Intent
@@ -589,6 +613,8 @@ def create_initial_state(
         policy_result={},
         # 材料审核
         material_result={},
+        # 办件
+        case_id="",
         # 最终输出
         final_answer="",
         # 安全
@@ -929,6 +955,7 @@ if __name__ == "__main__":
     check("evidence is empty list", state["evidence"] == [])
     check("policy_result is empty dict", state["policy_result"] == {})
     check("material_result is empty dict", state["material_result"] == {})
+    check("case_id is empty string", state["case_id"] == "")
     check("final_answer is empty string", state["final_answer"] == "")
     check("risk_level == 'low'", state["risk_level"] == "low")
     check("safety_check is empty dict", state["safety_check"] == {})
@@ -1041,15 +1068,16 @@ if __name__ == "__main__":
 
     hints = get_type_hints(AgentState)
     expected_fields = {
-        "trace_id", "user_query", "intent", "intent_result",
+        "trace_id", "user_id", "tenant_id", "user_role",
+        "user_query", "intent", "intent_result",
         "task_plan", "current_agent", "current_node",
         "messages", "conversation_history", "tool_calls", "mcp_history",
         "a2a_tasks", "waiting_task_id", "external_result",
         "evidence", "policy_result", "material_result",
-        "final_answer", "risk_level", "safety_check",
+        "case_id", "final_answer", "risk_level", "safety_check",
         "execution_metrics", "error", "error_history", "retry_count",
     }
-    check("AgentState has all 25 fields", set(hints.keys()) == expected_fields,
+    check("AgentState has all 28 fields", set(hints.keys()) == expected_fields,
           f"missing: {expected_fields - set(hints.keys())}, extra: {set(hints.keys()) - expected_fields}")
 
     # Annotated 字段应保留在hints中

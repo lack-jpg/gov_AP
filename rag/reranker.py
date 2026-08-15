@@ -9,6 +9,7 @@ Task: Implement BGE reranker for search result re-ranking
 from __future__ import annotations
 
 import os
+import threading
 from typing import Optional
 
 from tools.logger import get_logger
@@ -144,3 +145,29 @@ class Reranker:
     def model_path(self) -> Optional[str]:
         """本地模型路径"""
         return self._model_path
+
+
+# ============================================================
+# 进程级单例 — P1-2 常驻化：模型只加载一次，后续请求复用
+# ============================================================
+
+_instance: Optional[Reranker] = None
+_lock = threading.Lock()
+
+
+def get_reranker() -> Reranker:
+    """
+    获取 Reranker 进程级单例。
+
+    首次调用时加载模型（加锁，避免并发重复加载），
+    之后所有调用复用同一实例。
+
+    Returns:
+        Reranker 实例
+    """
+    global _instance
+    if _instance is None:
+        with _lock:
+            if _instance is None:
+                _instance = Reranker()
+    return _instance

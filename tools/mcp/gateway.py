@@ -15,6 +15,7 @@ import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
+from backend.middleware.rbac import check_mcp_tool_access
 from tools.logger import get_logger, log_mcp_call
 
 logger = get_logger(__name__)
@@ -169,6 +170,11 @@ class MCPGateway:
 
     def build_app(self) -> FastAPI:
         """构建 FastAPI Gateway 应用"""
+        from backend.config import get_settings, validate_security_config
+
+        # 安全基线校验：非 debug 环境缺失强 JWT 密钥时拒绝启动
+        validate_security_config(get_settings())
+
         app = FastAPI(
             title="MCP Gateway",
             version="0.2.0",
@@ -206,14 +212,45 @@ class MCPGateway:
         @router.post("/tools/call")
         async def call_tool(
             request: CallToolRequest,
-            user: dict = Depends(_require_role("admin", "agent")),
+            user: dict = Depends(_verify_gateway_token),
+            request_meta: Request = None,
         ):
-            """转发工具调用到对应 MCP Server（需 admin/agent 角色）"""
+            """转发工具调用到对应 MCP Server（JWT 认证 + 工具级 RBAC）"""
             server_name = request.server_name
             tool_name = request.tool_name
+
+            trace_id = (
+                request_meta.headers.get("X-Trace-Id", "")
+                if request_meta is not None
+                else ""
+            )
+
+            # 工具级 RBAC：未注册工具与未授权工具一律 403
+            try:
+                check_mcp_tool_access(user["role"], tool_name, raise_on_deny=True)
+            except PermissionError as e:
+                logger.warning(
+                    "MCP Gateway RBAC 拒绝: user={} role={} tool={} trace={} reason={}",
+                    user["user_id"], user["role"], tool_name, trace_id, e,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=str(e),
+                )
+
             url = self.SERVER_URLS.get(server_name)
             if not url:
                 raise HTTPException(400, f"Unknown server: {server_name}")
+
+            # 转发调用者身份（P1-5 办件归属校验）：Gateway 已校验 JWT，
+            # 身份头由后端 Server 作为可信调用者读取
+            fwd_headers: dict[str, str] = {
+                "X-User-Id": user["user_id"],
+                "X-Role": user["role"],
+                "X-Tenant-Id": user.get("tenant_id", "default"),
+            }
+            if trace_id:
+                fwd_headers["X-Trace-Id"] = trace_id
 
             start = time.perf_counter()
 
@@ -226,6 +263,7 @@ class MCPGateway:
                         "tool_name": tool_name,
                         "arguments": request.arguments,
                     },
+                    headers=fwd_headers,
                 )
                 elapsed_ms = (time.perf_counter() - start) * 1000
                 resp.raise_for_status()

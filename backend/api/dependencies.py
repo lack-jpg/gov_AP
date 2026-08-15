@@ -50,6 +50,36 @@ async def get_user_id(
 
 
 # ============================================================
+# 当前用户身份 — 从 JWT 注入的 request.state 提取
+# ============================================================
+
+
+async def get_current_identity(request: Request) -> dict[str, str]:
+    """
+    获取当前认证用户完整身份（user_id / role / tenant_id）。
+
+    身份只来自 AuthMiddleware 校验后的 JWT，不信任请求体或 Header。
+
+    Returns:
+        {"user_id": str, "role": str, "tenant_id": str}
+
+    Raises:
+        HTTPException: 未认证时返回401
+    """
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="请提供认证凭证 (Authorization: Bearer <token>)",
+        )
+    return {
+        "user_id": user_id,
+        "role": getattr(request.state, "user_role", "user"),
+        "tenant_id": getattr(request.state, "user_tenant", "default"),
+    }
+
+
+# ============================================================
 # Trace ID — 生成或提取
 # ============================================================
 
@@ -134,6 +164,8 @@ async def get_a2a_connector():
         _a2a_connector = A2AConnector(
             task_store=store,
             default_callback_url=settings.a2a_callback_url,
+            allow_stub=settings.a2a_allow_stub,
+            http_retries=settings.a2a_http_retries,
         )
         return _a2a_connector
     except ImportError:
@@ -270,6 +302,8 @@ async def execute_agent(
     settings: Settings,
     conversation_id: Optional[str] = None,
     prior_messages: Optional[list[dict]] = None,
+    tenant_id: str = "default",
+    user_role: str = "user",
 ) -> dict:
     """
     执行一次完整的Agent工作流。
@@ -289,6 +323,8 @@ async def execute_agent(
         settings: 应用配置
         conversation_id: 会话ID（多轮对话用，作为 LangGraph thread_id 保持上下文）
         prior_messages: 历史对话消息（[{role, content}]），注入 messages 供 LLM 参考
+        tenant_id: 认证用户租户ID
+        user_role: 认证用户角色
 
     Returns:
         执行后的AgentState字典
@@ -310,13 +346,39 @@ async def execute_agent(
         except Exception:
             conversation_history = ""
 
-    # 创建初始State（携带多轮消息与历史文本）
+    # ── 输入护栏：在 LLM 调用前检查用户输入（P1-8：脱敏后进入 LLM） ──
+    try:
+        from governance.guardrail import GuardrailRunner
+        from governance.pii import detect_pii
+
+        guardrail = GuardrailRunner()
+        input_check = guardrail.run_input(user_query)
+        # P1-8：入口 PII 检测——记录命中类型（供 governance 审计），并用 mask_pii
+        #       结果替换 user_query，确保 trace / 日志 / LLM prompt / MCP 参数均为脱敏值
+        pii_info = detect_pii(user_query)
+        entry_pii = [m.pii_type.value for m in pii_info.matches]
+        safe_query = pii_info.masked_text
+    except Exception as _guardrail_err:
+        from tools.logger import get_logger as _get_logger
+        _logger = _get_logger(__name__)
+        _logger.warning("护栏检查异常，放行请求 (trace={}): {}", trace_id, _guardrail_err)
+        input_check = None
+        entry_pii = []
+        safe_query = user_query
+
+    # 创建初始State（携带脱敏后的 user_query 与多轮消息/历史文本）
     initial_state = create_initial_state(
-        user_query=user_query,
+        user_query=safe_query,
         trace_id=trace_id,
         messages=prior_messages or [],
         conversation_history=conversation_history,
+        user_id=user_id,
+        tenant_id=tenant_id,
+        user_role=user_role,
     )
+    if entry_pii:
+        # 入口已检测并脱敏的 PII 类型，供 governance_node 合并进 safety_check 审计
+        initial_state["safety_check"] = {"pii_detected": entry_pii}
 
     # 获取Graph
     graph = await get_agent_graph(settings)
@@ -330,18 +392,6 @@ async def execute_agent(
     }
 
     try:
-        # ── 输入护栏：在 LLM 调用前检查用户输入 ──
-        try:
-            from governance.guardrail import GuardrailRunner
-
-            guardrail = GuardrailRunner()
-            input_check = guardrail.run_input(user_query)
-        except Exception as _guardrail_err:
-            from tools.logger import get_logger as _get_logger
-            _logger = _get_logger(__name__)
-            _logger.warning("护栏检查异常，放行请求 (trace={}): {}", trace_id, _guardrail_err)
-            input_check = None
-
         if input_check is not None and input_check.blocked:
             from tools.logger import get_logger as _get_logger
             _logger = _get_logger(__name__)
@@ -359,8 +409,31 @@ async def execute_agent(
                 "safety_check": input_check.to_dict(),
             }
 
-        runtime = create_runtime_from_settings(settings)
-        result = await runtime.execute_with_safeguards(graph, initial_state, graph_config=config)
+        # 将认证用户身份 + 请求级 trace_id 注入 trace 上下文，
+        # 保证 span 归属、数据隔离，且 span 与请求 trace_id 对齐（P2-1 落库关联）
+        from governance.trace import (
+            end_trace,
+            flush_trace_to_db,
+            reset_trace_user,
+            set_trace_user,
+            start_trace_with_id,
+        )
+
+        trace_tokens = set_trace_user(user_id, tenant_id)
+        start_trace_with_id(trace_id, user_query=initial_state.get("user_query", ""))
+        try:
+            runtime = create_runtime_from_settings(settings)
+            result = await runtime.execute_with_safeguards(
+                graph, initial_state, graph_config=config,
+            )
+        finally:
+            end_trace()
+            reset_trace_user(trace_tokens)
+            # P2-1：请求结束后批量落库；DB 不可用时 span 保留内存供状态查询降级
+            try:
+                await flush_trace_to_db(trace_id)
+            except Exception:
+                pass
         return result
     except RuntimeExceededError as e:
         from tools.logger import get_logger as _get_logger
@@ -415,6 +488,10 @@ async def stream_agent(
     user_id: str,
     trace_id: str,
     settings: Settings,
+    tenant_id: str = "default",
+    user_role: str = "user",
+    conversation_id: Optional[str] = None,
+    prior_messages: Optional[list[dict]] = None,
 ):
     """
     流式执行 Agent 工作流（供 /api/chat/stream SSE 使用）。
@@ -426,24 +503,55 @@ async def stream_agent(
 
     用 graph.astream(stream_mode="values")：每个 superstep 产出完整状态，
     既拿节点名，又拿最终状态，避免重复执行。
+
+    P1-7：支持 conversation_id / prior_messages 多轮上下文，与 /api/chat 对齐
+    （多轮时 thread_id 用 conversation_id，保持 LangGraph 会话上下文）。
     """
     from orchestration.langgraph.state import create_initial_state
 
-    initial_state = create_initial_state(user_query=user_query, trace_id=trace_id)
+    # 多轮历史 → 文本上下文（供规划/汇总 LLM 参考），与 execute_agent 一致
+    conversation_history = ""
+    if prior_messages:
+        try:
+            from backend.services.conversation_service import format_history_text
+            conversation_history = format_history_text(prior_messages)
+        except Exception:
+            conversation_history = ""
+
+    # ── 输入护栏：在 LLM 调用前检查（P1-8：脱敏后进入 LLM） ──
+    try:
+        from governance.guardrail import GuardrailRunner
+        from governance.pii import detect_pii
+
+        input_check = GuardrailRunner().run_input(user_query)
+        pii_info = detect_pii(user_query)
+        entry_pii = [m.pii_type.value for m in pii_info.matches]
+        safe_query = pii_info.masked_text
+    except Exception:
+        input_check = None
+        entry_pii = []
+        safe_query = user_query
+
+    initial_state = create_initial_state(
+        user_query=safe_query,
+        trace_id=trace_id,
+        messages=prior_messages or [],
+        conversation_history=conversation_history,
+        user_id=user_id,
+        tenant_id=tenant_id,
+        user_role=user_role,
+    )
+    if entry_pii:
+        initial_state["safety_check"] = {"pii_detected": entry_pii}
+
     graph = await get_agent_graph(settings)
     config = {
         "configurable": {
-            "thread_id": trace_id,
+            "thread_id": conversation_id or trace_id,
             "user_id": user_id,
         },
     }
 
-    # ── 输入护栏：在 LLM 调用前检查 ──
-    try:
-        from governance.guardrail import GuardrailRunner
-        input_check = GuardrailRunner().run_input(user_query)
-    except Exception:
-        input_check = None
     if input_check is not None and input_check.blocked:
         yield ("final", {
             **initial_state,
@@ -453,6 +561,16 @@ async def stream_agent(
         })
         return
 
+    from governance.trace import (
+        end_trace,
+        flush_trace_to_db,
+        reset_trace_user,
+        set_trace_user,
+        start_trace_with_id,
+    )
+
+    trace_tokens = set_trace_user(user_id, tenant_id)
+    start_trace_with_id(trace_id, user_query=initial_state.get("user_query", ""))
     try:
         final_state = None
         async for state in graph.astream(initial_state, config=config, stream_mode="values"):
@@ -460,9 +578,12 @@ async def stream_agent(
             if node_name:
                 yield ("node", node_name)
             final_state = state
-        yield ("final", final_state if final_state is not None else initial_state)
-    except Exception as e:
-        from tools.logger import get_logger as _get_logger
-        _logger = _get_logger(__name__)
-        _logger.error("Stream agent 执行异常 (trace={}): {}", trace_id, e, exc_info=True)
-        yield ("error", str(e))
+    finally:
+        end_trace()
+        reset_trace_user(trace_tokens)
+    # P2-1：流结束前批量落库（final 事件消费时已完成所有 span 记录）
+    try:
+        await flush_trace_to_db(trace_id)
+    except Exception:
+        pass
+    yield ("final", final_state if final_state is not None else initial_state)

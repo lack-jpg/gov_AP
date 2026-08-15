@@ -70,6 +70,16 @@ class Trace(Base):
         comment="父 span ID"
     )
 
+    # ── 归属 ──
+    user_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="", index=True,
+        comment="发起请求的认证用户 ID（来自 JWT）"
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="", index=True,
+        comment="发起请求的租户 ID"
+    )
+
     # ── Agent 信息 ──
     agent_name: Mapped[str] = mapped_column(
         String(64), nullable=False, index=True,
@@ -507,3 +517,67 @@ class ConversationMessage(Base):
 
     def __repr__(self) -> str:
         return f"<ConversationMessage(conv={self.conversation_id!r}, role={self.role!r})>"
+
+
+# ============================================================
+# Case 表 — 政务办件（P1-5 落库）
+# ============================================================
+
+
+class Case(Base):
+    """政务办件记录（workflow_server 经数据库创建/查询，重启后仍在）"""
+
+    __tablename__ = "case"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    case_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True,
+        comment="办件编号 (CASE_XXXXXXXX)",
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True,
+        comment="办件归属用户 ID（越权查询校验用）",
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="default", index=True,
+        comment="办件归属租户 ID",
+    )
+    service: Mapped[str] = mapped_column(
+        String(64), nullable=False,
+        comment="服务类型（对应 intent 标签）",
+    )
+    materials: Mapped[list | None] = mapped_column(
+        JSON, nullable=True, default=list,
+        comment="已提交材料列表",
+    )
+
+    # ── 状态 ──
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="created", index=True,
+        comment="办件状态: created | processing | reviewing | completed | failed",
+    )
+    progress: Mapped[str] = mapped_column(
+        String(256), nullable=False, default="办件已创建，等待分配处理人员",
+        comment="进度描述",
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text, nullable=True,
+        comment="失败原因（status=failed 时记录）",
+    )
+
+    # ── 审计 ──
+    trace_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="",
+        comment="创建办件的链路追踪 ID（供审计关联）",
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow,
+    )
+
+    def __repr__(self) -> str:
+        return f"<Case(case_id={self.case_id!r}, user={self.user_id!r}, status={self.status!r})>"
