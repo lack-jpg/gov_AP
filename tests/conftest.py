@@ -13,6 +13,13 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+# ── 测试环境配置基线（必须在任何 backend.config / gateway 导入之前设置）──
+# CI 无 .env（被 .gitignore 排除），而 tools/mcp/gateway 模块导入时会执行
+# validate_security_config()：非 debug + 默认 'changeme' 密钥会抛 RuntimeError。
+# 此处统一注入合法测试配置，保证测试套件不依赖本机 .env / 外部环境变量即可复现。
+os.environ["JWT_SECRET_KEY"] = "test-secret-key-not-for-production"
+os.environ["DEBUG"] = "true"
+
 
 @pytest.fixture
 def initial_state():
