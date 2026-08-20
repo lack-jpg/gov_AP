@@ -75,6 +75,12 @@ services:
       AUTH_ADMIN_USERNAME: ${AUTH_ADMIN_USERNAME:-admin}
       AUTH_ADMIN_PASSWORD: ${AUTH_ADMIN_PASSWORD:-admin123}
       AUTH_ADMIN_TENANT_ID: ${AUTH_ADMIN_TENANT_ID:-default}
+      # P2-6 可观测性：容器内 OTLP 指向 otel-collector（覆盖 config.py 默认 localhost:4319）
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      # P2-6 LangSmith 自动追踪（config 用 LANGSMITH_*，langsmith 读 LANGCHAIN_*，main.py 已做映射）
+      LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2:-true}
+      LANGCHAIN_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGCHAIN_PROJECT: ${LANGSMITH_PROJECT:-gov-agent-platform}
     volumes:
       - ./models:/app/models
       - ./data:/app/data
@@ -87,6 +93,8 @@ services:
         condition: service_healthy
       milvus:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
       mcp-server:
         condition: service_started
       a2a-mock:
@@ -288,6 +296,22 @@ services:
       - grafanadata:/var/lib/grafana
     depends_on:
       - prometheus
+    networks:
+      - gov_agent_net
+
+  # ──────────────────────────────────────
+  # OpenTelemetry Collector — Trace 采集（OTLP gRPC 4317，宿主端口 4319）
+  # 配置: deploy/otel/otel-collector.yml（OTLP → batch → debug，本地可查调用链）
+  # ──────────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.121.0
+    container_name: gov_agent_otel
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./deploy/otel/otel-collector.yml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "${OTEL_COLLECTOR_PORT:-4319}:4317"
     networks:
       - gov_agent_net
 

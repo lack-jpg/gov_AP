@@ -309,3 +309,35 @@ class ErrorResponse(BaseModel):
         default=None,
         description="附加错误详情（仅debug模式）",
     )
+
+
+# ============================================================
+# Prompt 管理（P2-4）
+# ============================================================
+
+
+class PromptCreateRequest(BaseModel):
+    """创建/更新 Prompt 模板请求"""
+
+    name: str = Field(
+        description="模板名称，如 SUPERVISOR_SYSTEM_PROMPT",
+    )
+    agent_name: str = Field(
+        description="关联的 Agent 名称: supervisor | intent | policy | material | workflow | governance",
+    )
+    version: str = Field(
+        default="v1",
+        description="版本号",
+    )
+    content: str = Field(
+        min_length=1,
+        description="模板正文（可含 {{ var }} 或 { var } 变量）",
+    )
+    variables: list[str] = Field(
+        default_factory=list,
+        description="模板变量名列表",
+    )
+    is_active: bool = Field(
+        default=True,
+        description="是否设为活跃版本",
+    )

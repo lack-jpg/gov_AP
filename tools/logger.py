@@ -41,6 +41,21 @@ from loguru import logger as _loguru_logger
 from backend.config import Settings
 
 
+# P2-3 循环依赖修复：顶层直接 import governance 会触发
+# governance/__init__ → governance.trace → tools.logger 的导入死锁，
+# 故 mask_pii 惰性获取（首次调用后缓存，后续无额外开销）。
+_MASK_PII_FN = None
+
+
+def _get_mask_pii():
+    """惰性获取 governance.pii.mask_pii（避免 tools.logger ↔ governance 循环导入）"""
+    global _MASK_PII_FN
+    if _MASK_PII_FN is None:
+        from governance.pii import mask_pii
+        _MASK_PII_FN = mask_pii
+    return _MASK_PII_FN
+
+
 # ============================================================
 # 日志输出目录
 # ============================================================
@@ -269,6 +284,20 @@ def _resolve_rotation(rotation: str):
     return rotation
 
 
+def _mask_pii_filter(record: Any) -> bool:
+    """
+    统一脱敏过滤器（P2-3）：日志输出前对 message 应用 mask_pii。
+
+    挂在 setup_logging 的所有 sink 上，覆盖 MCP 调用、请求中间件、业务与
+    第三方桥接日志，保证日志文件中不出现明文手机号/身份证/银行卡/邮箱。
+    """
+    try:
+        record["message"] = _get_mask_pii()(str(record["message"]))
+    except Exception:
+        pass
+    return True
+
+
 def setup_logging(
     settings: Settings,
     *,
@@ -313,6 +342,7 @@ def setup_logging(
         sys.stderr,
         format=_console_format,
         level=level,
+        filter=_mask_pii_filter,
         colorize=settings.debug,
         backtrace=settings.debug,
         diagnose=settings.debug,
@@ -332,6 +362,7 @@ def setup_logging(
         os.path.join(log_dir, "app_{time:YYYY-MM-DD}.log"),
         format=_file_format,
         level="INFO",
+        filter=_mask_pii_filter,
         retention=retention,
         serialize=serialize,  # True 时输出原生 JSON（record.extra 含 trace 上下文）
         **_file_kwargs,
@@ -342,6 +373,7 @@ def setup_logging(
         os.path.join(log_dir, "error_{time:YYYY-MM-DD}.log"),
         format=_error_file_format,
         level="ERROR",
+        filter=_mask_pii_filter,
         retention=error_retention,
         serialize=serialize,
         **_file_kwargs,
@@ -548,6 +580,9 @@ def log_mcp_call(
         MCP调用 | policy_server | search_policy | status=success | latency=234ms
     """
     args_summary = _summarize_dict(input_args, max_len=80)
+    # P2-3: 参数与错误信息先脱敏再拼日志，即使未来有路径绕过 sink filter 也不落明文 PII
+    if args_summary:
+        args_summary = _get_mask_pii()(args_summary)
     msg = (
         f"MCP调用 | {server_name} | {tool_name} | "
         f"status={status} | latency={latency_ms:.1f}ms"
@@ -555,7 +590,7 @@ def log_mcp_call(
     if args_summary:
         msg += f" | args={args_summary}"
     if error:
-        msg += f" | error={error}"
+        msg += f" | error={_get_mask_pii()(error)}"
 
     _loguru_logger.info(msg)
 

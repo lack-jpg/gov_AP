@@ -1,0 +1,32 @@
+# =====================================================
+# deploy/otel/otel-collector.yml - OpenTelemetry Collector 配置
+# Author: le
+# Date: 2026/8/20
+# Task: P2-6 Trace 采集 — OTLP 接收 → batch → debug 导出
+#
+# 本地部署即可在 Collector 控制台查看调用链（verbosity: detailed）。
+# 生产可将 debug exporter 替换为 jaeger/otlphttp/prometheus 等，
+# 或去掉服务端采集，仅保留应用侧 Span 生成。
+# =====================================================
+
+receivers:
+  otlp:
+    protocols:
+      grpc: {}
+      http: {}
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 512
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

@@ -45,6 +45,7 @@ class PromptTemplate:
     is_active: bool = True                 # 是否为活跃版本
     created_by: str = "system"
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    content: str = ""                # DB 渲染文本：非空时 render() 直接渲染该文本（round-trip 无损）
 
     def render(self, **kwargs: Any) -> str:
         """
@@ -58,6 +59,10 @@ class PromptTemplate:
         Returns:
             渲染后的完整 Prompt 文本
         """
+        # P2-4: DB 加载的模板带完整渲染文本，直接做变量替换（round-trip 无损）
+        if self.content:
+            return self._render_content(self.content, **kwargs)
+
         # 构建各部分
         sections: list[str] = []
 
@@ -80,6 +85,20 @@ class PromptTemplate:
             sections.append(f"# 示例\n{self._substitute(self.examples, **kwargs)}")
 
         return "\n\n".join(sections)
+
+    def _render_content(self, content: str, **kwargs: Any) -> str:
+        """
+        渲染完整模板正文，兼容 {{ var }} 与 { var } 两种变量写法。
+
+        仅对模板声明（self.variables）的变量做单大括号归一化，
+        避免误伤模板正文 JSON 中的 { ... }（键带引号时天然不匹配）。
+        """
+        text = content
+        for v in self.variables:
+            # 单大括号 {var} → {{var}}（Python <3.12 的 f-string 不能用 \{，故用拼接构造）
+            pattern = r"(?<!\{)\{\s*" + re.escape(v) + r"\s*\}"
+            text = re.sub(pattern, "{{" + v + "}}", text)
+        return self._substitute(text, **kwargs)
 
     def render_with_content(self, content: str, **kwargs: Any) -> str:
         """
@@ -132,7 +151,7 @@ class PromptTemplate:
             "agent_name": self.agent_name,
             "name": self.name,
             "version": self.version,
-            "content": self.render(),
+            "content": self.content or self.render(),
             "variables": self.variables,
             "is_active": self.is_active,
             "created_by": self.created_by,
@@ -378,12 +397,28 @@ class PromptRegistry:
         try:
             from database.connection import get_session_factory
             from database.models import Prompt
+            from sqlalchemy import select
 
             session_factory = get_session_factory()
             async with session_factory() as session:
                 for t in templates_to_save:
-                    prompt = Prompt(**t.to_db_dict())
-                    session.add(prompt)
+                    data = t.to_db_dict()
+                    # P2-4: 按 (name, version) upsert，避免重复行并正确落 is_active
+                    existing = (
+                        await session.execute(
+                            select(Prompt)
+                            .where(Prompt.name == t.name)
+                            .where(Prompt.version == t.version)
+                        )
+                    ).scalars().first()
+                    if existing is not None:
+                        existing.content = data["content"]
+                        existing.variables = data["variables"]
+                        existing.is_active = data["is_active"]
+                        existing.agent_name = data["agent_name"]
+                        existing.created_by = data["created_by"]
+                    else:
+                        session.add(Prompt(**data))
                 await session.commit()
             return len(templates_to_save)
         except Exception:
@@ -413,6 +448,7 @@ class PromptRegistry:
                         agent_name=row.agent_name,
                         version=row.version,
                         variables=row.variables or [],
+                        content=row.content or "",
                         is_active=row.is_active,
                         created_by=row.created_by or "system",
                     )
@@ -426,6 +462,11 @@ class PromptRegistry:
 
     def _preload_defaults(self) -> None:
         """加载所有 Agent 的默认 Prompt 模板"""
+        # 局部 import 避免顶层循环依赖（agents.supervisor.prompts 不 import prompts.registry）
+        try:
+            from agents.supervisor.prompts import SUPERVISOR_SYNTHESIS_PROMPT as _SYNTH_PROMPT
+        except Exception:
+            _SYNTH_PROMPT = ""
         defaults = [
             # ── Supervisor ──
             PromptTemplate(
@@ -664,6 +705,20 @@ class PromptRegistry:
                 variables=["task_type", "task_description"],
             ),
         ]
+
+        # ── Supervisor 结果合成 ──
+        # 仅当导入成功且非空时注册；否则 agent.py 的 registry.render 抛 ValueError，
+        # 由其 try/except 回退硬编码常量（行为不变）
+        if _SYNTH_PROMPT:
+            defaults.append(
+                PromptTemplate(
+                    name="SUPERVISOR_SYNTHESIS_PROMPT",
+                    agent_name="supervisor",
+                    version="v1",
+                    content=_SYNTH_PROMPT,
+                    variables=["user_query", "intent_result", "policy_result", "material_result", "workflow_result"],
+                )
+            )
 
         for t in defaults:
             self.register(t)

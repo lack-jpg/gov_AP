@@ -48,6 +48,11 @@ class Settings(BaseSettings):
             "Docker 部署时可设为 /var/log/gov_ap/ 等挂载路径。"
         ),
     )
+    log_serialize: bool = Field(
+        default=False,
+        alias="LOG_SERIALIZE",
+        description="文件日志输出 JSON 格式（对接 ELK/Loki 采集，含 trace 上下文）。默认关闭保持文本日志。",
+    )
 
     # ── 服务端口 ──
     host: str = Field(

@@ -17,6 +17,10 @@ from tools.logger import get_logger, log_mcp_call
 
 logger = get_logger(__name__)
 
+# P2-5 无界治理：工具发现缓存 TTL（秒）与最大容量（超出淘汰最旧 Server）
+_TOOL_CACHE_TTL = 300.0
+_TOOL_CACHE_MAXSIZE = 64
+
 
 def _record_tool_metric(tool_name: str, success: bool, latency_ms: float) -> None:
     """记录 MCP 工具调用指标（P2-2，agent 归属取自当前 trace 上下文，失败静默）。"""
@@ -68,7 +72,8 @@ class MCPClient:
         self._timeout = timeout
         self._auth_token = auth_token  # JWT Bearer Token for Gateway auth
         self._client: Optional[httpx.AsyncClient] = None
-        self._tool_cache: dict[str, list[dict]] = {}
+        # P2-5: 缓存值 (时间戳, 工具列表)，TTL 过期后重新拉取，容量超限淘汰最旧
+        self._tool_cache: dict[str, tuple[float, list[dict]]] = {}
 
     def _auth_headers(
         self,
@@ -130,8 +135,13 @@ class MCPClient:
         Raises:
             MCPToolError: Gateway 不可用或返回错误时快速失败
         """
-        if server_name in self._tool_cache:
-            return self._tool_cache[server_name]
+        cached = self._tool_cache.get(server_name)
+        if cached is not None:
+            ts, tools = cached
+            if time.time() - ts < _TOOL_CACHE_TTL:
+                return tools
+            # 缓存过期，移除后重新拉取
+            self._tool_cache.pop(server_name, None)
 
         client = await self._ensure_client()
         try:
@@ -143,7 +153,10 @@ class MCPClient:
             resp.raise_for_status()
             data = resp.json()
             tools = data.get("tools", [])
-            self._tool_cache[server_name] = tools
+            self._tool_cache[server_name] = (time.time(), tools)
+            # 容量治理：超出上限时淘汰最早插入的 Server 缓存
+            if len(self._tool_cache) > _TOOL_CACHE_MAXSIZE:
+                self._tool_cache.pop(next(iter(self._tool_cache)), None)
             return tools
         except Exception as e:
             logger.error("MCP Gateway 工具发现失败（不再直连 Server）: {} {}", server_name, e)

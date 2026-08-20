@@ -8,6 +8,7 @@ Task: Implement FastAPI app factory with CORS, middleware, and route registratio
 """
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -45,7 +46,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
 
     # ── Startup ──
-    setup_logging(settings)
+    setup_logging(settings, serialize=settings.log_serialize)
 
     logger = get_logger(__name__)
     logger.info("启动 {} v{} (debug={})", settings.app_name, settings.app_version, settings.debug)
@@ -54,6 +55,23 @@ async def lifespan(app: FastAPI):
     logger.info("Redis: {}:{}", settings.redis_host, settings.redis_port)
     logger.info("MCP Gateway: {}", settings.mcp_gateway_url)
 
+    # ── P2-6 OpenTelemetry 初始化（SDK 缺失时内部自动降级 NoOp）──
+    tracing_manager = None
+    try:
+        from backend.middleware.tracing import setup_tracing
+        tracing_manager = await setup_tracing(
+            service_name="gov-agent-platform",
+            endpoint=settings.otel_exporter_endpoint,
+        )
+    except Exception as e:
+        logger.warning("OpenTelemetry 初始化失败，降级 NoOp: {}", e)
+
+    # ── P2-6 LangSmith 自动追踪：config 用 LANGSMITH_*，langsmith 自动追踪读 LANGCHAIN_* ──
+    if settings.langsmith_api_key:
+        os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+        os.environ["LANGCHAIN_API_KEY"] = settings.langsmith_api_key
+        os.environ["LANGCHAIN_PROJECT"] = settings.langsmith_project
+
     # 初始化数据库（PostgreSQL）
     try:
         from database.connection import init_db
@@ -61,6 +79,17 @@ async def lifespan(app: FastAPI):
         logger.info("PostgreSQL 初始化完成")
     except Exception as e:
         logger.warning("PostgreSQL 初始化失败（将以无DB模式运行）: {}", e)
+
+    # ── P2-4 Prompt Registry：启动时从 DB 加载，空表时写入默认版本 ──
+    try:
+        from prompts.registry import get_registry
+        _prompt_registry = get_registry()
+        _loaded = await _prompt_registry.load_from_db()
+        if _loaded == 0:
+            _loaded = await _prompt_registry.flush_to_db()
+        logger.info("Prompt Registry 就绪（DB 加载 {} 条）", _loaded)
+    except Exception as e:
+        logger.warning("Prompt Registry 初始化失败，使用内置默认模板: {}", e)
 
     # 初始化默认管理员账号（User 表为空时创建）
     try:
@@ -91,6 +120,11 @@ async def lifespan(app: FastAPI):
 
     # ── Shutdown ──
     logger.info("正在关闭应用...")
+    if tracing_manager is not None:
+        try:
+            await tracing_manager.shutdown()
+        except Exception:
+            pass
     try:
         from database.connection import close_db
         await close_db()
@@ -213,6 +247,13 @@ def create_app() -> FastAPI:
     # ── 注册路由 ──
     from backend.api.routes import router as api_router
     app.include_router(api_router, prefix="/api")
+
+    # ── P2-4 Prompt 管理 API（/api/prompts*） ──
+    try:
+        from backend.api.prompts import router as prompts_router
+        app.include_router(prompts_router, prefix="/api")
+    except Exception as e:
+        get_logger(__name__).warning("Prompt 管理 API 注册失败: {}", e)
 
     # ── 健康检查 ──
     @app.get("/health")

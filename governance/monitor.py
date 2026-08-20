@@ -8,6 +8,7 @@ Task: Implement agent monitoring with Prometheus metrics export
 """
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -313,8 +314,8 @@ class MetricsCollector:
         # 运行中 span 计数
         self._active_spans: set[str] = set()
 
-        # 历史记录（用于计算 success_rate）
-        self._history: list[dict[str, Any]] = []
+        # 历史记录（用于计算 success_rate）— P2-5 无界治理：固定容量，超限自动淘汰最旧
+        self._history: deque[dict[str, Any]] = deque(maxlen=5000)
 
     # ── 记录方法 ──
 

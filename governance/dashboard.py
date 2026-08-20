@@ -8,6 +8,7 @@ Task: Implement dashboard data API for agent operations visualization
 """
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -129,7 +130,8 @@ class DashboardDataProvider:
     """
 
     def __init__(self) -> None:
-        self._memory_traces: list[dict[str, Any]] = []
+        # P2-5 无界治理：内存 trace 固定容量，超限自动淘汰最旧
+        self._memory_traces: deque[dict[str, Any]] = deque(maxlen=5000)
         self._memory_evals: list[dict[str, Any]] = []
 
     # ── Agent 统计 ──
