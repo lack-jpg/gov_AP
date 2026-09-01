@@ -6,7 +6,7 @@
 
 > 注意：前端界面全部由AI生成，请勿直接复制。
 
-> **最近更新（2026-08-08）**：A2A 真实系统对接 + 性能优化（LLM 缓存 18.4s→0.26s、SSE）+ 前端完善（多轮对话、历史、看板图表）+ 测试覆盖（231 pytest + 端到端 23/23）+ **监控告警（Prometheus + Grafana /metrics）** + **CI/CD（GitHub Actions：lint→test→build→push）**。详见 [更新日志](#20-更新日志)。
+> **最近更新（2026-09-02）**：前端视觉重构（政务企业级设计系统 Trust & Authority——Light Navy 配色 + Plus Jakarta Sans + Lucide 风格 SVG 图标，替代全部 emoji）+ 完整 Docker 全栈验证（11 服务 healthy）。详见 [更新日志](#20-更新日志)。
 
 ---
 
@@ -1668,6 +1668,19 @@ governance_node（末尾节点）
 ---
 
 # 20. 更新日志
+
+## 🎨 2026-09-02 — 前端视觉重构（政务企业级设计系统）
+
+基于 `ui-ux-pro-max` 设计智能 skill 对前端整体视觉重构，替代此前与浅色政务蓝主题冲突的旧设计系统（Smart Home/IoT + Dark OLED 分类错误）与 emoji 泛滥问题。
+
+| 改动 | 文件 | 说明 |
+| --- | --- | --- |
+| 设计系统 | `design-system/default/MASTER.md` | 重写为 **Government Enterprise SaaS / Analytics Dashboard**（Trust & Authority 方向）：Light Navy 配色（Primary `#1E40AF` / Navy `#0F172A` / 背景 `#F6F8FB→#EFF6FF`）+ Plus Jakarta Sans + WCAG AA 对比 + 3px 焦点环 + reduced-motion |
+| UI 组件库 | `frontend/ui.py` | 全量重写：内置 **Lucide 风格 SVG 图标字典（`_ICONS` 35+）**、设计 token 三态兼容（SVG 名/完整 SVG HTML/emoji 降级）；组件升级：page_header 渐变 icon 徽章、metric_card 新增 `icon` 参数、section_header SVG、architecture_diagram SVG 箭头、新增 `sidebar_brand`/`sidebar_user_card` |
+| 导航入口 | `frontend/app.py` | 登录页改居中品牌 Hero（SVG government 渐变 logo）+ 侧边栏品牌区/用户卡片；`st.Page` 导航 icon 用 Material 图标语法 `:material/name:` |
+| 8 个页面 | `frontend/pages/*.py` | 全部去装饰性 emoji 换 SVG 图标名；「选择示例」pills 默认值随 options 同步去 emoji（修复 `st.pills` default 不在 options 的 StreamlitAPIException） |
+
+> 验证：Streamlit AppTest 登录页 + 导航 + 8 页面全部 PASS（修复 `st.pills` default bug）；`docker compose up -d --build frontend` 重建前端镜像，完整 11 服务 healthy，前端 `:12345` HTTP 200、API `:12401` admin/admin123 登录成功。
 
 ## 🏛️ 2026-08-13 — 里程碑 v3.0 发布
 

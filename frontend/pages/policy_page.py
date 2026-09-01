@@ -27,7 +27,7 @@ except ImportError:
 # 页头
 # ============================================================
 ui.page_header(
-    "📚",
+    "book",
     "政策检索（RAG）",
     "检索管线：**Embedding(Milvus) + BM25 稀疏检索 → Reranker 精排 → LLM 生成回答**",
 )
@@ -50,15 +50,15 @@ EXAMPLES = [
     "企业注册需要哪些材料？",
 ]
 
-examples = ["✍️ 自定义输入"] + EXAMPLES
-selected = st.pills("选择示例问题", examples, default="✍️ 自定义输入")
+examples = ["自定义输入"] + EXAMPLES
+selected = st.pills("选择示例问题", examples, default="自定义输入")
 query = st.text_input(
     "政策问题",
     value="" if selected == "✍️ 自定义输入" else selected,
     placeholder="例如：开办餐饮店需要哪些证照",
 )
 
-if st.button("📚 检索政策", type="primary", use_container_width=True, disabled=not _HAS_LOCAL_MODULES):
+if st.button("检索政策", type="primary", use_container_width=True, disabled=not _HAS_LOCAL_MODULES):
     if not query.strip():
         st.warning("请输入问题")
     elif not _HAS_LOCAL_MODULES:
@@ -68,18 +68,18 @@ if st.button("📚 检索政策", type="primary", use_container_width=True, disa
             agent = PolicyAgent()
             result = run_async(agent.search(query))
 
-        ui.section_header("📄", "回答")
+        ui.section_header("file-text", "回答")
         with st.container(border=True):
             st.markdown(result.answer or "（未生成回答）")
 
         m1, m2 = st.columns(2)
         with m1:
-            ui.metric_card("置信度", f"{result.confidence:.1%}", accent="green")
+            ui.metric_card("置信度", f"{result.confidence:.1%}", accent="green", icon="check-circle")
         with m2:
-            ui.metric_card("证据条数", len(result.evidence), accent="blue")
+            ui.metric_card("证据条数", len(result.evidence), accent="blue", icon="file-text")
 
         if result.evidence:
-            ui.section_header("📎", "引用证据")
+            ui.section_header("book", "引用证据")
             for ev in result.evidence:
                 # PolicyEvidence: source / content / relevance_score（兼容字段名）
                 source = getattr(ev, "source", "") or (ev.get("source") if isinstance(ev, dict) else "")

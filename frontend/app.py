@@ -38,14 +38,38 @@ ui.inject_theme_css()
 
 
 def _login_page() -> None:
-    """登录页：用户名密码登录，换取 JWT。"""
-    st.title("🏛️ 政务多智能体协同平台")
-    st.caption("请登录后使用（默认账号见 README 或由管理员提供）")
+    """登录页：品牌 Hero + 居中登录卡片，用户名密码换取 JWT。"""
+    st.markdown(
+        """
+        <style>
+        .gp-login-hero { text-align: center; margin: 4rem auto 1.5rem; }
+        .gp-login-logo {
+            width: 68px; height: 68px; border-radius: 18px; margin: 0 auto 16px;
+            background: linear-gradient(135deg, #1E40AF, #3B82F6); color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 10px 24px rgba(30,64,175,.35);
+        }
+        .gp-login-title { font-size: 24px; font-weight: 800; color: #0F172A; }
+        .gp-login-sub { color: #64748B; font-size: 14px; margin-top: 6px; line-height: 1.6; }
+        [data-testid="stForm"] { max-width: 420px; margin: 0 auto; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="gp-login-hero">'
+        f'<div class="gp-login-logo">{ui.icon("government", size=34)}</div>'
+        '<div class="gp-login-title">政务多智能体协同平台</div>'
+        '<div class="gp-login-sub">Government Agent Platform · LangGraph · MCP · A2A · AgentOps · RAG<br/>'
+        "请登录后使用（默认账号见 README 或由管理员提供）</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
     with st.form("login_form"):
         username = st.text_input("用户名", placeholder="admin")
         password = st.text_input("密码", type="password", placeholder="请输入密码")
-        submitted = st.form_submit_button("登 录", use_container_width=True)
+        submitted = st.form_submit_button("登录", use_container_width=True)
 
     if submitted:
         if not username or not password:
@@ -74,27 +98,33 @@ def _main_app() -> None:
     if token:
         api_client.set_token(token)
 
+    # 侧边栏顶部品牌区（在 st.navigation 前调用，位于导航菜单上方）
+    ui.sidebar_brand()
+
+    pages = [
+        st.Page("pages/home_page.py", title="首页", icon=":material/home:", default=True),
+        st.Page("pages/chat_page.py", title="智能对话", icon=":material/chat:"),
+        st.Page("pages/intent_page.py", title="意图识别", icon=":material/track_changes:"),
+        st.Page("pages/policy_page.py", title="政策检索", icon=":material/menu_book:"),
+        st.Page("pages/material_page.py", title="材料审核", icon=":material/assignment:"),
+        st.Page("pages/a2a_page.py", title="跨域协同", icon=":material/hub:"),
+        st.Page("pages/governance_page.py", title="安全治理", icon=":material/shield:"),
+        st.Page("pages/dashboard_page.py", title="运维看板", icon=":material/query_stats:"),
+    ]
+    pg = st.navigation(pages)
+    pg.run()
+
+    # 侧边栏底部：用户卡片 + 登出
     with st.sidebar:
-        st.markdown(f"**👤 {st.session_state.get('username', '')}**")
-        st.caption(f"角色：{st.session_state.get('role', '')}")
+        ui.sidebar_user_card(
+            st.session_state.get("username", ""),
+            st.session_state.get("role", ""),
+        )
         if st.button("退出登录", use_container_width=True):
             api_client.logout()
             for _k in ("logged_in", "username", "role", "token"):
                 st.session_state.pop(_k, None)
             st.rerun()
-
-    pages = [
-        st.Page("pages/home_page.py", title="首页", icon="🏠", default=True),
-        st.Page("pages/chat_page.py", title="智能对话", icon="💬"),
-        st.Page("pages/intent_page.py", title="意图识别", icon="🎯"),
-        st.Page("pages/policy_page.py", title="政策检索", icon="📚"),
-        st.Page("pages/material_page.py", title="材料审核", icon="📋"),
-        st.Page("pages/a2a_page.py", title="跨域协同", icon="🤝"),
-        st.Page("pages/governance_page.py", title="安全治理", icon="🛡️"),
-        st.Page("pages/dashboard_page.py", title="运维看板", icon="📊"),
-    ]
-    pg = st.navigation(pages)
-    pg.run()
 
 
 if st.session_state.get("logged_in"):

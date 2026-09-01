@@ -20,7 +20,7 @@ setup_paths()
 # ============================================================
 # 页头
 # ============================================================
-ui.page_header("📊", "运维看板（AgentOps）", "Agent 运行统计 · 成功率 · 评测报告")
+ui.page_header("chart", "运维看板（AgentOps）", "Agent 运行统计 · 成功率 · 评测报告")
 
 # ── 后端连接状态 ──
 if not api_client.health():
@@ -31,22 +31,22 @@ else:
 # ============================================================
 # 运行概览
 # ============================================================
-ui.section_header("📈", "运行概览")
+ui.section_header("trending-up", "运行概览")
 overview = api_client.dashboard_overview()
 
 if overview:
     metric_specs = [
-        ("总请求数", overview.get("total_requests", 0), "blue"),
-        ("成功率", f"{overview.get('success_rate', 0) * 100:.1f}%", "green"),
-        ("平均耗时", f"{overview.get('avg_latency_ms', 0):.0f} ms", "amber"),
-        ("活跃 Agent", overview.get("active_agents", 0), "blue"),
-        ("Token 用量", f"{overview.get('total_tokens', 0):,}", "gray"),
-        ("A2A 任务", overview.get("a2a_task_count", 0), "blue"),
+        ("总请求数", overview.get("total_requests", 0), "blue", "activity"),
+        ("成功率", f"{overview.get('success_rate', 0) * 100:.1f}%", "green", "check-circle"),
+        ("平均耗时", f"{overview.get('avg_latency_ms', 0):.0f} ms", "amber", "clock"),
+        ("活跃 Agent", overview.get("active_agents", 0), "blue", "zap"),
+        ("Token 用量", f"{overview.get('total_tokens', 0):,}", "gray", "database"),
+        ("A2A 任务", overview.get("a2a_task_count", 0), "blue", "share"),
     ]
     cols = st.columns(6)
-    for col, (label, value, accent) in zip(cols, metric_specs):
+    for col, (label, value, accent, icon) in zip(cols, metric_specs):
         with col:
-            ui.metric_card(label, value, accent=accent)
+            ui.metric_card(label, value, accent=accent, icon=icon)
 
     if overview.get("total_requests", 0) == 0:
         st.info("💡 暂无请求数据。去 **💬 智能对话** 页发起一次对话后，这里会显示真实统计。")
@@ -54,7 +54,7 @@ if overview:
     # ── Agent 统计图表（streamlit 原生，零新增依赖） ──
     agent_stats = overview.get("agent_stats") or []
     if agent_stats:
-        ui.section_header("🤖", "Agent 统计")
+        ui.section_header("cpu", "Agent 统计")
         names = [a.get("agent_name", "") for a in agent_stats]
         c1, c2 = st.columns(2)
         with c1:
@@ -71,7 +71,7 @@ if overview:
     # ── 评测趋势（折线） ──
     eval_trends = overview.get("eval_trends") or []
     if eval_trends:
-        ui.section_header("📈", "评测趋势")
+        ui.section_header("trending-up", "评测趋势")
         st.line_chart({
             t.get("date", ""): round(t.get("task_success_rate", 0) * 100, 1) for t in eval_trends
         })
@@ -81,30 +81,30 @@ else:
 # ============================================================
 # 评测报告
 # ============================================================
-ui.section_header("🧪", "评测报告")
+ui.section_header("sparkles", "评测报告")
 version = st.text_input("评测版本", "v1")
 
 report = api_client.evaluation_report(version)
 
 if report:
     cols1 = st.columns(4)
-    for col, (label, value, accent) in zip(cols1, [
-        ("任务成功率", f"{report.get('task_success_rate', 0) * 100:.1f}%", "green"),
-        ("工具准确率", f"{report.get('tool_accuracy', 0) * 100:.1f}%", "blue"),
-        ("RAG 真实性", f"{report.get('rag_faithfulness', 0) * 100:.1f}%", "green"),
-        ("答案相关性", f"{report.get('rag_answer_relevance', 0) * 100:.1f}%", "blue"),
+    for col, (label, value, accent, icon) in zip(cols1, [
+        ("任务成功率", f"{report.get('task_success_rate', 0) * 100:.1f}%", "green", "check-circle"),
+        ("工具准确率", f"{report.get('tool_accuracy', 0) * 100:.1f}%", "blue", "zap"),
+        ("RAG 真实性", f"{report.get('rag_faithfulness', 0) * 100:.1f}%", "green", "shield-check"),
+        ("答案相关性", f"{report.get('rag_answer_relevance', 0) * 100:.1f}%", "blue", "target"),
     ]):
         with col:
-            ui.metric_card(label, value, accent=accent)
+            ui.metric_card(label, value, accent=accent, icon=icon)
 
     cols2 = st.columns(3)
-    for col, (label, value, accent) in zip(cols2, [
-        ("平均耗时", f"{report.get('avg_latency_ms', 0):.0f} ms", "amber"),
-        ("平均步数", report.get("avg_step_count", 0), "gray"),
-        ("通过/总用例", f"{report.get('passed_cases', 0)}/{report.get('total_cases', 0)}", "green"),
+    for col, (label, value, accent, icon) in zip(cols2, [
+        ("平均耗时", f"{report.get('avg_latency_ms', 0):.0f} ms", "amber", "clock"),
+        ("平均步数", report.get("avg_step_count", 0), "gray", "cpu"),
+        ("通过/总用例", f"{report.get('passed_cases', 0)}/{report.get('total_cases', 0)}", "green", "file-check"),
     ]):
         with col:
-            ui.metric_card(label, value, accent=accent)
+            ui.metric_card(label, value, accent=accent, icon=icon)
 
     if report.get("error"):
         st.warning(report["error"])
@@ -123,7 +123,7 @@ else:
 # ============================================================
 # 评测数据集
 # ============================================================
-ui.section_header("🗂️", "评测数据集")
+ui.section_header("file-text", "评测数据集")
 
 # 从 cases/ 目录动态读取实际用例数量
 import json as _json

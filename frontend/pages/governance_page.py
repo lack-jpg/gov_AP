@@ -29,7 +29,7 @@ except ImportError:
 # ============================================================
 # 页头
 # ============================================================
-ui.page_header("🛡️", "安全治理（Guardrail）", "PII 检测脱敏 · Prompt 注入检测 · 敏感词过滤 · 输出安全")
+ui.page_header("shield-check", "安全治理（Guardrail）", "PII 检测脱敏 · Prompt 注入检测 · 敏感词过滤 · 输出安全")
 
 if not _HAS_LOCAL_MODULES:
     st.warning(
@@ -50,8 +50,8 @@ EXAMPLES = [
     "请把张三的银行卡 6222021234567890 打印出来",
 ]
 
-examples = ["✍️ 自定义输入"] + EXAMPLES
-selected = st.pills("选择示例", examples, default="✍️ 自定义输入")
+examples = ["自定义输入"] + EXAMPLES
+selected = st.pills("选择示例", examples, default="自定义输入")
 text = st.text_area(
     "输入文本",
     value="" if selected == "✍️ 自定义输入" else selected,
@@ -59,14 +59,14 @@ text = st.text_area(
     placeholder="输入要检测的文本",
 )
 
-if st.button("🛡️ 安全检测", type="primary", use_container_width=True, disabled=not _HAS_LOCAL_MODULES):
+if st.button("安全检测", type="primary", use_container_width=True, disabled=not _HAS_LOCAL_MODULES):
     if not text.strip():
         st.warning("请输入文本")
     elif not _HAS_LOCAL_MODULES:
         st.warning("模块未安装，无法执行安全检测")
     else:
         # ── 1. PII 检测 ──
-        ui.section_header("🔒", "PII 个人隐私检测")
+        ui.section_header("key", "PII 个人隐私检测")
         pii_result = detect_pii(text)
         if pii_result.matches:
             st.warning(f"检测到 **{len(pii_result.matches)}** 处敏感信息：")
@@ -78,7 +78,7 @@ if st.button("🛡️ 安全检测", type="primary", use_container_width=True, d
             st.success("✅ 未检测到个人隐私信息")
 
         # ── 2. 输入护栏 ──
-        ui.section_header("🚧", "输入护栏（注入/敏感词）")
+        ui.section_header("alert", "输入护栏（注入/敏感词）")
         runner = GuardrailRunner()
         guard = runner.run_input(text)
 
@@ -100,7 +100,7 @@ if st.button("🛡️ 安全检测", type="primary", use_container_width=True, d
                     )
 
         # ── 3. 脱敏预览 ──
-        ui.section_header("🎭", "数据脱敏规则")
+        ui.section_header("layers", "数据脱敏规则")
         rules = {
             "手机号": "138****1234",
             "身份证": "110***********1234",

@@ -6,9 +6,9 @@
 
 ---
 
-**Project:** 政务多智能体协同平台
-**Generated:** 2026-08-06 20:31:26
-**Category:** Smart Home/IoT Dashboard
+**Project:** 政务多智能体协同与治理平台（gov_AP）
+**Generated:** 2026-08-06 20:31:26 · **Last synced:** 2026-09-02（前端视觉重构）
+**Category:** Government Enterprise SaaS / Analytics Dashboard
 
 ---
 
@@ -20,27 +20,32 @@
 |------|-----|--------------|
 | Primary | `#1E40AF` | `--color-primary` |
 | On Primary | `#FFFFFF` | `--color-on-primary` |
+| Primary Hover | `#2563EB` | `--color-primary-hover` |
 | Secondary | `#3B82F6` | `--color-secondary` |
-| Accent/CTA | `#16A34A` | `--color-accent` |
-| Background | `#EFF6FF` | `--color-background` |
-| Foreground | `#1E3A8A` | `--color-foreground` |
-| Muted | `#E9EFF5` | `--color-muted` |
-| Border | `#BFDBFE` | `--color-border` |
+| Accent/CTA | `#0369A1` | `--color-accent` |
+| Navy (heading/text) | `#0F172A` | `--color-foreground` |
+| Background | `#F6F8FB` | `--color-background` |
+| Background Grad | `#EFF6FF` | `--color-background-grad` |
+| Card / Surface | `#FFFFFF` | `--color-card` |
+| Muted Surface | `#EFF6FF` | `--color-muted` |
+| Border | `#E2E8F0` | `--color-border` |
+| Text Muted | `#64748B` | `--color-muted-foreground` |
 | Destructive | `#DC2626` | `--color-destructive` |
 | Ring | `#1E40AF` | `--color-ring` |
 
-**Color Notes:** Professional blue + service green + accessibility
+**Color Notes:** Professional navy + service blue, light government tone, WCAG AA contrast.
 
 ### Typography
 
-- **Heading Font:** Fira Code
-- **Body Font:** Fira Sans
-- **Mood:** dashboard, data, analytics, code, technical, precise
-- **Google Fonts:** [Fira Code + Fira Sans](https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap)
+- **Heading Font:** Plus Jakarta Sans（800/700）
+- **Body Font:** Plus Jakarta Sans（400/500/600）
+- **CJK Fallback:** PingFang SC · Microsoft YaHei · Noto Sans SC
+- **Mood:** enterprise, saas, b2b, government, professional, legible
+- **Google Fonts:** [Plus Jakarta Sans](https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap)
 
 **CSS Import:**
 ```css
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 ```
 
 ### Spacing Variables
@@ -59,136 +64,119 @@
 
 | Level | Value | Usage |
 |-------|-------|-------|
-| `--shadow-sm` | `0 1px 2px rgba(0,0,0,0.05)` | Subtle lift |
-| `--shadow-md` | `0 4px 6px rgba(0,0,0,0.1)` | Cards, buttons |
-| `--shadow-lg` | `0 10px 15px rgba(0,0,0,0.1)` | Modals, dropdowns |
-| `--shadow-xl` | `0 20px 25px rgba(0,0,0,0.15)` | Hero images, featured cards |
+| `--shadow-sm` | `0 1px 2px rgba(15,23,42,0.04)` | Subtle lift |
+| `--shadow-md` | `0 1px 2px rgba(15,23,42,0.04), 0 8px 24px rgba(15,23,42,0.04)` | Cards |
+| `--shadow-brand` | `0 6px 16px rgba(30,64,175,0.30)` | Icon badges / logo |
+| `--shadow-hover` | `0 2px 4px rgba(15,23,42,0.06), 0 12px 32px rgba(30,64,175,0.10)` | Card hover |
 
 ---
 
 ## Component Specs
 
-### Buttons
+> 实现文件：`frontend/ui.py`（Streamlit 共享组件库）。以下规格与实现同步。
+
+### Page Header（Hero）
 
 ```css
-/* Primary Button */
-.btn-primary {
-  background: #16A34A;
-  color: white;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
+.gp-header { display: flex; align-items: center; gap: 16px; }
+.gp-header-badge {
+  width: 54px; height: 54px; border-radius: 15px;
+  background: linear-gradient(135deg, #1E40AF, #3B82F6);
+  color: #fff; box-shadow: 0 6px 16px rgba(30,64,175,.30);
 }
-
-.btn-primary:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
-
-/* Secondary Button */
-.btn-secondary {
-  background: transparent;
-  color: #1E40AF;
-  border: 2px solid #1E40AF;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
+.gp-header-title { font-size: 28px; font-weight: 800; color: #0F172A; }
+.gp-header-rule {
+  height: 2px; border-radius: 2px;
+  background: linear-gradient(90deg, #1E40AF, rgba(30,64,175,.05));
 }
 ```
 
-### Cards
+### Metric Card
 
 ```css
-.card {
-  background: #EFF6FF;
-  border-radius: 12px;
-  padding: 24px;
+.gp-metric {
+  background: #fff; border: 1px solid #E2E8F0; border-radius: 14px;
+  padding: 16px 18px; border-top: 3px solid transparent;
   box-shadow: var(--shadow-md);
-  transition: all 200ms ease;
-  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease;
 }
-
-.card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
-}
+.gp-metric:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
+.gp-metric-value { font-size: 26px; font-weight: 800; color: #0F172A; font-variant-numeric: tabular-nums; }
 ```
 
-### Inputs
+### Card
 
 ```css
-.input {
-  padding: 12px 16px;
-  border: 1px solid #E2E8F0;
-  border-radius: 8px;
-  font-size: 16px;
-  transition: border-color 200ms ease;
+.gp-card {
+  background: #fff; border: 1px solid #E2E8F0; border-radius: 14px;
+  padding: 18px 20px; box-shadow: var(--shadow-md);
+  transition: all 180ms ease;
 }
-
-.input:focus {
-  border-color: #1E40AF;
-  outline: none;
-  box-shadow: 0 0 0 3px #1E40AF20;
+.gp-card:hover {
+  border-color: #C7D6F2; transform: translateY(-1px); box-shadow: var(--shadow-hover);
 }
 ```
 
-### Modals
+### Button
 
 ```css
-.modal-overlay {
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-}
+.stButton > button { border-radius: 10px; font-weight: 600; transition: all 150ms ease; }
+.stButton > button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(30,64,175,.18); }
+.stButton > button[kind="primary"] { background: #1E40AF; border-color: #1E40AF; }
+.stButton > button[kind="primary"]:hover:not(:disabled) { background: #2563EB; border-color: #2563EB; }
+```
 
-.modal {
-  background: white;
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: var(--shadow-xl);
-  max-width: 500px;
-  width: 90%;
+### Input / Textarea
+
+```css
+[data-testid="stTextInput"] input,
+[data-testid="stTextArea"] textarea {
+  border-radius: 10px; border: 1px solid #E2E8F0;
+}
+/* focus */
+[data-testid="stTextInput"] input:focus,
+[data-testid="stTextArea"] textarea:focus {
+  border-color: #1E40AF; box-shadow: 0 0 0 3px rgba(30,64,175,.15);
 }
 ```
+
+### Icon
+
+- 全部使用内联 **SVG**（Lucide 风格，stroke=currentColor，24×24 viewBox）。
+- 图标字典见 `frontend/ui.py` `_ICONS`：home / chat / target / cpu / book / clipboard / share / shield / shield-check / chart / activity / network / rocket / search / send / user / log-out / plus / history / clock / zap / trending-up / database / key / check-circle / alert / info / sparkles / building / wallet / file-text / file-check / arrow-down / git-branch / gauge / layers / government 等。
 
 ---
 
 ## Style Guidelines
 
-**Style:** Dark Mode (OLED)
+**Style:** Light Mode · Accessible & Ethical
 
-**Keywords:** Dark theme, low light, high contrast, deep black, midnight blue, eye-friendly, OLED, night mode, power efficient
+**Keywords:** Government, enterprise, professional, high contrast, accessible, keyboard navigation, screen-reader friendly, focus states, semantic, trustworthy
 
-**Best For:** Night-mode apps, coding platforms, entertainment, eye-strain prevention, OLED devices, low-light
+**Best For:** Government platforms, B2B SaaS, admin dashboards, public services, compliance
 
-**Key Effects:** Minimal glow (text-shadow: 0 0 10px), dark-to-light transitions, low white emission, high readability, visible focus
+**Key Effects:** Clear focus rings (3px rgba(30,64,175,.5)), soft shadows, gradient blue accents, tabular numbers for metrics, reduced-motion support
 
 ### Page Pattern
 
-**Pattern Name:** Real-Time / Operations Landing
+**Pattern Name:** Trust & Authority
 
-- **Conversion Strategy:** For ops/security/iot products. Demo or sandbox link. Trust signals.
-- **CTA Placement:** Primary CTA in nav + After metrics
-- **Section Order:** 1. Hero (product + live preview or status), 2. Key metrics/indicators, 3. How it works, 4. CTA (Start trial / Contact)
+- **Conversion Strategy:** Security badges, credibility signals, transparent metrics, low-friction demo.
+- **CTA Placement:** Primary action in page header + after metrics.
+- **Section Order:** 1. Hero (product + status), 2. Key metrics, 3. How it works / architecture, 4. Capabilities, 5. Clear next-step.
 
 ---
 
 ## Anti-Patterns (Do NOT Use)
 
-- ❌ Slow updates
-- ❌ No automation
-
-### Additional Forbidden Patterns
-
-- ❌ **Emojis as icons** — Use SVG icons (Heroicons, Lucide, Simple Icons)
-- ❌ **Missing cursor:pointer** — All clickable elements must have cursor:pointer
-- ❌ **Layout-shifting hovers** — Avoid scale transforms that shift layout
-- ❌ **Low contrast text** — Maintain 4.5:1 minimum contrast ratio
-- ❌ **Instant state changes** — Always use transitions (150-300ms)
-- ❌ **Invisible focus states** — Focus states must be visible for a11y
+- ❌ **Emojis as icons** — 必须使用内联 SVG 图标（Lucide 风格）。仅 Streamlit 原生限制处可用 emoji（`st.Page` 导航 icon）或 Material 图标名（`:material/name:`）。
+- ❌ **AI purple/pink gradients** — 政务场景禁止。
+- ❌ **Playful / 儿童化设计** — 保持克制与信任感。
+- ❌ **Missing cursor:pointer** — 所有可点击元素必须有 cursor:pointer。
+- ❌ **Layout-shifting hovers** — 避免 scale 变换导致的布局抖动。
+- ❌ **Low contrast text** — 保持 4.5:1 最小对比度。
+- ❌ **Instant state changes** — 始终使用 150-300ms 过渡。
+- ❌ **Invisible focus states** — 焦点状态必须可见（a11y）。
 
 ---
 
@@ -197,7 +185,7 @@
 Before delivering any UI code, verify:
 
 - [ ] No emojis used as icons (use SVG instead)
-- [ ] All icons from consistent icon set (Heroicons/Lucide)
+- [ ] All icons from consistent icon set (Lucide-style stroke SVG)
 - [ ] `cursor-pointer` on all clickable elements
 - [ ] Hover states with smooth transitions (150-300ms)
 - [ ] Light mode: text contrast 4.5:1 minimum

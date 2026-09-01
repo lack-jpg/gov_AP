@@ -26,7 +26,7 @@ except ImportError:
 # ============================================================
 # 页头
 # ============================================================
-ui.page_header("🎯", "意图识别", "三级分类链：**BERT 模型 → 关键词匹配 → LLM 兜底**")
+ui.page_header("target", "意图识别", "三级分类链：**BERT 模型 → 关键词匹配 → LLM 兜底**")
 
 if not _HAS_LOCAL_MODULES:
     st.warning(
@@ -68,15 +68,15 @@ EXAMPLES = [
     "今天天气怎么样",
 ]
 
-examples = ["✍️ 自定义输入"] + EXAMPLES
-selected = st.pills("选择示例", examples, default="✍️ 自定义输入")
+examples = ["自定义输入"] + EXAMPLES
+selected = st.pills("选择示例", examples, default="自定义输入")
 text = st.text_input(
     "输入文本",
     value="" if selected == "✍️ 自定义输入" else selected,
     placeholder="例如：我想开一家川菜馆",
 )
 
-if st.button("🎯 识别意图", type="primary", use_container_width=True, disabled=not _HAS_LOCAL_MODULES):
+if st.button("识别意图", type="primary", use_container_width=True, disabled=not _HAS_LOCAL_MODULES):
     if not text.strip():
         st.warning("请输入文本")
     elif not _HAS_LOCAL_MODULES:
@@ -86,15 +86,15 @@ if st.button("🎯 识别意图", type="primary", use_container_width=True, disa
             classifier = IntentClassifier()  # auto_load=True，使用本地微调 BERT 模型
             result = run_async(classifier.classify(text))
 
-        ui.section_header("📊", "识别结果")
+        ui.section_header("chart", "识别结果")
 
         c1, c2, c3 = st.columns(3)
         with c1:
-            ui.metric_card("🏷️ 意图", LABELS.get(result.label, result.label_name or result.label), accent="blue")
+            ui.metric_card("意图", LABELS.get(result.label, result.label_name or result.label), accent="blue", icon="target")
         with c2:
-            ui.metric_card("📛 英文标签", result.label, accent="gray")
+            ui.metric_card("英文标签", result.label, accent="gray", icon="key")
         with c3:
-            ui.metric_card("🔍 识别来源", SOURCE_NAMES.get(result.source, result.source), accent="green")
+            ui.metric_card("识别来源", SOURCE_NAMES.get(result.source, result.source), accent="green", icon="cpu")
 
         with st.container(border=True):
             st.markdown("**置信度**")

@@ -35,7 +35,7 @@ backend_available = api_client.health() is not None
 # 侧边栏 — 历史会话管理
 # ============================================================
 with st.sidebar:
-    st.subheader("💬 历史会话")
+    st.subheader("历史会话")
     if backend_available:
         if st.button("＋ 新对话", use_container_width=True):
             st.session_state["conversation_id"] = None
@@ -64,7 +64,7 @@ with st.sidebar:
 # 页头
 # ============================================================
 ui.page_header(
-    "💬",
+    "chat",
     "智能对话",
     "多 Agent 协同处理：**Supervisor → Intent → Policy/Material → Workflow → Governance → 回答**",
 )
@@ -78,8 +78,8 @@ EXAMPLES = [
     "社保卡怎么办理？",
 ]
 
-examples = ["✍️ 自定义输入"] + EXAMPLES
-selected = st.pills("示例问题", examples, default="✍️ 自定义输入")
+examples = ["自定义输入"] + EXAMPLES
+selected = st.pills("示例问题", examples, default="自定义输入")
 query = st.text_area(
     "请输入您的问题",
     value="" if selected == "✍️ 自定义输入" else selected,
@@ -90,7 +90,7 @@ query = st.text_area(
 if not backend_available:
     st.info("💡 后端 API 未启动，对话将使用**本地 stub 模式**（BERT 意图分类 + 政策模板）。启动后端即可切换为完整 Agent 工作流。")
 
-send = st.button("🚀 发送", type="primary", use_container_width=True)
+send = st.button("发送", type="primary", use_container_width=True)
 
 
 def _render_history() -> None:
@@ -151,16 +151,19 @@ if send:
                     risk_accent = {"low": "green", "medium": "amber", "high": "red", "critical": "red"}.get(risk, "gray")
                     m1, m2, m3, m4 = st.columns(4)
                     with m1:
-                        ui.metric_card("🎯 识别意图", final.get("intent", "-"), accent="blue")
+                        ui.metric_card("识别意图", final.get("intent", "-"), accent="blue", icon="target")
                     with m2:
-                        ui.metric_card("⚙️ 执行步数", final.get("execution_steps", 0), accent="gray")
+                        ui.metric_card("执行步数", final.get("execution_steps", 0), accent="gray", icon="cpu")
                     with m3:
-                        ui.metric_card("⏱️ 耗时", f"{final.get('elapsed_ms', 0):.0f} ms", accent="amber")
+                        ui.metric_card("耗时", f"{final.get('elapsed_ms', 0):.0f} ms", accent="amber", icon="clock")
                     with m4:
                         st.markdown(
                             '<div class="gp-metric">'
-                            '<div class="gp-metric-label">🛡️ 风险等级</div>'
-                            f'<div style="margin-top:6px;">{ui.status_badge(risk)}</div>'
+                            '<div class="gp-metric-top">'
+                            f'<span class="gp-metric-ic">{ui.icon("shield", size=16, color="#64748B")}</span>'
+                            '<span class="gp-metric-label">风险等级</span>'
+                            "</div>"
+                            f'<div style="margin-top:8px;">{ui.status_badge(risk)}</div>'
                             "</div>",
                             unsafe_allow_html=True,
                         )
@@ -168,7 +171,7 @@ if send:
                     # ── 引用证据 ──
                     evidence = final.get("evidence") or []
                     if evidence:
-                        ui.section_header("📚", "引用证据")
+                        ui.section_header("book", "引用证据")
                         for ev in evidence:
                             if isinstance(ev, dict):
                                 ui.evidence_card(
@@ -179,7 +182,7 @@ if send:
 
                     trace_id = final.get("trace_id")
                     if trace_id:
-                        st.caption(f"🔍 trace_id: `{trace_id}`")
+                        st.caption(f"trace_id: `{trace_id}`")
                 else:
                     st.markdown("（未生成回答）")
         else:

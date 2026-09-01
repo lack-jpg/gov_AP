@@ -21,16 +21,16 @@ from frontend import ui  # noqa: E402
 # 页头
 # ============================================================
 ui.page_header(
-    "🏛️",
+    "government",
     "政务多智能体协同与治理平台",
     "Government Agent Platform — LangGraph · MCP · A2A · AgentOps · RAG",
-    tags=["v0.1.0"],
+    tags=["v3.0"],
 )
 
 # ============================================================
 # 系统健康
 # ============================================================
-ui.section_header("🩺", "系统健康")
+ui.section_header("activity", "系统健康")
 
 health = api_client.health()
 if health:
@@ -45,37 +45,37 @@ else:
 overview = api_client.dashboard_overview()
 if overview:
     metric_specs = [
-        ("总请求数", overview.get("total_requests", 0), "blue"),
-        ("成功率", f"{overview.get('success_rate', 0) * 100:.1f}%", "green"),
-        ("平均耗时", f"{overview.get('avg_latency_ms', 0):.0f} ms", "amber"),
-        ("活跃 Agent", overview.get("active_agents", 0), "blue"),
-        ("MCP 调用", overview.get("tool_call_count", 0), "gray"),
+        ("总请求数", overview.get("total_requests", 0), "blue", "activity"),
+        ("成功率", f"{overview.get('success_rate', 0) * 100:.1f}%", "green", "check-circle"),
+        ("平均耗时", f"{overview.get('avg_latency_ms', 0):.0f} ms", "amber", "clock"),
+        ("活跃 Agent", overview.get("active_agents", 0), "blue", "zap"),
+        ("MCP 调用", overview.get("tool_call_count", 0), "gray", "database"),
     ]
     cols = st.columns(5)
-    for col, (label, value, accent) in zip(cols, metric_specs):
+    for col, (label, value, accent, icon) in zip(cols, metric_specs):
         with col:
-            ui.metric_card(label, value, accent=accent)
+            ui.metric_card(label, value, accent=accent, icon=icon)
 
 # ============================================================
 # 架构展示
 # ============================================================
-ui.section_header("🧠", "系统架构")
+ui.section_header("network", "系统架构")
 st.caption("一条请求的旅程：`用户请求 → 任务理解 → 多Agent协作 → 工具调用 → 流程执行 → 结果评估 → 持续优化`")
 ui.architecture_diagram()
 
 # ============================================================
 # 平台能力
 # ============================================================
-ui.section_header("🚀", "平台能力一览")
+ui.section_header("rocket", "平台能力一览")
 
 capabilities = [
-    ("💬", "智能对话", "多 Agent 协同", "Supervisor → Intent → Policy/Material → Workflow → Governance", "智能对话"),
-    ("🎯", "意图识别", "三级分类链", "BERT 模型 → 关键词匹配 → LLM 兜底，输出标签+置信度", "意图识别"),
-    ("📚", "政策检索", "RAG 混合检索", "Milvus 向量检索 + BM25 稀疏检索 + Reranker 精排 + LLM 生成", "政策检索"),
-    ("📋", "材料审核", "规则校验", "按业务类型校验材料完整性，别名匹配 + 温馨提示", "材料审核"),
-    ("🤝", "跨域协同", "A2A 外部 Agent", "通过 A2A 协议调用不动产/公积金等外部系统", "跨域协同"),
-    ("🛡️", "安全治理", "Guardrail 护栏", "PII 脱敏、Prompt 注入检测、敏感词过滤、输出安全", "安全治理"),
-    ("📊", "运维看板", "AgentOps 监控", "Agent 运行统计、执行成功率、评测报告", "运维看板"),
+    ("chat", "智能对话", "多 Agent 协同", "Supervisor → Intent → Policy/Material → Workflow → Governance", "智能对话"),
+    ("target", "意图识别", "三级分类链", "BERT 模型 → 关键词匹配 → LLM 兜底，输出标签+置信度", "意图识别"),
+    ("book", "政策检索", "RAG 混合检索", "Milvus 向量检索 + BM25 稀疏检索 + Reranker 精排 + LLM 生成", "政策检索"),
+    ("clipboard", "材料审核", "规则校验", "按业务类型校验材料完整性，别名匹配 + 温馨提示", "材料审核"),
+    ("share", "跨域协同", "A2A 外部 Agent", "通过 A2A 协议调用不动产/公积金等外部系统", "跨域协同"),
+    ("shield", "安全治理", "Guardrail 护栏", "PII 脱敏、Prompt 注入检测、敏感词过滤、输出安全", "安全治理"),
+    ("chart", "运维看板", "AgentOps 监控", "Agent 运行统计、执行成功率、评测报告", "运维看板"),
 ]
 
 for i in range(0, len(capabilities), 2):
@@ -85,4 +85,4 @@ for i in range(0, len(capabilities), 2):
         with col:
             ui.capability_card(emoji, name, tag, desc, page)
 
-st.caption("🔧 技术栈: Python 3.12 · FastAPI · LangGraph · MCP · A2A · PostgreSQL 16 · Redis 7 · Milvus 2.5")
+st.caption("技术栈：Python 3.12 · FastAPI · LangGraph · MCP · A2A · PostgreSQL 16 · Redis 7 · Milvus 2.5")

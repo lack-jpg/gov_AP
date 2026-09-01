@@ -31,7 +31,7 @@ except ImportError:
 # 页头
 # ============================================================
 ui.page_header(
-    "🤝",
+    "share",
     "跨域协同（A2A）",
     "通过 **A2A 协议**调用外部系统 Agent：本地政务 Agent → 不动产系统 / 公积金系统",
 )
@@ -50,16 +50,16 @@ if not _HAS_LOCAL_MODULES:
 
 agent_type = st.radio(
     "选择外部 Agent",
-    ["🏠 不动产系统 (housing_agent)", "🏦 公积金系统 (fund_agent)"],
+    ["不动产系统 (housing_agent)", "公积金系统 (fund_agent)"],
     horizontal=True,
 )
 
 if "不动产" in agent_type:
-    ui.section_header("🏠", "不动产查询")
+    ui.section_header("building", "不动产查询")
     owner = st.text_input("户主姓名", "张三")
     detail = st.checkbox("同时返回关联公积金余额", value=True)
 
-    if st.button("🔍 查询不动产", type="primary", use_container_width=True, disabled=not _HAS_LOCAL_MODULES):
+    if st.button("查询不动产", type="primary", use_container_width=True, disabled=not _HAS_LOCAL_MODULES):
         if not _HAS_LOCAL_MODULES:
             st.warning("模块未安装，无法执行 A2A 查询")
         else:
@@ -72,7 +72,7 @@ if "不动产" in agent_type:
                 )
                 resp = run_async(agent.process_task(req))
 
-            ui.section_header("📊", "查询结果", hint=f"状态：`{resp.status.value}`")
+            ui.section_header("chart", "查询结果", hint=f"状态：`{resp.status.value}`")
             artifact = resp.artifact or {}
             properties = artifact.get("properties", [])
             st.caption(f"共找到 **{artifact.get('total_count', 0)}** 处不动产")
@@ -90,15 +90,15 @@ if "不动产" in agent_type:
                 st.warning("未找到匹配的不动产记录")
 
             if detail and artifact.get("housing_fund"):
-                st.info(f"🏦 关联公积金余额: **{artifact['housing_fund'][0].get('balance')}** 元")
+                st.info(f"关联公积金余额：**{artifact['housing_fund'][0].get('balance')}** 元")
 
 else:
-    ui.section_header("🏦", "公积金查询")
+    ui.section_header("wallet", "公积金查询")
     user_id = st.text_input("用户 ID", "001")
     user_name = st.text_input("用户姓名（可选）", "")
     show_detail = st.checkbox("显示提取记录详情", value=False)
 
-    if st.button("🔍 查询公积金", type="primary", use_container_width=True, disabled=not _HAS_LOCAL_MODULES):
+    if st.button("查询公积金", type="primary", use_container_width=True, disabled=not _HAS_LOCAL_MODULES):
         if not _HAS_LOCAL_MODULES:
             st.warning("模块未安装，无法执行 A2A 查询")
         else:
@@ -112,7 +112,7 @@ else:
                 )
                 resp = run_async(agent.process_task(req))
 
-            ui.section_header("📊", "查询结果", hint=f"状态：`{resp.status.value}`")
+            ui.section_header("chart", "查询结果", hint=f"状态：`{resp.status.value}`")
             artifact = resp.artifact or {}
             accounts = artifact.get("fund_accounts") or artifact.get("fund_details") or []
             st.caption(f"共找到 **{artifact.get('total_count', 0)}** 个公积金账户")
@@ -134,7 +134,7 @@ else:
                         st.markdown(f"- {rec.get('date')}  {rec.get('reason')}  **{rec.get('amount'):,.0f}** 元 ({rec.get('status')})")
 
             if artifact.get("max_loan_amount"):
-                st.success(f"💰 最高可贷额度: **{artifact['max_loan_amount']:,.0f}** 元（最长 {artifact.get('max_loan_years', '-')} 年）")
+                st.success(f"最高可贷额度：**{artifact['max_loan_amount']:,.0f}** 元（最长 {artifact.get('max_loan_years', '-')} 年）")
 
-st.caption("💡 说明：以上为 Mock 外部 Agent（`tools/a2a/mock_agents`），生产环境通过 A2A 协议对接真实系统。"
+st.caption("说明：以上为 Mock 外部 Agent（`tools/a2a/mock_agents`），生产环境通过 A2A 协议对接真实系统。"
            "本页直接调用本地模块；完整 HTTP 链路见 API 后端的 A2A Connector。")

@@ -37,7 +37,7 @@ _HAS_LOCAL_MODULES = _HAS_VALIDATOR
 # ============================================================
 # 页头
 # ============================================================
-ui.page_header("📋", "材料审核", "按业务类型校验材料完整性 · 别名匹配 · 温馨提示")
+ui.page_header("clipboard", "材料审核", "按业务类型校验材料完整性 · 别名匹配 · 温馨提示")
 
 if not _HAS_LOCAL_MODULES:
     st.warning(
@@ -50,11 +50,11 @@ if not _HAS_LOCAL_MODULES:
     )
 
 BUSINESS_TYPES = {
-    "restaurant_license": "🍜 餐饮许可（开餐馆）",
-    "business_license": "🏪 营业执照（个体户）",
-    "business_register": "🏢 企业注册",
-    "property_service": "🏠 不动产服务",
-    "fund_query": "🏦 公积金查询",
+    "restaurant_license": "餐饮许可（开餐馆）",
+    "business_license": "营业执照（个体户）",
+    "business_register": "企业注册",
+    "property_service": "不动产服务",
+    "fund_query": "公积金查询",
 }
 
 EXAMPLES = {
@@ -92,7 +92,7 @@ materials_str = st.text_area(
     help="支持别名，如『身份证明』自动匹配『身份证』",
 )
 
-if st.button("📋 审核材料", type="primary", use_container_width=True, disabled=not _HAS_LOCAL_MODULES):
+if st.button("审核材料", type="primary", use_container_width=True, disabled=not _HAS_LOCAL_MODULES):
     if not _HAS_LOCAL_MODULES:
         st.warning("模块未安装，无法执行材料审核")
     else:
@@ -105,7 +105,7 @@ if st.button("📋 审核材料", type="primary", use_container_width=True, disa
                 validator = MaterialValidator()
                 result = run_async(validator.validate(business_type=bt, materials=materials))
 
-        ui.section_header("📋", "审核结果")
+        ui.section_header("clipboard", "审核结果")
 
         if result.get("passed") if isinstance(result, dict) else result.passed:
             ui.status_card(True, "材料齐全，可以继续办理！")
@@ -120,19 +120,19 @@ if st.button("📋 审核材料", type="primary", use_container_width=True, disa
         with col_missing:
             if missing:
                 with st.container(border=True):
-                    st.markdown("**❌ 缺失材料**")
+                    st.markdown('**<span style="color:#B91C1C">缺失材料</span>**', unsafe_allow_html=True)
                     for m in missing:
                         st.markdown(f"- {m}")
         with col_submitted:
             if not missing:
                 with st.container(border=True):
-                    st.markdown("**✅ 已提交材料**")
+                    st.markdown('**<span style="color:#15803D">已提交材料</span>**', unsafe_allow_html=True)
                     for m in materials:
                         st.markdown(f"- {m}")
 
         if warnings_list:
             with st.container(border=True):
-                st.markdown("**⚠️ 温馨提示**")
+                st.markdown('**<span style="color:#B45309">温馨提示</span>**', unsafe_allow_html=True)
                 for w in warnings_list:
                     st.markdown(f"- {w}")
 
