@@ -2,13 +2,27 @@
 # Dockerfile.frontend - Streamlit Frontend
 # Author: le
 # Date: 2026/8/3
-# Version: 0.1
+# Version: 0.2 (P4-4: 改多阶段构建，依赖层缓存 + 运行时瘦身)
 # Task: Lightweight container for Streamlit frontend
 #
 # Usage:
 #   docker build -f deploy/Dockerfile.frontend -t gov-agent-frontend:latest .
 # =====================================================
 
+# ──────────────────────────────────────
+# Stage 1: Builder — 安装依赖（frontend.txt 独立，命中 layer 缓存）
+# ──────────────────────────────────────
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+# 仅安装前端所需依赖（轻量）
+COPY requirements/frontend.txt requirements/frontend.txt
+RUN pip install --no-cache-dir --prefix=/install -r requirements/frontend.txt
+
+# ──────────────────────────────────────
+# Stage 2: Runtime — 运行应用
+# ──────────────────────────────────────
 FROM python:3.12-slim AS runtime
 
 WORKDIR /app
@@ -17,10 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 仅安装前端所需依赖（轻量）
-RUN pip install --no-cache-dir \
-    "streamlit>=1.40.0,<2.0" \
-    "httpx>=0.28.0,<1.0"
+COPY --from=builder /install /usr/local
 
 # 复制前端代码和公共模块
 COPY frontend/ frontend/

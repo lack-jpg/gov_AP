@@ -24,15 +24,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# 优先安装轻量核心依赖（不包含 GPU/OCR 重型组件）
-COPY requirements/requirements.txt requirements.txt
-RUN pip install --no-cache-dir --prefix=/install \
-    -r requirements.txt || pip install --no-cache-dir --prefix=/install \
-    fastapi uvicorn[standard] pydantic pydantic-settings \
-    langchain langchain-core langchain-community langgraph \
-    langchain-openai openai httpx sqlalchemy asyncpg psycopg[binary] redis \
-    python-jose passlib[bcrypt] bcrypt python-dotenv loguru pymilvus \
-    alembic
+# P4-4 依赖收敛：只装运行时依赖（不含 pytest/ruff 等测试开发包）
+COPY requirements/runtime.txt requirements/runtime.txt
+# 移除 || 兜底安装：依赖安装失败即构建失败，保证可复现
+RUN pip install --no-cache-dir --prefix=/install -r requirements/runtime.txt
 
 # ──────────────────────────────────────
 # Stage 2: Runtime — 运行应用

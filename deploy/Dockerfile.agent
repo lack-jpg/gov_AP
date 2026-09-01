@@ -18,8 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir --prefix=/install \
-    fastapi uvicorn[standard] pydantic pydantic-settings httpx loguru
+# P4-4 依赖收敛：agent.txt 独立精简，不硬编码 pip 列表
+COPY requirements/agent.txt requirements/agent.txt
+RUN pip install --no-cache-dir --prefix=/install -r requirements/agent.txt
 
 # ──────────────────────────────────────
 FROM python:3.12-slim AS runtime

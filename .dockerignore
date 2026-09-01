@@ -8,6 +8,7 @@
 
 # ── 密钥/配置（运行时通过 compose environment 注入） ──
 .env
+.env*
 
 # ── 模型/数据（通过 compose volumes 挂载，避免打进镜像） ──
 models/
@@ -21,12 +22,29 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+*.egg-info/
+*.dist-info/
 
 # ── 测试/文档/产物 ──
 tests/
 evaluation_results/
 *.md
 *.log
+
+# ── P4-4 瘦身：运行时不需要的目录（其他服务经固定镜像/compose 挂载） ──
+deploy/k8s/
+deploy/otel/
+deploy/prometheus/
+deploy/grafana/
+deploy/alertmanager/
+scripts/
+
+# ── 覆盖率产物 ──
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.coveragerc
 
 # ── IDE/系统 ──
 .idea/

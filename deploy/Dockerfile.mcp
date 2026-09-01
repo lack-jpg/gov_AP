@@ -18,10 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements/requirements.txt requirements.txt
-RUN pip install --no-cache-dir --prefix=/install \
-    fastapi uvicorn[standard] pydantic pydantic-settings httpx loguru python-jose \
-    sqlalchemy asyncpg
+# P4-4 依赖收敛：mcp.txt 独立精简（gateway JWT + workflow 落库所需），
+# 不再硬编码 pip 列表，也不引入 backend 重型依赖
+COPY requirements/mcp.txt requirements/mcp.txt
+RUN pip install --no-cache-dir --prefix=/install -r requirements/mcp.txt
 
 # ──────────────────────────────────────
 FROM python:3.12-slim AS runtime
