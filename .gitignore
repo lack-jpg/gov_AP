@@ -83,6 +83,7 @@ temp/
 htmlcov/
 .coverage
 .coverage.*
+coverage.xml
 
 # Jupyter
 .ipynb_checkpoints/

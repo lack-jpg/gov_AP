@@ -18,6 +18,7 @@ from functools import wraps
 from typing import Callable, Optional
 
 from fastapi import HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from tools.logger import get_logger
@@ -419,18 +420,20 @@ class RBACMiddleware(BaseHTTPMiddleware):
 
         if user_role_str is None:
             logger.warning("RBAC: request.state.user_role 未设置 — path={}", path)
-            raise HTTPException(
+            # 中间件中禁止 raise HTTPException（见 AuthMiddleware.dispatch 注释）：
+            # 必须直接返回 JSONResponse，保证 401 语义。
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="未认证，请提供有效的 Bearer Token",
+                content={"detail": "未认证，请提供有效的 Bearer Token"},
             )
 
         try:
             user_role = Role(user_role_str)
         except ValueError:
             logger.warning("RBAC: 未知角色 {} — path={}", user_role_str, path)
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"未知的角色类型: {user_role_str}",
+                content={"detail": f"未知的角色类型: {user_role_str}"},
             )
 
         if not has_permission(user_role, required_perm):
@@ -438,9 +441,9 @@ class RBACMiddleware(BaseHTTPMiddleware):
                 "RBAC denied: role={role}, path={path}, required={perm}",
                 role=user_role_str, path=path, perm=required_perm.value,
             )
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"无权访问此端点（需要权限: {required_perm.value}）",
+                content={"detail": f"无权访问此端点（需要权限: {required_perm.value}）"},
             )
 
         return await call_next(request)

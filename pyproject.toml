@@ -12,7 +12,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+# P4-1 覆盖率门禁：默认全量跑 cov（范围见 .coveragerc source），
+# 基线 43%（2026-09-01，231 tests），fail-under=40 渐进提升，目标 >=70%。
+addopts = "-v --tb=short --cov --cov-report=term:skip-covered --cov-report=xml --cov-fail-under=40"
 asyncio_mode = "auto"
 
 [tool.ruff]

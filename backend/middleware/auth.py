@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -145,16 +146,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 request.state.user_tenant = payload.get("tenant_id", "default")
                 return await call_next(request)
             except JWTError:
-                raise HTTPException(
+                # 中间件中禁止 raise HTTPException：BaseHTTPMiddleware 抛出的异常
+                # 不会经过 ExceptionMiddleware，最终被 ServerErrorMiddleware 变为 500。
+                # 必须直接返回 JSONResponse，保证 401 语义。
+                return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="无效的认证凭证",
+                    content={"detail": "无效的认证凭证"},
                     headers={"WWW-Authenticate": "Bearer"},
                 )
 
         # 无认证
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="请提供认证信息 (Authorization: Bearer <token>)",
+            content={"detail": "请提供认证信息 (Authorization: Bearer <token>)"},
             headers={"WWW-Authenticate": "Bearer"},
         )
 

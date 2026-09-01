@@ -6,7 +6,7 @@
 
 > 注意：前端界面全部由AI生成，请勿直接复制。
 
-> **最近更新（2026-08-08）**：A2A 真实系统对接 + 性能优化（LLM 缓存 18.4s→0.26s、SSE）+ 前端完善（多轮对话、历史、看板图表）+ 测试覆盖（174 pytest + 端到端 23/23）+ **监控告警（Prometheus + Grafana /metrics）** + **CI/CD（GitHub Actions：lint→test→build→push）**。详见 [更新日志](#20-更新日志)。
+> **最近更新（2026-08-08）**：A2A 真实系统对接 + 性能优化（LLM 缓存 18.4s→0.26s、SSE）+ 前端完善（多轮对话、历史、看板图表）+ 测试覆盖（231 pytest + 端到端 23/23）+ **监控告警（Prometheus + Grafana /metrics）** + **CI/CD（GitHub Actions：lint→test→build→push）**。详见 [更新日志](#20-更新日志)。
 
 ---
 
@@ -1682,7 +1682,7 @@ governance_node（末尾节点）
 | --- | --- |
 | 代码规模 | 38,551 行 Python |
 | 提交数 | 54 |
-| 自动化测试 | **174** pytest + 端到端 **23/23** |
+| 自动化测试 | **231** pytest + 端到端 **23/23** |
 | 意图识别准确率 | BERT 微调 **99.5%**（3500 用例） |
 | 性能优化 | LLM 二次请求 **18.4s → 0.26s**（缓存命中） |
 | CI/CD | ruff lint + pytest + GHCR 镜像构建推送 |
@@ -1716,7 +1716,7 @@ governance_node（末尾节点）
 | P4 治理评测 | AgentOps + Evaluation 平台（DB/文件双通道） | ✅ |
 | P5 性能 | LLM 缓存 / Milvus 索引调优 / SSE 流式 | ✅ |
 | P6 前端 | 8 页 Streamlit + 多轮对话 + 历史持久化 + 中文修复 + stub 降级 | ✅ |
-| P7 质量 | 174 测试 + 3 个真实 bug 修复 + ruff 全绿 | ✅ |
+| P7 质量 | 231 测试 + 3 个真实 bug 修复 + ruff 全绿 | ✅ |
 | P8 企业级 | 监控告警 + CI/CD + Docker 端口规范化（12001~12431） | ✅ |
 
 ### Docker 部署拓扑
@@ -1752,7 +1752,7 @@ prometheus 12411 │ grafana 12421 │ alertmanager 12431
 
 `.github/workflows/ci.yml`：
 - `lint`：`ruff check .`
-- `test`：`pytest tests/`（174 个，离线/DB-free）
+- `test`：`pytest tests/`（231 个，离线/DB-free）
 - `build`：master push 时构建并推送 api 镜像到 GHCR（`ghcr.io/lack-jpg/gov_ap/api`，仓库名转小写）
 - `e2e`：手动触发，docker compose 全栈跑 `scripts/e2e_integration_test.py`
 
@@ -1760,7 +1760,7 @@ prometheus 12411 │ grafana 12421 │ alertmanager 12431
 - `requirements.txt` 补 `langchain-openai`（修复测试收集 + api 镜像 LLM 模式）
 - `pyproject.toml` ruff 规则收敛 + `ruff check --fix` 全量清理（127 自动修复 + F821/F841/F401/E741/B004/B007）
 
-**验证**：`/metrics` 返回 agent 指标；Prometheus target UP 且能查 `agent_calls_total`；Grafana `:12421` 自动加载看板；e2e 23/23；`ruff check .` 全绿；174 pytest 通过。
+**验证**：`/metrics` 返回 agent 指标；Prometheus target UP 且能查 `agent_calls_total`；Grafana `:12421` 自动加载看板；e2e 23/23；`ruff check .` 全绿；231 pytest 通过。
 
 ## 2026-08-08 — 测试覆盖 + MCP 链路修复
 
@@ -1774,7 +1774,7 @@ prometheus 12411 │ grafana 12421 │ alertmanager 12431
 | A2A connector | `tests/test_a2a_connector.py`（6→11 项） | check_status / cancel_task 各分支 |
 | 端到端集成 | `scripts/e2e_integration_test.py`（23 断言） | docker compose 全栈：健康/单轮/多轮/历史/看板/SSE/评测，**23/23 通过** |
 
-`pytest tests/` 累计 **174 通过**。
+`pytest tests/` 累计 **231 通过**。
 
 ### MCP 链路修复（端到端测试发现）
 
@@ -1928,7 +1928,7 @@ Docker 容器内 LangGraph 版本升级导致 4 项 API 不兼容，已全部适
 ### 验证
 
 ```
-pytest: 174/174 passed（截至 2026-08-08）
+pytest: 231/231 passed（截至 2026-08-08）
 guardrail: 45/45 passed
 state: 117/117 passed
 a2a: 15/15 passed

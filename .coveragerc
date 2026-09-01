@@ -1,0 +1,31 @@
+# =====================================================
+# .coveragerc - pytest-cov 覆盖率配置（P4-1）
+# 排除测试代码、包初始化文件与服务器入口脚本
+# =====================================================
+
+[run]
+# 度量范围：业务/编排/协议/治理/数据各层，排除入口脚本与 mock 服务
+source =
+    backend
+    agents
+    governance
+    rag
+    tools
+    orchestration
+    prompts
+    database
+
+omit =
+    tests/*
+    */__init__.py
+    tools/mcp/start_servers.py
+    tools/a2a/mock_agents/server.py
+
+[report]
+show_missing = true
+skip_covered = true
+
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError
+    if __name__ == "__main__":

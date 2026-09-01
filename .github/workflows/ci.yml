@@ -1,6 +1,6 @@
 # =====================================================
 # CI/CD — lint → pytest → build image → push
-# 每次 push / PR：lint + test（174 测试）
+# 每次 push / PR：lint + test（231 测试，覆盖率门禁 >=40%）
 # master push：构建并推送 api 镜像到 GHCR
 # 手动触发：端到端集成测试（需完整 docker 栈）
 # =====================================================
@@ -46,14 +46,15 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements/requirements.txt
       - name: Run tests
+        # P4-1：addopts 已启用 --cov + --cov-fail-under=40 门禁，此处直接跑即自动测覆盖率
         run: pytest tests/ -q
-      - name: Upload coverage artifact
+      - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-log
+          name: coverage-report
           path: |
-            pytest.txt
+            coverage.xml
           if-no-files-found: ignore
 
   build:
