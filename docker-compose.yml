@@ -93,12 +93,13 @@ services:
         condition: service_healthy
       milvus:
         condition: service_healthy
+      # 第三方镜像无内置 HEALTHCHECK，只能等待 started；业务依赖收紧到 healthy
       otel-collector:
         condition: service_started
       mcp-server:
-        condition: service_started
+        condition: service_healthy
       a2a-mock:
-        condition: service_started
+        condition: service_healthy
     networks:
       - gov_agent_net
 
@@ -134,7 +135,8 @@ services:
       # 后端 API 地址（容器间服务名通信）
       API_BASE_URL: http://api:12401
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     networks:
       - gov_agent_net
 
