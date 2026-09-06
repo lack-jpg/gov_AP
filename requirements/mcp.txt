@@ -2,7 +2,9 @@
 # requirements/mcp.txt - MCP Gateway + 3 Servers 运行时依赖
 # 供 deploy/Dockerfile.mcp 使用。
 # 注意：workflow_server 经 database.case_service 落库（PostgreSQL），
-#       需 sqlalchemy + asyncpg；gateway 校验 JWT 需 python-jose。
+#       需 sqlalchemy + asyncpg；database 包 __init__ 顶层导入 database.redis
+#       （import redis.asyncio），缺 redis 会 ModuleNotFoundError → 办件落库失败；
+#       gateway 校验 JWT 需 python-jose。
 # =====================================================
 
 fastapi>=0.115.6,<1.0
@@ -22,6 +24,8 @@ python-jose[cryptography]>=3.3.0,<4.0
 sqlalchemy>=2.0.36,<3.0
 
 asyncpg>=0.30.0,<1.0
+
+redis>=5.2.0,<6.0
 
 # =====================================================
 # RAG 检索（P1-1 真实检索主链路）
