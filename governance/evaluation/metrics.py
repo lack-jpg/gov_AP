@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 # ============================================================
 # Data Classes
@@ -72,7 +72,7 @@ def compute_faithfulness(
     contexts: Sequence[str],
     *,
     use_llm: bool = False,
-    llm_call: Optional[callable] = None,
+    llm_call: Optional[Callable[[str], str]] = None,
 ) -> float:
     """
     计算 Faithfulness（回答真实性）— 回答中有多少陈述可以追溯到上下文。
@@ -126,7 +126,7 @@ def _compute_faithfulness_rule(answer: str, contexts: Sequence[str]) -> float:
 def _compute_faithfulness_llm(
     answer: str,
     contexts: Sequence[str],
-    llm_call: callable,
+    llm_call: Callable[[str], str],
 ) -> float:
     """LLM-based Faithfulness 计算"""
     context_block = "\n---\n".join(contexts)
@@ -156,7 +156,7 @@ def compute_answer_relevance(
     answer: str,
     *,
     use_llm: bool = False,
-    llm_call: Optional[callable] = None,
+    llm_call: Optional[Callable[[str], str]] = None,
 ) -> float:
     """
     计算 Answer Relevance（答案相关性）— 回答是否直接回应了问题。
@@ -225,7 +225,7 @@ def _compute_answer_relevance_rule(question: str, answer: str) -> float:
 def _compute_answer_relevance_llm(
     question: str,
     answer: str,
-    llm_call: callable,
+    llm_call: Callable[[str], str],
 ) -> float:
     """LLM-based Answer Relevance 计算"""
     prompt = f"""评估以下回答是否直接、相关地回应了用户问题。
@@ -254,7 +254,7 @@ def compute_context_recall(
     reference_answer: str,
     *,
     use_llm: bool = False,
-    llm_call: Optional[callable] = None,
+    llm_call: Optional[Callable[[str], str]] = None,
 ) -> float:
     """
     计算 Context Recall（上下文召回率）— 参考回答中的信息有多少能在上下文中找到。
@@ -305,7 +305,7 @@ def _compute_context_recall_rule(
 def _compute_context_recall_llm(
     contexts: Sequence[str],
     reference_answer: str,
-    llm_call: callable,
+    llm_call: Callable[[str], str],
 ) -> float:
     """LLM-based Context Recall 计算"""
     context_block = "\n---\n".join(contexts)
@@ -337,7 +337,7 @@ def compute_rag_metrics(
     reference_answer: str = "",
     *,
     use_llm: bool = False,
-    llm_call: Optional[callable] = None,
+    llm_call: Optional[Callable[[str], str]] = None,
 ) -> RAGMetricResult:
     """
     批量计算所有 RAG 指标。

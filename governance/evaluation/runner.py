@@ -221,12 +221,13 @@ class EvalRunner:
 
             if self.config.use_llm:
                 from langchain_openai import ChatOpenAI
+                from pydantic import SecretStr
                 from governance.evaluation.llm_adapter import create_llm_judge
                 from backend.config import get_settings
                 s = get_settings()
-                llm = ChatOpenAI(
+                llm = ChatOpenAI(  # type: ignore[call-arg]
                     base_url=s.llm_api_url,
-                    api_key=s.llm_api_key,
+                    api_key=SecretStr(s.llm_api_key),
                     model=s.llm_model,
                     temperature=0.0,
                     max_tokens=512,
@@ -482,8 +483,8 @@ async def _save_benchmark_to_db(result: RunnerResult) -> None:
             if not eval_result:
                 continue
             try:
-                engine = EvaluationEngine()
-                ok = await engine.save_result(eval_result, session_factory)
+                eval_engine = EvaluationEngine()
+                ok = await eval_engine.save_result(eval_result, session_factory)
                 if ok:
                     saved += 1
                     print(f"  ✅ {ds_name}: {eval_result.total_cases} cases, "
@@ -961,6 +962,6 @@ def _smoke_test() -> None:
 if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
-        sys.exit(cli_main())
+        cli_main()
     else:
         _smoke_test()

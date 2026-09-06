@@ -185,21 +185,21 @@ def create_app() -> FastAPI:
     # ── 权限中间件（RBAC 角色/权限校验 — 依赖 AuthMiddleware 注入的 user_role） ──
     try:
         from backend.middleware.rbac import RBACMiddleware
-        app.add_middleware(RBACMiddleware)
+        app.add_middleware(RBACMiddleware)  # type: ignore[arg-type]  # Starlette stub 将中间件类收窄为 factory
     except Exception:
         pass
 
     # ── 限流中间件（按用户 ID/IP 限流，在 Auth 之后执行以获取用户身份） ──
     try:
         from backend.middleware.rate_limit import RateLimitMiddleware
-        app.add_middleware(RateLimitMiddleware)
+        app.add_middleware(RateLimitMiddleware)  # type: ignore[arg-type]  # Starlette stub 将中间件类收窄为 factory
     except Exception:
         pass
 
     # ── 认证中间件（JWT Bearer Token → request.state 注入 — 必须在 RBAC 之前执行） ──
     try:
         from backend.middleware.auth import AuthMiddleware
-        app.add_middleware(AuthMiddleware)
+        app.add_middleware(AuthMiddleware)  # type: ignore[arg-type]  # Starlette stub 将中间件类收窄为 factory
     except Exception:
         pass
 

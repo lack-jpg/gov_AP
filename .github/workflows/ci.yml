@@ -1,8 +1,8 @@
 # =====================================================
-# CI/CD — lint → pytest → build image → push
-# 每次 push / PR：lint + test（231 测试，覆盖率门禁 >=40%）
-# master push：构建并推送 api 镜像到 GHCR
-# 手动触发：端到端集成测试（需完整 docker 栈）
+# CI/CD — ruff → mypy → pytest → build images → push
+# 每次 push / PR：ruff + mypy + test（231 测试，覆盖率门禁 >=40%）
+# master push：构建并推送 4 个业务镜像（api/mcp-server/frontend/a2a-mock）到 GHCR
+# e2e：手动触发恒跑；master push 仅在编排/docker 文件变更时自动触发
 # =====================================================
 
 name: CI
@@ -34,6 +34,25 @@ jobs:
       - name: Run ruff
         run: ruff check .
 
+  typecheck:
+    name: Typecheck (mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install runtime deps + mypy
+        # runtime.txt 提供 fastapi/langgraph/sqlalchemy 等类型来源（stub），
+        # 让 mypy 能对真实第三方类型做 override/attr 检查；
+        # transformers 等重型 RAG 包不进 CI 类型检查（ignore_missing_imports 兜底）。
+        run: |
+          pip install -r requirements/runtime.txt
+          pip install "mypy>=1.14.0,<2.0"
+      - name: Run mypy
+        run: mypy backend/ agents/ governance/ rag/ tools/ orchestration/ prompts/ database/
+
   test:
     name: Test (pytest)
     runs-on: ubuntu-latest
@@ -58,16 +77,29 @@ jobs:
           if-no-files-found: ignore
 
   build:
-    name: Build & push api image
+    name: Build & push images
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    needs: [lint, test]
+    needs: [lint, typecheck, test]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 4 个业务镜像与 docker-compose 服务一一对应（端口规范见 CLAUDE.md §17）
+        service:
+          - name: api
+            dockerfile: deploy/Dockerfile
+          - name: mcp-server
+            dockerfile: deploy/Dockerfile.mcp
+          - name: frontend
+            dockerfile: deploy/Dockerfile.frontend
+          - name: a2a-mock
+            dockerfile: deploy/Dockerfile.agent
     steps:
       - uses: actions/checkout@v4
       - name: Set image name (lowercase)
         # Docker 仓库名必须全小写，而 github.repository 可能含大写（如 gov_AP）
         run: |
-          echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/api" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/${{ matrix.service.name }}" >> "$GITHUB_ENV"
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Log in to GHCR
@@ -76,11 +108,11 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push api
+      - name: Build and push ${{ matrix.service.name }}
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: deploy/Dockerfile
+          file: ${{ matrix.service.dockerfile }}
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
@@ -90,19 +122,37 @@ jobs:
 
   e2e:
     name: E2E (full stack)
-    if: github.event_name == 'workflow_dispatch'
+    # 手动 workflow_dispatch 恒跑；master push 仅在编排/docker 相关文件变更时触发
+    # （path filter：docker-compose.yml、deploy/、ci.yml），避免每次 push 都拉全栈
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
+      - name: Decide whether to run e2e
+        id: decide
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "run_e2e=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" \
+            | grep -Eq '^(docker-compose\.yml|deploy/|\.github/workflows/ci\.yml)'; then
+            echo "run_e2e=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_e2e=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Install test deps
+        if: steps.decide.outputs.run_e2e == 'true'
         run: pip install httpx
       - name: Start docker stack
+        if: steps.decide.outputs.run_e2e == 'true'
         run: docker compose up -d --build
       - name: Wait for api healthy
+        if: steps.decide.outputs.run_e2e == 'true'
         run: |
           for i in $(seq 1 60); do
             if curl -sf http://127.0.0.1:12401/health >/dev/null; then echo "api ready"; exit 0; fi
@@ -110,9 +160,10 @@ jobs:
           done
           echo "api not ready"; exit 1
       - name: Run e2e integration
+        if: steps.decide.outputs.run_e2e == 'true'
         run: python scripts/e2e_integration_test.py
       - name: Collect logs on failure
-        if: failure()
+        if: failure() && steps.decide.outputs.run_e2e == 'true'
         run: |
           docker compose logs api > api.log 2>&1 || true
           docker compose logs mcp-server > mcp.log 2>&1 || true

@@ -10,6 +10,10 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+# 统一复用 orchestration.langgraph.state.IntentResult，
+# 避免与 state 中重复定义两个同构模型导致 set_intent 等调用方类型不一致。
+from orchestration.langgraph.state import IntentResult
+
 
 class IntentLabel(BaseModel):
     """单个意图标签"""
@@ -24,28 +28,6 @@ class IntentLabel(BaseModel):
     category: str = Field(
         default="business",
         description="分类: business | personal | query | other"
-    )
-
-
-class IntentResult(BaseModel):
-    """意图识别结果（与 orchestration.langgraph.state.IntentResult 对齐）"""
-
-    label: str = Field(
-        description="识别出的意图标签ID"
-    )
-    label_name: str = Field(
-        default="",
-        description="标签中文名"
-    )
-    confidence: float = Field(
-        default=0.0,
-        ge=0.0,
-        le=1.0,
-        description="置信度，低于阈值触发 LLM fallback"
-    )
-    source: str = Field(
-        default="keyword",
-        description="识别来源: keyword | bert | llm"
     )
 
 

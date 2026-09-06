@@ -238,7 +238,7 @@ class Prompt(Base):
         Text, nullable=False,
         comment="Prompt 模板内容"
     )
-    variables: Mapped[str | None] = mapped_column(
+    variables: Mapped[list[str] | None] = mapped_column(
         JSON, nullable=True,
         comment="模板变量列表: ['user_query', 'intent', ...]"
     )

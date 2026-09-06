@@ -338,8 +338,8 @@ class OCREngine:
         import numpy as np
         from PIL import Image
 
-        # 解码图片
-        image = Image.open(io.BytesIO(image_bytes))
+        # 解码图片（标注为 Image.Image：open() 返回 ImageFile，convert() 返回 Image，二者同为 Image 子类型）
+        image: "Image.Image" = Image.open(io.BytesIO(image_bytes))
         if image.mode not in ("RGB", "L"):
             image = image.convert("RGB")
         img_array = np.array(image)

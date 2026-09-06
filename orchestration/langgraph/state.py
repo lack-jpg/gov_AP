@@ -518,6 +518,9 @@ class AgentState(TypedDict):
     case_id: str
     """workflow_node 创建办件后回写的办件编号 (CASE_XXXXXXXX)，用于状态查询与审计关联"""
 
+    workflow_result: dict
+    """workflow_node 执行结果（含办件/流程执行明细），供 supervisor 最终汇总引用"""
+
     # ── 最终输出 ──
     final_answer: str
     """最终返回给用户的答案"""
@@ -615,6 +618,7 @@ def create_initial_state(
         material_result={},
         # 办件
         case_id="",
+        workflow_result={},
         # 最终输出
         final_answer="",
         # 安全
@@ -928,7 +932,7 @@ if __name__ == "__main__":
 
     # MCPCallRecord 必填字段
     try:
-        MCPCallRecord()
+        MCPCallRecord()  # type: ignore[call-arg]  # 故意缺参，验证 Pydantic 必填校验
         check("MCPCallRecord missing trace_id should be rejected", False, "Expected ValidationError")
     except Exception:
         check("MCPCallRecord.trace_id is required", True)
@@ -994,7 +998,7 @@ if __name__ == "__main__":
     check("tool_calls_reducer updates by tool_call_id", merged_tc2[0]["result"] == "found 5 docs")
 
     # _append_reducer: simple append
-    r1 = _append_reducer(None, [1, 2])
+    r1 = _append_reducer(None, [1, 2])  # type: ignore[arg-type]  # 故意传 None 验证 reducer 容错
     check("_append_reducer handles None current", r1 == [1, 2])
     r2 = _append_reducer([1, 2], [3, 4])
     check("_append_reducer appends correctly", r2 == [1, 2, 3, 4])
@@ -1074,10 +1078,10 @@ if __name__ == "__main__":
         "messages", "conversation_history", "tool_calls", "mcp_history",
         "a2a_tasks", "waiting_task_id", "external_result",
         "evidence", "policy_result", "material_result",
-        "case_id", "final_answer", "risk_level", "safety_check",
+        "case_id", "workflow_result", "final_answer", "risk_level", "safety_check",
         "execution_metrics", "error", "error_history", "retry_count",
     }
-    check("AgentState has all 28 fields", set(hints.keys()) == expected_fields,
+    check("AgentState has all 29 fields", set(hints.keys()) == expected_fields,
           f"missing: {expected_fields - set(hints.keys())}, extra: {set(hints.keys()) - expected_fields}")
 
     # Annotated 字段应保留在hints中

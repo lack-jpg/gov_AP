@@ -653,7 +653,7 @@ class MetricsCollector:
 
     def clear(self) -> None:
         """重置所有指标（测试用）"""
-        self.__init__()
+        MetricsCollector.__init__(self)
 
 
 # ============================================================

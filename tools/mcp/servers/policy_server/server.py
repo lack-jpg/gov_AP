@@ -60,27 +60,27 @@ async def call_tool(request: ToolCallRequest):
 
     try:
         if tool_name == "search_policy":
-            input_data = SearchPolicyInput(**args)
-            result = await search_policy(
-                query=input_data.query,
-                top_k=input_data.top_k,
+            search_input = SearchPolicyInput(**args)
+            search_result = await search_policy(
+                query=search_input.query,
+                top_k=search_input.top_k,
                 trace_id=request.trace_id,
             )
             return ToolCallResponse(
                 success=True,
-                result=result.model_dump(),
+                result=search_result.model_dump(),
                 server_name="policy_server",
                 tool_name=tool_name,
             )
 
         elif tool_name == "get_policy_detail":
-            input_data = GetPolicyDetailInput(**args)
-            result = await get_policy_detail(
-                document_id=input_data.document_id,
+            detail_input = GetPolicyDetailInput(**args)
+            detail_result = await get_policy_detail(
+                document_id=detail_input.document_id,
             )
             return ToolCallResponse(
                 success=True,
-                result=result.model_dump(),
+                result=detail_result.model_dump(),
                 server_name="policy_server",
                 tool_name=tool_name,
             )

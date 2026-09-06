@@ -164,10 +164,17 @@ class CachingChatOpenAI(ChatOpenAI):
         payload = json.dumps([_message_text(m) for m in messages], ensure_ascii=False)
         return hashlib.sha256(f"{model}|{payload}".encode("utf-8")).hexdigest()
 
-    async def ainvoke(self, messages, config=None, **kwargs) -> AIMessage:
+    async def ainvoke(  # type: ignore[override]
+        self,
+        messages: Any,
+        config: Any = None,
+        *,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> AIMessage:
         """带缓存的异步调用。"""
         if not self._cache_enabled:
-            return await super().ainvoke(messages, config=config, **kwargs)
+            return await super().ainvoke(messages, config=config, stop=stop, **kwargs)
 
         key = self._cache_key(messages)
         try:
@@ -180,10 +187,11 @@ class CachingChatOpenAI(ChatOpenAI):
             return AIMessage(content=cached)
 
         _record_cache_miss()
-        response = await super().ainvoke(messages, config=config, **kwargs)
-        if isinstance(getattr(response, "content", None), str) and response.content:
+        response = await super().ainvoke(messages, config=config, stop=stop, **kwargs)
+        content = response.content
+        if isinstance(content, str) and content:
             try:
-                await self._cache.set(key, response.content)
+                await self._cache.set(key, content)
             except Exception:
                 pass
         return response

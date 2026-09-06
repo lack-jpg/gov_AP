@@ -142,7 +142,7 @@ if __name__ == "__main__":
         async def protected():
             return {"ok": True}
 
-        app.add_middleware(RateLimitMiddleware)
+        app.add_middleware(RateLimitMiddleware)  # type: ignore[arg-type]  # Starlette stub 将中间件类收窄为 factory
         return app
 
     async def main():

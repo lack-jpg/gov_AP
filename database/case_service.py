@@ -200,7 +200,7 @@ async def update_case_status(
             if error_message is not None:
                 row.error_message = error_message
             await session.commit()
-            session.refresh(row)
+            await session.refresh(row)
         logger.info("办件状态更新: {} -> {}", case_id, status)
         return _to_dict(row)
     except Exception as e:

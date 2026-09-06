@@ -10,9 +10,13 @@ from __future__ import annotations
 
 import os
 import threading
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from tools.logger import get_logger
+
+if TYPE_CHECKING:
+    # 仅用于类型标注；运行时在 load_model() 内惰性导入
+    from FlagEmbedding import FlagReranker
 
 logger = get_logger(__name__)
 
@@ -34,7 +38,8 @@ class Reranker:
     def __init__(self, model_name: Optional[str] = None, model_path: Optional[str] = None):
         self._model_name = model_name or self.DEFAULT_MODEL
         self._model_path = model_path or self._resolve_path()
-        self._model = None  # FlagEmbedding FlagReranker
+        # 懒加载字段：load_model() 成功后才非空（FlagEmbedding FlagReranker）
+        self._model: Optional[FlagReranker] = None
 
     async def rerank(
         self,
@@ -88,8 +93,13 @@ class Reranker:
 
         pairs = [[query, doc.get("content", "")] for doc in documents]
 
+        # 绑定局部变量判空：rerank() 仅在 _model 非空时调用本方法，这里防御性兜底
+        model = self._model
+        if model is None:
+            raise RuntimeError("Reranker 模型未加载")
+
         def _compute() -> list[float]:
-            raw = self._model.compute_score(pairs)
+            raw = model.compute_score(pairs)
             # FlagReranker 返回 float 或 list[float]
             if isinstance(raw, (int, float)):
                 return [float(raw)] * len(pairs)

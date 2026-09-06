@@ -13,7 +13,7 @@ import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional, Sequence
+from typing import Any, Awaitable, Callable, Optional, Sequence
 
 from governance.evaluation.evaluator import (
     EvalCaseRecord,
@@ -220,8 +220,10 @@ class BenchmarkRunner:
         *,
         cases_dir: str = "cases",
         use_llm: bool = False,
-        llm_call: Optional[callable] = None,
-        trace_provider: Optional[callable] = None,
+        llm_call: Optional[Callable[[str], str]] = None,
+        trace_provider: Optional[
+            Callable[[dict[str, Any]], Awaitable[list[dict[str, Any]]]]
+        ] = None,
         weights: Optional[dict[str, float]] = None,
     ):
         self.version = version
@@ -503,7 +505,7 @@ class BenchmarkRunner:
         if not benchmarks:
             return {"error": "No benchmarks to compare"}
 
-        comparison = {
+        comparison: dict[str, Any] = {
             "versions": [b.version for b in benchmarks],
             "overall_scores": [round(b.overall_score, 4) for b in benchmarks],
             "best_version": max(benchmarks, key=lambda b: b.overall_score).version,

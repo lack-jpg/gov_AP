@@ -9,10 +9,17 @@ Task: Implement BERT fine-tuning and inference for intent classification
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from agents.intent.schema import IntentResult, INTENT_LABELS
 from tools.logger import get_logger
+
+if TYPE_CHECKING:
+    # 仅用于类型标注；运行时在 load_model() 内惰性导入，避免拖慢启动
+    from transformers import (
+        AutoModelForSequenceClassification,
+        AutoTokenizer,
+    )
 
 logger = get_logger(__name__)
 
@@ -104,8 +111,9 @@ class IntentClassifier:
                        默认 True；测试环境可显式关闭以加速。
         """
         self._model_path = model_path or self._resolve_path()
-        self._model = None
-        self._tokenizer = None
+        # 懒加载字段：load_model() 成功后才非空（AutoModelForSequenceClassification）
+        self._model: Optional[AutoModelForSequenceClassification] = None
+        self._tokenizer: Optional[AutoTokenizer] = None
         # label_id 索引 → 意图标签（与模型 config.id2label 对齐）
         self._id2label: dict[int, str] = {
             i: lbl.label_id for i, lbl in enumerate(INTENT_LABELS)
@@ -184,7 +192,12 @@ class IntentClassifier:
         """
         import torch
 
-        inputs = self._tokenizer(
+        # _bert_classify() 入口已判空：仅当 _model/_tokenizer 均已加载才会进入本方法
+        assert self._tokenizer is not None
+        assert self._model is not None
+
+        # transformers stub 未给 AutoTokenizer/AutoModel 标注 __call__，运行时正常 → 精确忽略
+        inputs = self._tokenizer(  # type: ignore[operator]
             text,
             return_tensors="pt",
             truncation=True,
@@ -193,7 +206,7 @@ class IntentClassifier:
         )
 
         with torch.no_grad():
-            outputs = self._model(**inputs)
+            outputs = self._model(**inputs)  # type: ignore[operator]
 
         probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
         label_idx = int(torch.argmax(probs, dim=-1))
@@ -233,8 +246,8 @@ class IntentClassifier:
                 source="keyword",
             )
 
-        # 取最高分
-        best = max(scores, key=scores.get)
+        # 取最高分（用 lambda 包装 dict.get，避免重载签名导致的 mypy arg-type 报错）
+        best = max(scores, key=lambda k: scores.get(k, 0))
         match_count = scores[best]
         confidence = min(0.6 + match_count * 0.1, 0.85)
 
@@ -271,9 +284,11 @@ class IntentClassifier:
             )
 
             # 对齐模型 config 的 id2label（若存在）
-            if self._model.config.id2label:
+            # transformers stub 未给 Auto 类标注 config 属性（运行时正常）→ 精确忽略
+            if self._model.config.id2label:  # type: ignore[union-attr]
                 self._id2label = {
-                    int(k): str(v) for k, v in self._model.config.id2label.items()
+                    int(k): str(v)
+                    for k, v in self._model.config.id2label.items()  # type: ignore[union-attr]
                 }
 
             logger.info("BERT 模型已加载: {} (labels={})", model_path, len(self._id2label))

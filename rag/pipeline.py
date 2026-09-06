@@ -19,9 +19,15 @@ from __future__ import annotations
 import asyncio
 import os
 import threading
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from tools.logger import get_logger
+
+if TYPE_CHECKING:
+    # 仅用于类型标注；运行时在 _load_components() 内惰性导入
+    from rag.embedding import EmbeddingEngine
+    from rag.reranker import Reranker
+    from rag.retriever import HybridRetriever
 
 logger = get_logger(__name__)
 
@@ -41,9 +47,10 @@ class RAGPipeline:
     _instance_lock = threading.Lock()
 
     def __init__(self) -> None:
-        self._embedding: Optional[object] = None
-        self._retriever: Optional[object] = None
-        self._reranker: Optional[object] = None
+        # 懒加载字段：_load_components() 成功后才非空
+        self._embedding: Optional[EmbeddingEngine] = None
+        self._retriever: Optional[HybridRetriever] = None
+        self._reranker: Optional[Reranker] = None
         self._initialized = False
         self._init_lock = asyncio.Lock()
 

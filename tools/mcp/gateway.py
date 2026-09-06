@@ -213,7 +213,7 @@ class MCPGateway:
         async def call_tool(
             request: CallToolRequest,
             user: dict = Depends(_verify_gateway_token),
-            request_meta: Request = None,
+            request_meta: Request = None,  # type: ignore[assignment]  # FastAPI 特殊注入 Request，None 默认值仅用于 mypy/直调兜底
         ):
             """转发工具调用到对应 MCP Server（JWT 认证 + 工具级 RBAC）"""
             server_name = request.server_name

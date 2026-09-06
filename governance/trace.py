@@ -829,8 +829,10 @@ if __name__ == "__main__":
     # ── Context propagation ──
     print("--- Context ---")
     trace = start_trace("test query")
-    check("context_set", get_current_trace() is not None, True)
-    check("context_trace_id", get_current_trace().trace_id == trace.trace_id, True)
+    current_trace = get_current_trace()
+    assert current_trace is not None
+    check("context_set", current_trace is not None, True)
+    check("context_trace_id", current_trace.trace_id == trace.trace_id, True)
     end_trace()
     check("context_clear", get_current_trace(), None)
 

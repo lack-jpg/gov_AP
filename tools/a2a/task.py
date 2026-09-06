@@ -396,7 +396,11 @@ if __name__ == "__main__":
     tsm4.timeout()
     check("TIMEOUT", tsm4.status == A2ATaskStatus.TIMEOUT)
     check("is_terminal", tsm4.is_terminal)
-    check("default error_message", "timed out" in tsm4.record.error_message.lower())
+    check(
+        "default error_message",
+        tsm4.record.error_message is not None
+        and "timed out" in tsm4.record.error_message.lower(),
+    )
 
     # ── 6. TaskStore ──
     section("6. TaskStore")

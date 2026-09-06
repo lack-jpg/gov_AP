@@ -193,7 +193,7 @@ class EntityExtractor:
                 # 本地路径加载
                 tokenizer = AutoTokenizer.from_pretrained(self._model_path)
                 model = AutoModelForTokenClassification.from_pretrained(self._model_path)
-                self._pipeline = pipeline(
+                self._pipeline = pipeline(  # type: ignore[call-overload]
                     "ner",
                     model=model,
                     tokenizer=tokenizer,
@@ -203,7 +203,7 @@ class EntityExtractor:
                 logger.info("BERT-NER 本地模型加载成功: {}", self._model_path)
             elif self._auto_download:
                 # 自动下载
-                self._pipeline = pipeline(
+                self._pipeline = pipeline(  # type: ignore[call-overload]
                     "ner",
                     model=model_source,
                     aggregation_strategy="simple",

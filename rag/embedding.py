@@ -10,11 +10,15 @@ from __future__ import annotations
 
 import os
 import threading
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
 from tools.logger import get_logger
+
+if TYPE_CHECKING:
+    # 仅用于类型标注；运行时在 load_model() 内惰性导入
+    from sentence_transformers import SentenceTransformer
 
 logger = get_logger(__name__)
 
@@ -47,7 +51,8 @@ class EmbeddingEngine:
         """
         self._model_name = model_name or self.DEFAULT_MODEL
         self._model_path = model_path or self._resolve_path()
-        self._model = None  # sentence-transformers SentenceTransformer
+        # 懒加载字段：load_model() 成功后才非空（sentence-transformers SentenceTransformer）
+        self._model: Optional[SentenceTransformer] = None
         self._dim = self.DEFAULT_DIM
 
     async def encode_query(self, text: str) -> np.ndarray:
@@ -69,8 +74,10 @@ class EmbeddingEngine:
             return np.zeros(self._dim, dtype=np.float32)
 
         try:
-            # 使用同步 encode，通过 asyncio.to_thread 避免阻塞事件循环
+            # _ensure_model() 已尝试加载；若失败模型为 None，后续断言触发后由本 except 兜底零向量
             import asyncio
+            assert self._model is not None
+            # 使用同步 encode，通过 asyncio.to_thread 避免阻塞事件循环
             vec = await asyncio.to_thread(
                 self._model.encode,
                 text,
@@ -103,6 +110,7 @@ class EmbeddingEngine:
 
         try:
             import asyncio
+            assert self._model is not None  # _ensure_model() 已尝试加载，失败由下方 except 兜底
             matrix = await asyncio.to_thread(
                 self._model.encode,
                 texts,

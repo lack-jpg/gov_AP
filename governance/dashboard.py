@@ -132,7 +132,7 @@ class DashboardDataProvider:
     def __init__(self) -> None:
         # P2-5 无界治理：内存 trace 固定容量，超限自动淘汰最旧
         self._memory_traces: deque[dict[str, Any]] = deque(maxlen=5000)
-        self._memory_evals: list[dict[str, Any]] = []
+        self._memory_evals: list[EvalTrendPoint] = []
 
     # ── Agent 统计 ──
 

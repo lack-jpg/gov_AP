@@ -927,7 +927,8 @@ if __name__ == "__main__":
 
         # Activate v1 again
         registry.activate_version("SUPERVISOR_SYSTEM_PROMPT", "v1")
-        check("reactivate_v1", registry.get_active("SUPERVISOR_SYSTEM_PROMPT").version, "v1")
+        reactivated = registry.get_active("SUPERVISOR_SYSTEM_PROMPT")
+        check("reactivate_v1", reactivated.version if reactivated is not None else None, "v1")
 
         # ── Render ──
         print("--- Render ---")

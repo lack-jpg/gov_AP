@@ -100,7 +100,7 @@ class Planner:
         # 如果LLM可用，尝试生成替代方案
         if self._llm is not None:
             try:
-                retry_state = {**state, "task_plan": new_plan, "error": error}
+                retry_state: AgentState = {**state, "task_plan": new_plan, "error": error}
                 return await self._llm_plan(retry_state)
             except Exception:
                 pass

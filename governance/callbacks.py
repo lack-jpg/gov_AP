@@ -20,6 +20,7 @@ Task: Extract LLM token usage from chat model responses and record into the trac
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from langchain_core.callbacks import BaseCallbackHandler
 
@@ -57,7 +58,9 @@ class TokenUsageCallback(BaseCallbackHandler):
         self,
         response,
         *,
-        run_id: str | None = None,
+        run_id: UUID | None = None,
+        parent_run_id: UUID | None = None,
+        tags: list[str] | None = None,
         **kwargs: Any,
     ) -> None:
         """

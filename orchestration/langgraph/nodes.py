@@ -344,7 +344,7 @@ async def policy_node(
 
         # 标记task_plan中对应的policy任务为完成
         task_plan = state.get("task_plan", [])
-        updated_plan: list[dict] = []
+        updated_plan = []  # 类型沿用上方 try 分支首次注解，勿重复注解（mypy no-redef）
         for t in task_plan:
             agent = t.get("agent", "")
             if agent == AgentName.POLICY.value and t.get("status") == TaskStatus.PENDING.value:
@@ -524,7 +524,7 @@ async def material_node(
 
         # 标记task_plan中对应的material任务为完成
         task_plan = state.get("task_plan", [])
-        updated_plan: list[dict] = []
+        updated_plan = []  # 类型沿用上方 try 分支首次注解，勿重复注解（mypy no-redef）
         for t in task_plan:
             agent = t.get("agent", "")
             if agent == AgentName.MATERIAL.value and t.get("status") == TaskStatus.PENDING.value:

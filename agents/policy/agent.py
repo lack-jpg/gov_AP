@@ -119,7 +119,7 @@ class PolicyAgent:
             # 尝试连接 Milvus（失败则只走 BM25）
             retriever.connect_milvus()
             # 尝试加载本地语料（data/policies/）
-            corpus = _load_policy_corpus()
+            corpus = await _load_policy_corpus()
             if corpus:
                 retriever.set_corpus(corpus)
 
@@ -248,7 +248,7 @@ class PolicyAgent:
 _POLICY_CORPUS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "policies")
 
 
-def _load_policy_corpus() -> list[dict]:
+async def _load_policy_corpus() -> list[dict]:
     """
     从 data/policies/ 目录加载政策文档语料（用于 BM25 检索）。
 
@@ -266,7 +266,7 @@ def _load_policy_corpus() -> list[dict]:
     try:
         from rag.knowledge_base import KnowledgeBase
         kb = KnowledgeBase()
-        docs = kb.load_documents(_POLICY_CORPUS_DIR)
+        docs = await kb.load_documents(_POLICY_CORPUS_DIR)
         return docs
     except Exception as e:
         logger.warning("政策语料加载失败: {}", e)

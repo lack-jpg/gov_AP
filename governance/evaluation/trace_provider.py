@@ -133,9 +133,9 @@ async def create_trace_provider(
         traces: list[dict] = []
         for span in recorder.spans:
             d = span.to_db_dict()
-            # 补充 created_at 时间戳
+            # 补充 created_at 时间戳（started_at 为 perf_counter 秒数，转字符串保留原值）
             if span.started_at:
-                d["created_at"] = span.started_at.isoformat()
+                d["created_at"] = str(span.started_at)
             traces.append(d)
 
         # 附加完整的状态级 trace（mcp_history / evidence / final_answer 等）

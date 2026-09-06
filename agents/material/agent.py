@@ -101,7 +101,16 @@ class MaterialAgent:
 
                 extractor = EntityExtractor()
                 extracted = await extractor.extract(text)
-                extracted_fields = extracted.entities if hasattr(extracted, "entities") else extracted
+                # extract() 返回实体列表 [{field_name, value, confidence, ...}, ...]，
+                # 这里统一转换为 {field_name: value} 字段字典（兼容返回带 .entities 属性的对象）
+                if hasattr(extracted, "entities"):
+                    extracted_fields = extracted.entities
+                else:
+                    extracted_fields = {
+                        ent["field_name"]: ent["value"]
+                        for ent in extracted
+                        if ent.get("field_name")
+                    }
 
                 logger.info("OCR+NER 完成: 抽取字段={}", list(extracted_fields.keys())[:10])
             except Exception as e:

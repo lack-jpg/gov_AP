@@ -9,11 +9,16 @@ Task: Implement hybrid retrieval combining dense and sparse search
 from __future__ import annotations
 
 import threading
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
 from tools.logger import get_logger
+
+if TYPE_CHECKING:
+    # 仅用于类型标注；运行时在各自方法内惰性导入
+    from pymilvus import Collection
+    from rag.bm25 import SimpleBM25
 
 logger = get_logger(__name__)
 
@@ -48,9 +53,10 @@ class HybridRetriever:
         except Exception:
             self._milvus_host = milvus_host or "localhost"
             self._milvus_port = milvus_port or 19530
-        self._milvus_client = None  # pymilvus Collection
+        # 懒加载字段：connect_milvus()/set_corpus() 成功后才非空
+        self._milvus_client: Optional[Collection] = None  # pymilvus Collection
         self._milvus_connected = False
-        self._bm25 = None  # _SimpleBM25
+        self._bm25: Optional[SimpleBM25] = None  # rag.bm25.SimpleBM25
         self._docs: list[dict] = []  # BM25 语料
 
     def set_corpus(self, documents: list[dict]) -> None:
@@ -156,13 +162,18 @@ class HybridRetriever:
             import asyncio
 
             def _search() -> list[dict]:
+                # 绑定局部变量并判空：调用方（hybrid_search）已保证连接成功，
+                # 这里仅为类型收窄与防御性保护
+                client = self._milvus_client
+                if client is None:
+                    return []
                 nprobe = 10
                 try:
                     from backend.config import get_settings
                     nprobe = int(get_settings().milvus_search_nprobe) or 10
                 except Exception:
                     pass
-                results = self._milvus_client.search(
+                results = client.search(
                     data=[query_embedding.tolist()],
                     anns_field="embedding",
                     param={"metric_type": "COSINE", "params": {"nprobe": nprobe}},
@@ -192,14 +203,15 @@ class HybridRetriever:
         """
         BM25 稀疏检索。
         """
-        if self._bm25 is None:
+        bm25 = self._bm25
+        if bm25 is None:
             logger.debug("BM25 未构建索引，跳过稀疏检索")
             return []
 
         try:
             import asyncio
             def _score() -> list[dict]:
-                scores = self._bm25.score(query)
+                scores = bm25.score(query)
                 # 合并文档信息
                 ranked = []
                 for doc, score in zip(self._docs, scores):
@@ -254,8 +266,8 @@ class HybridRetriever:
             scores[doc_id] = scores.get(doc_id, 0) + (1 - alpha) / (k + rank + 1)
             doc_map[doc_id] = doc
 
-        # 按融合分数降序排列
-        sorted_ids = sorted(scores, key=scores.get, reverse=True)[:top_k]
+        # 按融合分数降序排列（用 lambda 包装 dict.get，避免重载签名导致的 mypy arg-type 报错）
+        sorted_ids = sorted(scores, key=lambda k: scores.get(k, 0.0), reverse=True)[:top_k]
         result = [doc_map[doc_id] for doc_id in sorted_ids]
 
         # 标注融合分数

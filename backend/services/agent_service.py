@@ -8,10 +8,10 @@ Task: Implement agent service for LangGraph execution orchestration
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from langchain_core.language_models import BaseChatModel
-from langgraph.graph import StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from agents import get_agent_registry
 from agents.intent.agent import IntentAgent
@@ -52,7 +52,7 @@ class AgentService:
         self._llm = llm
         self._runtime_config = runtime_config or RuntimeConfig()
         self._runtime = AgentRuntime(config=self._runtime_config)
-        self._graph: Optional[StateGraph] = None
+        self._graph: Optional[CompiledStateGraph] = None
         self._initialized = False
 
     async def initialize(self) -> None:
@@ -201,7 +201,10 @@ class AgentService:
             config = checkpoint_tuple.config
             config["configurable"]["resumed_from_checkpoint"] = True
 
-            result = await self._graph.ainvoke(resumed_state, config=config)
+            result: AgentState = cast(
+                AgentState,
+                await self._graph.ainvoke(resumed_state, config=config),
+            )
 
             logger.info(
                 "A2A 恢复完成: checkpoint={}, answer_len={}",
@@ -218,7 +221,7 @@ class AgentService:
             logger.error("A2A 恢复失败: checkpoint={} — {}", checkpoint_id, e)
             return create_initial_state(user_query="resumed")
 
-    def get_graph(self) -> StateGraph:
+    def get_graph(self) -> CompiledStateGraph:
         """获取已编译的 LangGraph（需先 initialize）"""
         if self._graph is None:
             raise RuntimeError("AgentService 未初始化，请先调用 initialize()")

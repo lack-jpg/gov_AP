@@ -320,7 +320,11 @@ if __name__ == "__main__":
         # ── 2. 状态机持久化回调触发（无 DB 时静默降级） ──
         section("2. 状态机写穿（尝试 DB，失败降级）")
         await asyncio.sleep(0.3)  # 给写穿任务一点执行时间
-        check("store.get 返回更新后的 artifact", store.get(r1.task_id).artifact == {"property_count": 2})
+        updated = store.get(r1.task_id)
+        check(
+            "store.get 返回更新后的 artifact",
+            updated is not None and updated.artifact == {"property_count": 2},
+        )
 
         # ── 3. hydrate（DB 可用时验证持久化恢复） ──
         if with_db:
@@ -328,7 +332,11 @@ if __name__ == "__main__":
             store2 = PostgresTaskStore()
             await store2.hydrate()
             check("hydrate 后任务存在", store2.get(r1.task_id) is not None)
-            check("hydrate 后状态为 completed", store2.get(r1.task_id).status == A2ATaskStatus.COMPLETED)
+            hydrated = store2.get(r1.task_id)
+            check(
+                "hydrate 后状态为 completed",
+                hydrated is not None and hydrated.status == A2ATaskStatus.COMPLETED,
+            )
             store.delete(r1.task_id)
             store.delete(r2.task_id)
             await asyncio.sleep(0.3)

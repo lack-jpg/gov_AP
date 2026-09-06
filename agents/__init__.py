@@ -8,7 +8,7 @@ Task: Agent package initialization and registry
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from tools.logger import get_logger
 
@@ -90,11 +90,11 @@ class AgentRegistry:
             )
         return self._agents[name]
 
-    def list(self) -> list[str]:
+    def list(self) -> List[str]:
         """列出所有已注册的 Agent 名称"""
         return list(self._agents.keys())
 
-    def list_active(self) -> list[str]:
+    def list_active(self) -> List[str]:
         """列出所有活跃的 Agent 名称"""
         return [k for k, v in self._status.items() if v == "active"]
 

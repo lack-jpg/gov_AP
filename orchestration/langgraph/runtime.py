@@ -12,7 +12,7 @@ import asyncio
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, cast
 
 from tools.logger import get_logger
 from orchestration.langgraph.state import AgentState, RiskLevel
@@ -443,21 +443,21 @@ if __name__ == "__main__":
     print("=" * 60)
 
     rt2 = AgentRuntime(config=RuntimeConfig(max_steps=100, max_error_count=2))
-    s_err = {**state, "error": "failure_1"}
+    s_err: AgentState = cast(AgentState, {**state, "error": "failure_1"})
     try:
         rt2.check_step(s_err)
         check("error 1 OK", rt2.error_count == 1)
     except RuntimeExceededError:
         check("error 1 OK", False, "should not exceed yet")
 
-    s_err2 = {**state, "error": "failure_2"}
+    s_err2: AgentState = cast(AgentState, {**state, "error": "failure_2"})
     try:
         rt2.check_step(s_err2)
         check("error 2 OK", rt2.error_count == 2)
     except RuntimeExceededError:
         check("error 2 OK", False, "should not exceed yet")
 
-    s_err3 = {**state, "error": "failure_3"}
+    s_err3: AgentState = cast(AgentState, {**state, "error": "failure_3"})
     try:
         rt2.check_step(s_err3)
         check("error 3 → RuntimeExceededError", False, "should have raised")

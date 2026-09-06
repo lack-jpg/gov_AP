@@ -6,6 +6,11 @@ Date: 2026/7/29
 Version: 0.1
 Task: Implement checkpoint save/restore for long-running and A2A workflows
 """
+# 语言层适配说明：本文件以鸭子类型（dict）实现 langgraph BaseCheckpointSaver 接口，
+# 有意不与 langchain_core RunnableConfig/CheckpointMetadata 等 TypedDict 严格对齐，
+# 以兼容 langgraph 1.x 运行时（其按 dict 传参）。故模块级豁免 override 签名检查，
+# 个别构造点用行内 ignore[arg-type] 标注。
+# mypy: disable-error-code="override"
 from __future__ import annotations
 
 import asyncio
@@ -418,8 +423,8 @@ class PostgresCheckpointer(BaseCheckpointSaver):
                 }
             },
             checkpoint=checkpoint,
-            metadata=metadata,
-            parent_config=parent_config,
+            metadata=metadata,  # type: ignore[arg-type]  # langgraph 接受 dict 作为 CheckpointMetadata
+            parent_config=parent_config,  # type: ignore[arg-type]  # langgraph 接受 dict 作为 RunnableConfig
         )
 
     # ── 序列化兼容（LangGraph 1.x: dumps_typed → (str, bytes), loads_typed ← (str, bytes)）──

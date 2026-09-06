@@ -12,7 +12,7 @@ import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional, Sequence
+from typing import Any, Awaitable, Callable, Optional, Sequence
 
 from governance.evaluation.metrics import (
     AgentMetricResult,
@@ -174,7 +174,7 @@ class EvaluationEngine:
         version: str = "unknown",
         *,
         use_llm: bool = False,
-        llm_call: Optional[callable] = None,
+        llm_call: Optional[Callable[[str], str]] = None,
         weights: Optional[dict[str, float]] = None,
     ):
         self.version = version
@@ -251,7 +251,9 @@ class EvaluationEngine:
     async def evaluate_from_cases(
         self,
         cases: Sequence[dict[str, Any]],
-        trace_provider: Optional[callable] = None,
+        trace_provider: Optional[
+            Callable[[dict[str, Any]], Awaitable[list[dict[str, Any]]]]
+        ] = None,
         *,
         dataset_name: str = "unknown",
     ) -> EvaluationResult:
@@ -433,7 +435,7 @@ class EvaluationEngine:
 
     async def evaluate_from_db(
         self,
-        session_factory: Optional[callable] = None,
+        session_factory: Optional[Callable[[], Any]] = None,
         *,
         dataset_name: str = "db_traces",
         trace_filter: Optional[dict[str, Any]] = None,
@@ -596,7 +598,7 @@ class EvaluationEngine:
         if not results:
             return {"error": "No results to compare"}
 
-        comparison = {
+        comparison: dict[str, Any] = {
             "versions": [r.version for r in results],
             "overall_scores": [r.overall_score for r in results],
             "best_version": max(results, key=lambda r: r.overall_score).version,
@@ -638,7 +640,7 @@ class EvaluationEngine:
     async def save_result(
         self,
         result: EvaluationResult,
-        session_factory: Optional[callable] = None,
+        session_factory: Optional[Callable[[], Any]] = None,
     ) -> bool:
         """
         将评测结果保存到数据库。
@@ -1160,7 +1162,7 @@ def _smoke_test() -> None:
 
     # Test 13: Tool extraction from traces
     total += 1
-    traces = [
+    traces: list[dict[str, Any]] = [
         {"tool_name": "search_policy"},
         {"tool_calls": [{"name": "get_policy_detail"}]},
         {"mcp_history": [{"tool_name": "create_case"}]},

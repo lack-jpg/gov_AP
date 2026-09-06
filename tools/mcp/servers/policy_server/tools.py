@@ -221,9 +221,9 @@ async def search_policy(
     scored.sort(key=lambda x: x[1], reverse=True)
 
     # 取 top_k
-    documents: list[PolicyDocument] = []
+    stub_documents: list[PolicyDocument] = []
     for policy, score in scored[:top_k]:
-        documents.append(PolicyDocument(
+        stub_documents.append(PolicyDocument(
             document_id=policy["document_id"],
             title=policy["title"],
             content=policy["content"][:300],
@@ -232,9 +232,9 @@ async def search_policy(
         ))
 
     # 如果关键词无匹配，返回通用政策
-    if not documents:
+    if not stub_documents:
         general = _STUB_POLICIES[0]  # 食品经营许可
-        documents.append(PolicyDocument(
+        stub_documents.append(PolicyDocument(
             document_id=general["document_id"],
             title=general["title"],
             content=general["content"][:300],
@@ -243,7 +243,7 @@ async def search_policy(
         ))
 
     return SearchPolicyOutput(
-        documents=documents,
+        documents=stub_documents,
         total_found=len(scored),
         mode="stub",
     )

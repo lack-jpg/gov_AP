@@ -14,6 +14,7 @@ from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from agents.supervisor.agent import SupervisorAgent
 from tools.logger import get_logger
@@ -50,7 +51,7 @@ def build_graph(
     supervisor: Optional[SupervisorAgent] = None,
     mcp_client=None,
     a2a_connector=None,
-) -> StateGraph:
+) -> CompiledStateGraph:
     """
     构建完整的Agent工作流 StateGraph。
 
@@ -214,9 +215,9 @@ def build_graph(
 
     # ── 编译 ──
     if checkpointer is not None:
-        graph = graph.compile(checkpointer=checkpointer)
+        compiled = graph.compile(checkpointer=checkpointer)
     else:
-        graph = graph.compile()
+        compiled = graph.compile()
 
     logger.info(
         "LangGraph compiled successfully (checkpointer=%s, llm=%s)",
@@ -224,7 +225,7 @@ def build_graph(
         type(llm).__name__ if llm else "None",
     )
 
-    return graph
+    return compiled
 
 
 # ============================================================
@@ -232,7 +233,7 @@ def build_graph(
 # ============================================================
 
 
-def create_default_graph() -> StateGraph:
+def create_default_graph() -> CompiledStateGraph:
     """
     创建默认配置的Graph（无LLM，纯stub模式）。
 

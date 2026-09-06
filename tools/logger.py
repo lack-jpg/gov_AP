@@ -335,12 +335,12 @@ def setup_logging(
     _loguru_logger.remove()
 
     # 注入 trace 上下文到 record.extra（serialize=True 时随 JSON 输出）
-    _loguru_logger.configure(patcher=_patch_record)
+    _loguru_logger.configure(patcher=_patch_record)  # type: ignore[arg-type]  # loguru stub 期望 Record，运行期传入 dict-like record
 
     # ── 控制台输出 ──
     _loguru_logger.add(
         sys.stderr,
-        format=_console_format,
+        format=_console_format,  # type: ignore[arg-type]  # loguru stub 期望 Record
         level=level,
         filter=_mask_pii_filter,
         colorize=settings.debug,
@@ -360,7 +360,7 @@ def setup_logging(
     # ── 运行日志 ──
     _loguru_logger.add(
         os.path.join(log_dir, "app_{time:YYYY-MM-DD}.log"),
-        format=_file_format,
+        format=_file_format,  # type: ignore[arg-type]  # loguru stub 期望 Record
         level="INFO",
         filter=_mask_pii_filter,
         retention=retention,
@@ -371,7 +371,7 @@ def setup_logging(
     # ── 错误日志 ──
     _loguru_logger.add(
         os.path.join(log_dir, "error_{time:YYYY-MM-DD}.log"),
-        format=_error_file_format,
+        format=_error_file_format,  # type: ignore[arg-type]  # loguru stub 期望 Record
         level="ERROR",
         filter=_mask_pii_filter,
         retention=error_retention,
@@ -657,7 +657,7 @@ if __name__ == "__main__":
     if os.path.isdir(LOG_DIR):
         shutil.rmtree(LOG_DIR)
 
-    setup_logging(fake_settings)
+    setup_logging(fake_settings)  # type: ignore[arg-type]  # __main__ 自测桩，非真实 Settings
     check("setup_logging 不抛异常", True)
     check("logger/ 目录已创建", os.path.isdir(LOG_DIR))
 

@@ -12,9 +12,10 @@ import uuid
 from typing import Optional
 
 from fastapi import Depends, Header, HTTPException, Request, status
-from langgraph.graph import StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from backend.config import Settings, get_settings
+from orchestration.langgraph.state import AgentState
 
 
 # ============================================================
@@ -176,7 +177,7 @@ async def get_a2a_connector():
 # Agent Graph — 单例注入（惰性初始化）
 # ============================================================
 
-_agent_graph: Optional[StateGraph] = None
+_agent_graph: Optional[CompiledStateGraph] = None
 
 
 async def _is_db_available() -> bool:
@@ -209,7 +210,7 @@ async def _is_db_available() -> bool:
 
 async def get_agent_graph(
     settings: Settings = Depends(get_config),
-) -> StateGraph:
+) -> CompiledStateGraph:
     """
     获取或惰性创建Agent Graph（单例）。
 
@@ -304,7 +305,7 @@ async def execute_agent(
     prior_messages: Optional[list[dict]] = None,
     tenant_id: str = "default",
     user_role: str = "user",
-) -> dict:
+) -> AgentState:
     """
     执行一次完整的Agent工作流。
 
@@ -573,7 +574,9 @@ async def stream_agent(
     start_trace_with_id(trace_id, user_query=initial_state.get("user_query", ""))
     try:
         final_state = None
-        async for state in graph.astream(initial_state, config=config, stream_mode="values"):
+        # langgraph stub: stream_mode 字符串 + dict config 与 Pregel.astream 的
+        # RunnableConfig/StreamMode overload 不完全匹配，运行时（SSE 流式）正常
+        async for state in graph.astream(initial_state, config=config, stream_mode="values"):  # type: ignore[call-overload]
             node_name = state.get("current_node", "") or ""
             if node_name:
                 yield ("node", node_name)

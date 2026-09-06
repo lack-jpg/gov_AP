@@ -50,7 +50,7 @@ async def call_tool(request: ToolCallRequest, http_request: Request):
 
     try:
         if tool_name == "create_case":
-            result = await create_case(
+            create_result = await create_case(
                 user_id=args.get("user_id", ""),
                 service=args.get("service", ""),
                 materials=args.get("materials"),
@@ -60,19 +60,19 @@ async def call_tool(request: ToolCallRequest, http_request: Request):
             )
             return ToolCallResponse(
                 success=True,
-                result=result.model_dump(),
+                result=create_result.model_dump(),
                 server_name="workflow_server",
                 tool_name=tool_name,
             )
 
         elif tool_name == "query_status":
-            result = await query_status(
+            status_result = await query_status(
                 case_id=args.get("case_id", ""),
                 caller=_caller_from_headers(dict(http_request.headers)),
             )
             return ToolCallResponse(
                 success=True,
-                result=result.model_dump(),
+                result=status_result.model_dump(),
                 server_name="workflow_server",
                 tool_name=tool_name,
             )

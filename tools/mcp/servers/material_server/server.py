@@ -45,25 +45,25 @@ async def call_tool(request: ToolCallRequest):
         if tool_name == "extract_entity":
             field_schema_raw = args.get("field_schema")
             field_schema = field_schema_raw if isinstance(field_schema_raw, dict) else None
-            result = await extract_entity(
+            entity_result = await extract_entity(
                 file_id=args.get("file_id", ""),
                 field_schema=field_schema,
             )
             return ToolCallResponse(
                 success=True,
-                result=result.model_dump(),
+                result=entity_result.model_dump(),
                 server_name="material_server",
                 tool_name=tool_name,
             )
 
         elif tool_name == "check_material":
-            result = await check_material(
+            material_result = await check_material(
                 business_type=args.get("business_type", ""),
                 materials=args.get("materials", []),
             )
             return ToolCallResponse(
                 success=True,
-                result=result.model_dump(),
+                result=material_result.model_dump(),
                 server_name="material_server",
                 tool_name=tool_name,
             )
