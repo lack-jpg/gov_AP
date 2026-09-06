@@ -259,12 +259,22 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health_check():
         """健康检查端点"""
-        return {
+        health = {
             "status": "healthy",
             "app": settings.app_name,
             "version": settings.app_version,
             "log_level": settings.log_level,
         }
+        # P4-7：schema 版本可查（alembic_version 表）。DB 不可达时非致命，保持 /health 语义纯净。
+        try:
+            from database.connection import get_schema_version
+
+            ver = await get_schema_version()
+            if ver:
+                health["db_schema_version"] = ver["version_num"]
+        except Exception:
+            pass
+        return health
 
     # ── Prometheus 指标（供 Prometheus 抓取，无需认证） ──
     @app.get("/metrics", include_in_schema=False)

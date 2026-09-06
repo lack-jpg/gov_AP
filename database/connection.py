@@ -146,9 +146,11 @@ async def init_db() -> None:
     """
     初始化数据库表。
 
-    在应用启动时调用一次。
-    优先使用 Alembic 迁移（生产部署，管理 schema 版本）；
-    迁移不可用（如未安装 alembic）时回退到 create_all（开发模式）。
+    在应用启动时调用一次（P4-7 迁移策略收紧后）：
+    - 一律优先执行 Alembic 迁移到 head（schema 版本受版本表管理，可查可回滚）；
+    - Alembic 失败时，仅当 settings.db_allow_create_all=True（本地开发）才回退 create_all，
+      生产（docker compose 已设 DB_ALLOW_CREATE_ALL=false）直接抛出启动失败，
+      禁止静默绕过迁移 —— 这正是 trace 表 user_id/tenant_id 漂移的根源。
 
     注意：需显式导入 checkpointer 以确保 langgraph_checkpoints 表被注册到 Base.metadata。
     """
@@ -156,19 +158,47 @@ async def init_db() -> None:
     # 确保 checkpointer 的 _CheckpointRow 表也被注册（延迟导入避免循环引用）
     from orchestration.langgraph.checkpointer import _CheckpointRow  # noqa: F401
 
+    from tools.logger import get_logger as _get_logger
+    _logger = _get_logger(__name__)
+
     # ── 优先 Alembic 迁移 ──
     try:
         await run_alembic_upgrade()
         return
     except Exception as e:
-        # Alembic 不可用 → 回退 create_all（不会删除已有数据）
-        from tools.logger import get_logger as _get_logger
-        _logger = _get_logger(__name__)
-        _logger.warning("Alembic 迁移不可用，回退到 create_all: {}", e)
+        settings = get_settings()
+        if not settings.db_allow_create_all:
+            _logger.error(
+                "Alembic 迁移失败且已禁用 create_all 兜底（DB_ALLOW_CREATE_ALL=false），"
+                "拒绝启动以避免 schema 漂移: {}",
+                e,
+            )
+            raise
+        # 仅本地开发回退 create_all（不会删除已有数据）
+        _logger.warning("Alembic 迁移不可用，回退到 create_all（开发模式）: {}", e)
         engine = get_engine()
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         _logger.warning("表已通过 create_all 创建（非迁移模式，生产环境建议配置 Alembic）")
+
+
+async def get_schema_version() -> dict[str, str]:
+    """
+    读取当前 DB 的 Alembic schema 版本（P4-7：schema 版本可查）。
+
+    Returns:
+        {"version_num": <alembic_version 现值>}；版本表不存在时返回空 dict。
+        仅用于观测/健康检查，调用方需自行 try/except（DB 不可达时非致命）。
+    """
+    try:
+        from sqlalchemy import text
+
+        async with get_engine().connect() as conn:
+            row = await conn.execute(text("SELECT version_num FROM alembic_version"))
+            val = row.scalar()
+            return {"version_num": val} if val else {}
+    except Exception:
+        return {}
 
 
 async def close_db() -> None:

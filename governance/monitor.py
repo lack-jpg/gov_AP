@@ -404,6 +404,30 @@ class MetricsCollector:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
+    def record_llm_usage(
+        self,
+        agent_name: str,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> None:
+        """
+        记录一次 LLM token 用量（P4-6：接线 llm_tokens_total，使成本指标/告警/看板可用）。
+
+        由 governance.callbacks.TokenUsageCallback 在每次真实 LLM 调用成功后调用
+        （与 trace span 的记录点同源），此前该 counter 只有定义、无人上报，
+        导致 Grafana "LLM Token 用量" 面板与 HighTokenConsumption 告警恒为空。
+
+        Args:
+            agent_name: 归属的 Agent 名称（LLM 调用时的当前 Agent）
+            input_tokens: 输入 token 数
+            output_tokens: 输出 token 数
+        """
+        labels = {"agent": agent_name}
+        if input_tokens > 0:
+            self._llm_tokens_total.inc(float(input_tokens), {**labels, "type": "input"})
+        if output_tokens > 0:
+            self._llm_tokens_total.inc(float(output_tokens), {**labels, "type": "output"})
+
     def record_guardrail_block(
         self,
         guard_type: str,
@@ -716,6 +740,19 @@ def record_tool_call(
         agent_name=agent_name,
         success=success,
         latency_ms=latency_ms,
+    )
+
+
+def record_llm_usage(
+    agent_name: str,
+    input_tokens: int,
+    output_tokens: int,
+) -> None:
+    """快速记录一次 LLM token 用量（使用全局 collector）"""
+    get_collector().record_llm_usage(
+        agent_name=agent_name,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
     )
 
 

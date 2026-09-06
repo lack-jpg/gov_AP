@@ -208,6 +208,15 @@ class Settings(BaseSettings):
         alias="POSTGRES_DB",
         description="PostgreSQL数据库名",
     )
+    db_allow_create_all: bool = Field(
+        default=True,
+        alias="DB_ALLOW_CREATE_ALL",
+        description=(
+            "运行时 create_all 兜底开关（P4-7）。仅本地开发可开：Alembic 迁移失败时"
+            "回退 create_all 建表；生产（docker compose 设 false）迁移失败直接终止启动，"
+            "禁止静默绕过迁移导致 schema 漂移。"
+        ),
+    )
 
     @property
     def postgres_url(self) -> str:

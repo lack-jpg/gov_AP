@@ -1,5 +1,13 @@
 # Alertmanager 配置 — gov-agent
-# 默认接收器为占位 webhook，可替换为钉钉/企业微信/邮件/Slack 等
+# 默认接收器为可配置 webhook（P4-6）：URL 占位符 __ALERTMANAGER_WEBHOOK_URL__ /
+# __ALERTMANAGER_WATCHDOG_WEBHOOK_URL__ 由 docker-compose 以 sed 替换为环境变量
+# ALERTMANAGER_WEBHOOK_URL / ALERTMANAGER_WATCHDOG_WEBHOOK_URL，无需手改本文件即可
+# 接入真实通知通道（飞书/钉钉/企业微信/Slack/邮件等均可通过 webhook 对接）。
+#
+#   - default  receiver → 业务告警（AgentHighFailureRate/AgentHighLatency/ApiNoTraffic/HighTokenConsumption），
+#     替换 ALERTMANAGER_WEBHOOK_URL 指向真实群机器人即可“可达人”；
+#   - watchdog receiver → 仅接收 Watchdog 金丝雀告警（链路自检，见 alert_rules.yml），
+#     指向本地 echo 端点验证管线，避免金丝雀噪音污染业务通道。
 global:
   resolve_timeout: 5m
 
@@ -9,9 +17,22 @@ route:
   group_wait: 10s
   group_interval: 10s
   repeat_interval: 1h
+  routes:
+    - matchers:
+        - alertname = "Watchdog"
+      receiver: watchdog
+      group_wait: 10s
+      group_interval: 30s
+      repeat_interval: 1h
 
 receivers:
   - name: default
     webhook_configs:
-      - url: "http://host.docker.internal:8000/alert"  # 占位 webhook（替换为真实告警通道）
+      - url: "__ALERTMANAGER_WEBHOOK_URL__"
+        send_resolved: true
+
+  # Watchdog 自检专用 receiver —— 生产可改为独立群/静默，勿与业务通道混用
+  - name: watchdog
+    webhook_configs:
+      - url: "__ALERTMANAGER_WATCHDOG_WEBHOOK_URL__"
         send_resolved: true

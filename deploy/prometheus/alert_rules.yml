@@ -41,3 +41,16 @@ groups:
         annotations:
           summary: "LLM Token 消耗激增 (>50k/5m)"
           description: "最近 5 分钟 LLM token 消耗超过 50000，检查是否有异常循环调用或缓存失效。"
+
+      # ── Watchdog 金丝雀告警（P4-6 告警链路自检） ──
+      # 恒为触发态，用于验证 Prometheus → Alertmanager → 通知通道 整条链路可用。
+      # 若长时间收不到 Watchdog 通知，说明告警管线已断（业界标准做法，同 prometheus-operator）。
+      # Alertmanager 将其路由到独立 receiver（见 alertmanager.yml），验证后可在路由中静默。
+      - alert: Watchdog
+        expr: vector(1)
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: "告警链路自检（Watchdog）"
+          description: "平台告警链路 Prometheus → Alertmanager → 通知通道 正常，本告警持续存在属预期。"

@@ -28,6 +28,9 @@ from governance.trace import (
     get_current_agent_name,
     record_llm_usage,
 )
+# P4-6：LLM token 用量同步上报 Prometheus 指标（trace span 与 metric 双写）。
+# 此前 _llm_tokens_total 只有定义、无人上报，成本面板/告警恒为空。
+from governance.monitor import record_llm_usage as record_llm_token_metric
 from tools.logger import get_logger
 
 logger = get_logger(__name__)
@@ -83,11 +86,22 @@ class TokenUsageCallback(BaseCallbackHandler):
         # 归属到当前 Agent（默认 'llm'）
         agent_name = get_current_agent_name()
 
+        # trace span（AgentOps 成本追踪）
         record_llm_usage(
             agent_name=agent_name,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )
+        # Prometheus 指标 llm_tokens_total（看板/告警数据源）
+        try:
+            record_llm_token_metric(
+                agent_name=agent_name,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+        except Exception:
+            # 指标上报失败不影响主链路（trace span 已记录）
+            pass
 
         logger.debug(
             "LLM token usage: agent={} in={} out={}",

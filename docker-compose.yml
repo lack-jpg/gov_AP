@@ -54,6 +54,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-gov_agent}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_DB: ${POSTGRES_DB:-gov_agent_platform}
+      # P4-7：生产禁止 create_all 兜底——迁移失败容器启动即失败（schema 版本受 alembic_version 管理）
+      DB_ALLOW_CREATE_ALL: ${DB_ALLOW_CREATE_ALL:-false}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
@@ -164,8 +166,19 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-gov_agent}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_DB: ${POSTGRES_DB:-gov_agent_platform}
+      # 真实 RAG 主链路：policy_server 经 rag.pipeline 检索，需连 Milvus（服务名 milvus，容器内 19530）
+      MILVUS_HOST: milvus
+      MILVUS_PORT: "19530"
+    volumes:
+      # 语料与模型由宿主机挂入（镜像已由 .dockerignore 排除 data/models，构建时不含）
+      # 只读挂载：mcp-server 以非 root mcpuser 运行，Windows bind mount 目录为 root 所有，
+      # 本服务只读语料/模型（写入走 Milvus/PostgreSQL 网络），无需可写权限。
+      - ./data:/app/data:ro
+      - ./models:/app/models:ro
     depends_on:
       postgres:
+        condition: service_healthy
+      milvus:
         condition: service_healthy
     networks:
       - gov_agent_net
@@ -272,10 +285,26 @@ services:
     restart: unless-stopped
     ports:
       - "${ALERTMANAGER_PORT:-12431}:9093"
+    environment:
+      # P4-6：通知通道 URL 通过环境变量注入（无需手改 alertmanager.yml）。
+      # 生产把 ALERTMANAGER_WEBHOOK_URL 指向真实群机器人（飞书/钉钉/企微/Slack）。
+      # Watchdog 自检走独立 echo 端点，不污染业务通道。
+      ALERTMANAGER_WEBHOOK_URL: ${ALERTMANAGER_WEBHOOK_URL:-http://host.docker.internal:8000/alert}
+      ALERTMANAGER_WATCHDOG_WEBHOOK_URL: ${ALERTMANAGER_WATCHDOG_WEBHOOK_URL:-http://host.docker.internal:18000/alert}
     volumes:
       - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    # prom/alertmanager 镜像自带 ENTRYPOINT ["/bin/alertmanager"]，
+    # 若只设 command 会被拼到入口后变成 `alertmanager sh ...`（"unexpected sh"）。
+    # 用 entrypoint: [] 清空镜像入口，改用 sh -c 做 sed 环境变量替换再启动。
+    entrypoint: []
+    # Alertmanager 原生不支持 env 展开，此处用 sed 将占位符替换为环境变量再启动。
+    # 注意：命令必须是单行 shell 脚本——YAML 折叠块会保留换行，多行会把
+    # sed 的参数行拆成独立命令（shell 去执行 alertmanager.yml 报 "line N: -: not found"）。
+    # (URL 不含 '|'，作为 sed 分隔符安全)
     command:
-      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - /bin/sh
+      - -c
+      - 'sed "s|__ALERTMANAGER_WEBHOOK_URL__|$${ALERTMANAGER_WEBHOOK_URL}|g; s|__ALERTMANAGER_WATCHDOG_WEBHOOK_URL__|$${ALERTMANAGER_WATCHDOG_WEBHOOK_URL}|g" /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml && exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager'
     networks:
       - gov_agent_net
 

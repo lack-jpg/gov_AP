@@ -21,6 +21,15 @@ for d in /app/logger /app/data /app/models /app/evaluation_results; do
     fi
 done
 
+# ──────────────────────────────────────────────────────────────
+# P4-7 DB 迁移：发布流程显式执行 alembic upgrade head（带 advisory lock）
+#  - 由 deploy/run_migrations.py 串行化迁移，多副本滚动发布不竞争
+#  - 迁移失败非零退出 → 容器启动失败，禁止带漂移 schema 对外服务
+#  - 移除旧 "启动即静默 create_all 兜底"（现仅在本地开发 DB_ALLOW_CREATE_ALL=true 兜底）
+# ──────────────────────────────────────────────────────────────
+echo "[entrypoint] running database migrations..."
+python /app/deploy/run_migrations.py
+
 # 以 appuser 身份运行原始 CMD；exec 使 uvicorn 成为 PID 1，信号正常透传
 # 注：setpriv 只切换 uid/gid，不更新 HOME —— 显式指向 appuser 家目录，
 #     避免 PostgreSQL 客户端（asyncpg）去读 /root/.postgresql/ 触发 Permission denied。

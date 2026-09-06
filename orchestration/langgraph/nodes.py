@@ -249,117 +249,129 @@ async def policy_node(
 
     _start = time.perf_counter()
     try:
-        user_query = state.get("user_query", "")
-        intent = state.get("intent", "")
+        async with AgentTracer.span(
+            agent_name=AgentName.POLICY.value,
+            kind=SpanKind.AGENT,
+            node_name=NodeName.POLICY.value,
+            input_data=state.get("user_query", "")[:500],
+        ) as span:
+            user_query = state.get("user_query", "")
+            intent = state.get("intent", "")
 
-        # Phase 2: 通过 MCP Client 调用 Policy Server
-        if mcp_client is not None:
-            try:
-                search_result = await mcp_client.call_tool(
-                    "policy_server",
-                    "search_policy",
-                    {"query": user_query, "top_k": 5},
-                    trace_id=state.get("trace_id", ""),
-                    user_context=_mcp_user_context(state),
-                )
-                docs = search_result.get("documents", [])
-                answer = _build_answer_from_mcp(docs, intent, user_query)
+            # Phase 2: 通过 MCP Client 调用 Policy Server
+            if mcp_client is not None:
+                try:
+                    search_result = await mcp_client.call_tool(
+                        "policy_server",
+                        "search_policy",
+                        {"query": user_query, "top_k": 5},
+                        trace_id=state.get("trace_id", ""),
+                        user_context=_mcp_user_context(state),
+                    )
+                    docs = search_result.get("documents", [])
+                    answer = _build_answer_from_mcp(docs, intent, user_query)
 
-                evidence = []
-                for doc in docs[:3]:
-                    evidence.append({
-                        "source": doc.get("source", ""),
-                        "excerpt": doc.get("content", "")[:200],
-                        "relevance_score": doc.get("score", 0.0),
-                    })
+                    evidence = []
+                    for doc in docs[:3]:
+                        evidence.append({
+                            "source": doc.get("source", ""),
+                            "excerpt": doc.get("content", "")[:200],
+                            "relevance_score": doc.get("score", 0.0),
+                        })
 
-                policy_result = PolicyResult(
-                    answer=answer,
-                    evidence=evidence,  # type: ignore[arg-type]
-                    confidence=0.85 if docs else 0.0,
-                )
-                state["policy_result"] = policy_result.model_dump()
+                    policy_result = PolicyResult(
+                        answer=answer,
+                        evidence=evidence,  # type: ignore[arg-type]
+                        confidence=0.85 if docs else 0.0,
+                    )
+                    state["policy_result"] = policy_result.model_dump()
 
-                mcp = MCPCallRecord(
-                    trace_id=state["trace_id"],
-                    server_name="policy_server",
-                    tool_name="search_policy",
-                    input_args={"query": user_query, "top_k": 5},
-                    output_result={"documents_found": len(docs)},
-                    latency_ms=0.0,
-                    status=MCPCallStatus.SUCCESS,
-                )
-                state = record_mcp_call(state, mcp)
+                    mcp = MCPCallRecord(
+                        trace_id=state["trace_id"],
+                        server_name="policy_server",
+                        tool_name="search_policy",
+                        input_args={"query": user_query, "top_k": 5},
+                        output_result={"documents_found": len(docs)},
+                        latency_ms=0.0,
+                        status=MCPCallStatus.SUCCESS,
+                    )
+                    state = record_mcp_call(state, mcp)
 
-                # 标记任务完成
-                task_plan = state.get("task_plan", [])
-                updated_plan: list[dict] = []
-                for t in task_plan:
-                    agent = t.get("agent", "")
-                    if agent == AgentName.POLICY.value and t.get("status") == TaskStatus.PENDING.value:
-                        t = {**t, "status": TaskStatus.COMPLETED.value}
-                    updated_plan.append(t)
-                state["task_plan"] = updated_plan
+                    # 标记任务完成
+                    task_plan = state.get("task_plan", [])
+                    updated_plan: list[dict] = []
+                    for t in task_plan:
+                        agent = t.get("agent", "")
+                        if agent == AgentName.POLICY.value and t.get("status") == TaskStatus.PENDING.value:
+                            t = {**t, "status": TaskStatus.COMPLETED.value}
+                        updated_plan.append(t)
+                    state["task_plan"] = updated_plan
 
-                record_agent_call(
-                    AgentName.POLICY.value,
-                    success=True,
-                    latency_ms=(time.perf_counter() - _start) * 1000.0,
-                    trace_id=state.get("trace_id"),
-                )
-                return state
+                    span.record_output(
+                        f"answer_len={len(answer)} docs={len(docs)} evidence={len(evidence)}"
+                    )
+                    record_agent_call(
+                        AgentName.POLICY.value,
+                        success=True,
+                        latency_ms=(time.perf_counter() - _start) * 1000.0,
+                        trace_id=state.get("trace_id"),
+                    )
+                    return state
 
-            except Exception as e:
-                logger.warning("MCP policy search failed, falling back to stub: {}", e)
+                except Exception as e:
+                    logger.warning("MCP policy search failed, falling back to stub: {}", e)
 
-        # ── Fallback: LLM Agent 或 stub 模板 ──
-        if llm is not None:
-            try:
-                from agents.policy.agent import PolicyAgent
+            # ── Fallback: LLM Agent 或 stub 模板 ──
+            if llm is not None:
+                try:
+                    from agents.policy.agent import PolicyAgent
 
-                agent = PolicyAgent(llm=llm)
-                result = await agent.search_with_intent(user_query, intent)
-                policy_result = PolicyResult(
-                    answer=result.answer,
-                    evidence=[],
-                    confidence=result.confidence,
-                )
-                logger.info("PolicyAgent LLM 生成回答完成 (confidence={:.2f})", result.confidence)
-            except Exception as e:
-                logger.warning("PolicyAgent 失败，回退 stub: {}", e)
+                    agent = PolicyAgent(llm=llm)
+                    result = await agent.search_with_intent(user_query, intent)
+                    policy_result = PolicyResult(
+                        answer=result.answer,
+                        evidence=[],
+                        confidence=result.confidence,
+                    )
+                    logger.info("PolicyAgent LLM 生成回答完成 (confidence={:.2f})", result.confidence)
+                except Exception as e:
+                    logger.warning("PolicyAgent 失败，回退 stub: {}", e)
+                    stub_answer = _stub_policy_search(intent, user_query)
+                    policy_result = PolicyResult(
+                        answer=stub_answer["answer"],
+                        evidence=[],
+                        confidence=0.9,
+                    )
+            else:
                 stub_answer = _stub_policy_search(intent, user_query)
                 policy_result = PolicyResult(
                     answer=stub_answer["answer"],
                     evidence=[],
                     confidence=0.9,
                 )
-        else:
-            stub_answer = _stub_policy_search(intent, user_query)
-            policy_result = PolicyResult(
-                answer=stub_answer["answer"],
-                evidence=[],
-                confidence=0.9,
+            state["policy_result"] = policy_result.model_dump()
+
+            # 标记task_plan中对应的policy任务为完成
+            task_plan = state.get("task_plan", [])
+            updated_plan = []  # 类型沿用上方 try 分支首次注解，勿重复注解（mypy no-redef）
+            for t in task_plan:
+                agent = t.get("agent", "")
+                if agent == AgentName.POLICY.value and t.get("status") == TaskStatus.PENDING.value:
+                    t = {**t, "status": TaskStatus.COMPLETED.value}
+                updated_plan.append(t)
+            state["task_plan"] = updated_plan
+
+            # 注意：stub fallback 不再伪造 MCPCallRecord
+            span.record_output(
+                f"answer_len={len(state['policy_result'].get('answer', ''))} "
+                f"evidence={len(state['policy_result'].get('evidence', []))}"
             )
-        state["policy_result"] = policy_result.model_dump()
-
-        # 标记task_plan中对应的policy任务为完成
-        task_plan = state.get("task_plan", [])
-        updated_plan = []  # 类型沿用上方 try 分支首次注解，勿重复注解（mypy no-redef）
-        for t in task_plan:
-            agent = t.get("agent", "")
-            if agent == AgentName.POLICY.value and t.get("status") == TaskStatus.PENDING.value:
-                t = {**t, "status": TaskStatus.COMPLETED.value}
-            updated_plan.append(t)
-        state["task_plan"] = updated_plan
-
-        # 注意：stub fallback 不再伪造 MCPCallRecord
-
-        record_agent_call(
-            AgentName.POLICY.value,
-            success=True,
-            latency_ms=(time.perf_counter() - _start) * 1000.0,
-            trace_id=state.get("trace_id"),
-        )
+            record_agent_call(
+                AgentName.POLICY.value,
+                success=True,
+                latency_ms=(time.perf_counter() - _start) * 1000.0,
+                trace_id=state.get("trace_id"),
+            )
 
     except Exception as e:
         logger.error(f"Policy search failed: {e}", exc_info=True)
@@ -448,96 +460,110 @@ async def material_node(
 
     try:
         _start = time.perf_counter()
-        intent = state.get("intent", "business_license")
+        async with AgentTracer.span(
+            agent_name=AgentName.MATERIAL.value,
+            kind=SpanKind.AGENT,
+            node_name=NodeName.MATERIAL.value,
+            input_data=state.get("intent", "business_license")[:500],
+        ) as span:
+            intent = state.get("intent", "business_license")
 
-        # Phase 2: 通过 MCP Client 调用 Material Server
-        if mcp_client is not None:
+            # Phase 2: 通过 MCP Client 调用 Material Server
+            if mcp_client is not None:
+                try:
+                    material_result = await mcp_client.call_tool(
+                        "material_server",
+                        "check_material",
+                        {"business_type": intent, "materials": []},
+                        trace_id=state.get("trace_id", ""),
+                        user_context=_mcp_user_context(state),
+                    )
+                    result = MaterialCheckResult(
+                        passed=material_result.get("passed", True),
+                        missing=material_result.get("missing", []),
+                        warnings=material_result.get("warnings", []),
+                    )
+                    state["material_result"] = result.model_dump()
+
+                    mcp = MCPCallRecord(
+                        trace_id=state["trace_id"],
+                        server_name="material_server",
+                        tool_name="check_material",
+                        input_args={"business_type": intent, "materials": []},
+                        output_result=material_result,
+                        latency_ms=0.0,
+                        status=MCPCallStatus.SUCCESS,
+                    )
+                    state = record_mcp_call(state, mcp)
+
+                    # 标记任务完成
+                    task_plan = state.get("task_plan", [])
+                    updated_plan: list[dict] = []
+                    for t in task_plan:
+                        agent = t.get("agent", "")
+                        if agent == AgentName.MATERIAL.value and t.get("status") == TaskStatus.PENDING.value:
+                            t = {**t, "status": TaskStatus.COMPLETED.value}
+                        updated_plan.append(t)
+                    state["task_plan"] = updated_plan
+
+                    span.record_output(
+                        f"passed={result.passed} missing={len(result.missing)} "
+                        f"warnings={len(result.warnings)}"
+                    )
+                    record_agent_call(
+                        AgentName.MATERIAL.value,
+                        success=True,
+                        latency_ms=(time.perf_counter() - _start) * 1000.0,
+                        trace_id=state.get("trace_id"),
+                    )
+                    return state
+
+                except Exception as e:
+                    logger.warning("MCP material check failed, falling back to stub: {}", e)
+
+            # ── Fallback: MaterialAgent 规则检查 ──
             try:
-                material_result = await mcp_client.call_tool(
-                    "material_server",
-                    "check_material",
-                    {"business_type": intent, "materials": []},
-                    trace_id=state.get("trace_id", ""),
-                    user_context=_mcp_user_context(state),
-                )
-                result = MaterialCheckResult(
-                    passed=material_result.get("passed", True),
-                    missing=material_result.get("missing", []),
-                    warnings=material_result.get("warnings", []),
-                )
-                state["material_result"] = result.model_dump()
+                from agents.material.agent import MaterialAgent
 
-                mcp = MCPCallRecord(
-                    trace_id=state["trace_id"],
-                    server_name="material_server",
-                    tool_name="check_material",
-                    input_args={"business_type": intent, "materials": []},
-                    output_result=material_result,
-                    latency_ms=0.0,
-                    status=MCPCallStatus.SUCCESS,
+                agent = MaterialAgent(llm=llm)
+                result = await agent.review(
+                    file_bytes=None,
+                    business_type=intent,
+                    submitted_materials=None,
                 )
-                state = record_mcp_call(state, mcp)
-
-                # 标记任务完成
-                task_plan = state.get("task_plan", [])
-                updated_plan: list[dict] = []
-                for t in task_plan:
-                    agent = t.get("agent", "")
-                    if agent == AgentName.MATERIAL.value and t.get("status") == TaskStatus.PENDING.value:
-                        t = {**t, "status": TaskStatus.COMPLETED.value}
-                    updated_plan.append(t)
-                state["task_plan"] = updated_plan
-
-                record_agent_call(
-                    AgentName.MATERIAL.value,
-                    success=True,
-                    latency_ms=(time.perf_counter() - _start) * 1000.0,
-                    trace_id=state.get("trace_id"),
+                logger.info(
+                    "MaterialAgent 审核完成: passed={}, missing={}, warnings={}",
+                    result.passed, len(result.missing), len(result.warnings),
                 )
-                return state
-
             except Exception as e:
-                logger.warning("MCP material check failed, falling back to stub: {}", e)
+                logger.warning("MaterialAgent 失败，回退 stub: {}", e)
+                result = MaterialCheckResult(
+                    passed=True,
+                    missing=[],
+                    warnings=["当前为stub模式，未进行真实材料审核"],
+                )
+            state["material_result"] = result.model_dump()
 
-        # ── Fallback: MaterialAgent 规则检查 ──
-        try:
-            from agents.material.agent import MaterialAgent
+            # 标记task_plan中对应的material任务为完成
+            task_plan = state.get("task_plan", [])
+            updated_plan = []  # 类型沿用上方 try 分支首次注解，勿重复注解（mypy no-redef）
+            for t in task_plan:
+                agent = t.get("agent", "")
+                if agent == AgentName.MATERIAL.value and t.get("status") == TaskStatus.PENDING.value:
+                    t = {**t, "status": TaskStatus.COMPLETED.value}
+                updated_plan.append(t)
+            state["task_plan"] = updated_plan
 
-            agent = MaterialAgent(llm=llm)
-            result = await agent.review(
-                file_bytes=None,
-                business_type=intent,
-                submitted_materials=None,
+            span.record_output(
+                f"passed={result.passed} missing={len(result.missing)} "
+                f"warnings={len(result.warnings)}"
             )
-            logger.info(
-                "MaterialAgent 审核完成: passed={}, missing={}, warnings={}",
-                result.passed, len(result.missing), len(result.warnings),
+            record_agent_call(
+                AgentName.MATERIAL.value,
+                success=True,
+                latency_ms=(time.perf_counter() - _start) * 1000.0,
+                trace_id=state.get("trace_id"),
             )
-        except Exception as e:
-            logger.warning("MaterialAgent 失败，回退 stub: {}", e)
-            result = MaterialCheckResult(
-                passed=True,
-                missing=[],
-                warnings=["当前为stub模式，未进行真实材料审核"],
-            )
-        state["material_result"] = result.model_dump()
-
-        # 标记task_plan中对应的material任务为完成
-        task_plan = state.get("task_plan", [])
-        updated_plan = []  # 类型沿用上方 try 分支首次注解，勿重复注解（mypy no-redef）
-        for t in task_plan:
-            agent = t.get("agent", "")
-            if agent == AgentName.MATERIAL.value and t.get("status") == TaskStatus.PENDING.value:
-                t = {**t, "status": TaskStatus.COMPLETED.value}
-            updated_plan.append(t)
-        state["task_plan"] = updated_plan
-
-        record_agent_call(
-            AgentName.MATERIAL.value,
-            success=True,
-            latency_ms=(time.perf_counter() - _start) * 1000.0,
-            trace_id=state.get("trace_id"),
-        )
 
     except Exception as e:
         logger.error(f"Material check failed: {e}", exc_info=True)
@@ -595,96 +621,105 @@ async def workflow_node(
 
     try:
         _start = time.perf_counter()
-        intent = state.get("intent", "unknown")
-        user_id = state.get("user_id", "anonymous")
-        tenant_id = state.get("tenant_id", "default")
+        async with AgentTracer.span(
+            agent_name=AgentName.WORKFLOW.value,
+            kind=SpanKind.AGENT,
+            node_name=NodeName.WORKFLOW.value,
+            input_data=state.get("intent", "unknown")[:500],
+        ) as span:
+            intent = state.get("intent", "unknown")
+            user_id = state.get("user_id", "anonymous")
+            tenant_id = state.get("tenant_id", "default")
 
-        # ── 主链路：MCP Client → Gateway → workflow_server → PostgreSQL ──
-        if mcp_client is not None:
-            try:
-                case_result = await mcp_client.call_tool(
-                    "workflow_server",
-                    "create_case",
-                    {"user_id": user_id, "service": intent, "tenant_id": tenant_id},
-                    trace_id=state.get("trace_id", ""),
-                    user_context=_mcp_user_context(state),
-                )
+            # ── 主链路：MCP Client → Gateway → workflow_server → PostgreSQL ──
+            if mcp_client is not None:
+                try:
+                    case_result = await mcp_client.call_tool(
+                        "workflow_server",
+                        "create_case",
+                        {"user_id": user_id, "service": intent, "tenant_id": tenant_id},
+                        trace_id=state.get("trace_id", ""),
+                        user_context=_mcp_user_context(state),
+                    )
 
-                mcp = MCPCallRecord(
-                    trace_id=state["trace_id"],
-                    server_name="workflow_server",
-                    tool_name="create_case",
-                    input_args={"user_id": user_id, "service": intent},
-                    output_result=case_result,
-                    latency_ms=0.0,
-                    status=MCPCallStatus.SUCCESS,
-                )
-                state = record_mcp_call(state, mcp)
+                    mcp = MCPCallRecord(
+                        trace_id=state["trace_id"],
+                        server_name="workflow_server",
+                        tool_name="create_case",
+                        input_args={"user_id": user_id, "service": intent},
+                        output_result=case_result,
+                        latency_ms=0.0,
+                        status=MCPCallStatus.SUCCESS,
+                    )
+                    state = record_mcp_call(state, mcp)
 
-                # P1-5: 回写 case_id 到 AgentState（供状态查询与审计关联）
-                case_id = (case_result or {}).get("case_id", "")
-                state["case_id"] = case_id
-                state["workflow_result"] = {
-                    "case_id": case_id,
-                    "service": intent,
-                    "status": (case_result or {}).get("status", "created"),
-                }
+                    # P1-5: 回写 case_id 到 AgentState（供状态查询与审计关联）
+                    case_id = (case_result or {}).get("case_id", "")
+                    state["case_id"] = case_id
+                    state["workflow_result"] = {
+                        "case_id": case_id,
+                        "service": intent,
+                        "status": (case_result or {}).get("status", "created"),
+                    }
 
-                _mark_workflow_task(state, TaskStatus.COMPLETED)
+                    _mark_workflow_task(state, TaskStatus.COMPLETED)
 
-                record_agent_call(
-                    AgentName.WORKFLOW.value,
-                    success=True,
-                    latency_ms=(time.perf_counter() - _start) * 1000.0,
-                    trace_id=state.get("trace_id"),
-                )
-                return state
+                    span.record_output(f"case_id={case_id} status=created")
+                    record_agent_call(
+                        AgentName.WORKFLOW.value,
+                        success=True,
+                        latency_ms=(time.perf_counter() - _start) * 1000.0,
+                        trace_id=state.get("trace_id"),
+                    )
+                    return state
 
-            except Exception as e:
-                # P1-5: 办件创建失败 → 明确失败，禁止静默 mock
-                logger.error("办件创建失败（P1-5 禁止静默 mock）: {}", e)
-                state = record_mcp_call(state, MCPCallRecord(
-                    trace_id=state["trace_id"],
-                    server_name="workflow_server",
-                    tool_name="create_case",
-                    input_args={"user_id": user_id, "service": intent},
-                    output_result=None,
-                    latency_ms=(time.perf_counter() - _start) * 1000.0,
-                    status=MCPCallStatus.FAILED,
-                    error_message=str(e),
-                ))
-                state["case_id"] = ""
-                state["workflow_result"] = {
-                    "case_id": "",
-                    "service": intent,
-                    "status": "failed",
-                    "error": str(e),
-                }
-                _mark_workflow_task(state, TaskStatus.FAILED)
-                record_agent_call(
-                    AgentName.WORKFLOW.value,
-                    success=False,
-                    latency_ms=(time.perf_counter() - _start) * 1000.0,
-                    trace_id=state.get("trace_id"),
-                )
-                return state
+                except Exception as e:
+                    # P1-5: 办件创建失败 → 明确失败，禁止静默 mock
+                    logger.error("办件创建失败（P1-5 禁止静默 mock）: {}", e)
+                    state = record_mcp_call(state, MCPCallRecord(
+                        trace_id=state["trace_id"],
+                        server_name="workflow_server",
+                        tool_name="create_case",
+                        input_args={"user_id": user_id, "service": intent},
+                        output_result=None,
+                        latency_ms=(time.perf_counter() - _start) * 1000.0,
+                        status=MCPCallStatus.FAILED,
+                        error_message=str(e),
+                    ))
+                    state["case_id"] = ""
+                    state["workflow_result"] = {
+                        "case_id": "",
+                        "service": intent,
+                        "status": "failed",
+                        "error": str(e),
+                    }
+                    _mark_workflow_task(state, TaskStatus.FAILED)
+                    span.record_output(f"case_id= status=failed error={str(e)[:200]}")
+                    record_agent_call(
+                        AgentName.WORKFLOW.value,
+                        success=False,
+                        latency_ms=(time.perf_counter() - _start) * 1000.0,
+                        trace_id=state.get("trace_id"),
+                    )
+                    return state
 
-        # ── MCP 未配置：明确失败，不再生成模拟办件 ──
-        logger.error("MCP Client 未配置，无法创建办件（P1-5）")
-        state["case_id"] = ""
-        state["workflow_result"] = {
-            "case_id": "",
-            "service": intent,
-            "status": "failed",
-            "error": "MCP Client 未配置，办件服务不可用",
-        }
-        _mark_workflow_task(state, TaskStatus.FAILED)
-        record_agent_call(
-            AgentName.WORKFLOW.value,
-            success=False,
-            latency_ms=(time.perf_counter() - _start) * 1000.0,
-            trace_id=state.get("trace_id"),
-        )
+            # ── MCP 未配置：明确失败，不再生成模拟办件 ──
+            logger.error("MCP Client 未配置，无法创建办件（P1-5）")
+            state["case_id"] = ""
+            state["workflow_result"] = {
+                "case_id": "",
+                "service": intent,
+                "status": "failed",
+                "error": "MCP Client 未配置，办件服务不可用",
+            }
+            _mark_workflow_task(state, TaskStatus.FAILED)
+            span.record_output("case_id= status=failed error=MCP 未配置")
+            record_agent_call(
+                AgentName.WORKFLOW.value,
+                success=False,
+                latency_ms=(time.perf_counter() - _start) * 1000.0,
+                trace_id=state.get("trace_id"),
+            )
 
     except Exception as e:
         logger.error(f"Workflow execution failed: {e}", exc_info=True)

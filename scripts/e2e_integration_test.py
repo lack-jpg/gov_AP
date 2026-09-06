@@ -22,16 +22,17 @@ PLAN #10「端到端集成测试（docker compose 起服务后全链路）」
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 import httpx
 
-API = "http://127.0.0.1:12401"
-HEADERS = {
-    "X-User-Id": "demo_user",
-    "X-User-Role": "admin",
-    "Content-Type": "application/json",
-}
+API = os.getenv("E2E_API", "http://127.0.0.1:12401")
+# 认证：JWT Bearer（2026-08-14 起 AuthMiddleware 只认 JWT，X-User-Id/Role 伪造头已废弃）。
+# 默认走 admin/admin123；CI 用 .env 覆盖值时可注入 AUTH_ADMIN_USERNAME/PASSWORD。
+AUTH_USER = os.getenv("AUTH_ADMIN_USERNAME", "admin")
+AUTH_PASSWORD = os.getenv("AUTH_ADMIN_PASSWORD", "admin123")
+HEADERS: dict[str, str] = {"Content-Type": "application/json"}
 
 passed = 0
 failed = 0
@@ -58,9 +59,24 @@ async def main() -> int:
         try:
             r = await client.get(f"{API}/health", timeout=10)
             check("GET /health 200", r.status_code == 200)
+            check("健康含 db_schema_version（P4-7 schema 版本可查）",
+                  r.json().get("db_schema_version", "") != "")
         except Exception as e:
             check("GET /health 200", False, str(e))
             return 1  # 后端不可达 → 直接失败
+
+        # 1b. 登录换取 JWT
+        section("1b. 登录")
+        r = await client.post(
+            f"{API}/api/auth/login",
+            json={"username": AUTH_USER, "password": AUTH_PASSWORD},
+        )
+        token = r.json().get("access_token", "") if r.status_code == 200 else ""
+        check("POST /api/auth/login 200", r.status_code == 200)
+        if not token:
+            print("  登录失败，无法继续 → 直接失败")
+            return 1
+        HEADERS["Authorization"] = f"Bearer {token}"
 
         # 2. 创建会话
         section("2. 创建会话")
