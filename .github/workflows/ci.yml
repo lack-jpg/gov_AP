@@ -138,6 +138,13 @@ jobs:
     # （path filter：docker-compose.yml、deploy/、ci.yml），避免每次 push 都拉全栈
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
+    env:
+      # compose 用 :? 强制要求 JWT；非 debug 启动还会拒绝 changeme。
+      # 这些值只活在本次 CI 进程里，不是仓库密钥。
+      JWT_SECRET_KEY: ci-e2e-jwt-secret-not-for-production
+      POSTGRES_PASSWORD: ci-e2e-pg-password
+      A2A_HMAC_SECRET: ci-e2e-hmac-secret
+      REDIS_PASSWORD: ci-e2e-redis-password
     steps:
       - uses: actions/checkout@v4
         with:
