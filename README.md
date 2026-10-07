@@ -6,7 +6,7 @@
 
 > 注意：前端界面全部由AI生成，请勿直接复制。
 
-> **最近更新（2026-09-02）**：前端视觉重构（政务企业级设计系统 Trust & Authority——Light Navy 配色 + Plus Jakarta Sans + Lucide 风格 SVG 图标，替代全部 emoji）+ 完整 Docker 全栈验证（11 服务 healthy）。详见 [更新日志](#20-更新日志)。
+> **最近更新（2026-10-07）**：主路径在依赖缺失时改为明确失败（不再返回假办件号或政策模板）；会话按租户隔离；意图准确率拆成模板验证集 99.43% 与手写留出集 83.8%。详见 [更新日志](#20-更新日志)。
 
 ---
 
@@ -1669,6 +1669,31 @@ governance_node（末尾节点）
 
 # 20. 更新日志
 
+## 2026-10-07 — 主路径失败可见、租户隔离、意图留出集
+
+`MCP_ALLOW_STUB` 默认关闭。办件和政策在工具或知识库不可用时返回失败，不再把本地模板写成成功结果。
+
+| 改动 | 文件 | 说明 |
+| --- | --- | --- |
+| 办件去假号 | `agents/workflow/agent.py` | 有 MCP 客户端时使用工具返回的 `case_id`；未允许 stub 时抛出 `WorkflowUnavailable`，不生成 `CASE_` 前缀办件号 |
+| 政策拒绝模板成功 | `orchestration/langgraph/nodes.py` | `policy_node` 遇到 `mode=stub`、空结果或未配置客户端时记为失败；检索到的文档仍写入 `evidence` |
+| 会话租户 | `backend/services/conversation_service.py`、迁移 `0007_conversation_tenant.py` | 会话与消息按 `tenant_id` 查询；认不出主人的旧数据保持空租户 |
+| Checkpoint 身份 | `orchestration/langgraph/identity.py` | 线程号是租户、用户、会话的哈希，不把原文标识写进键 |
+| 护栏失败不进图 | `backend/api/dependencies.py`、`tests/test_security_isolation.py` | 输入护栏或 PII 检测抛错时不调用图，响应不回传原始敏感串 |
+| 安全中间件 | `backend/main.py` | 鉴权、RBAC、限流、请求体限制注册失败时拒绝启动 |
+| 意图留出集 | `cases/intent_holdout.json`、`scripts/eval_intent_holdout.py` | 80 条手写句子，不进入训练。本地 BERT：**67/80（83.8%）**。模板验证集仍是 **99.43%**（2973 训练 / 527 验证，同分布） |
+| CI E2E | `.github/workflows/ci.yml` | 全栈任务注入仅用于本次流水线的 `JWT_SECRET_KEY`、数据库与 Redis 口令，避免 compose 在插值阶段退出 |
+
+## 2026-09-06 — 工程收口、政策入库、办件依赖
+
+| 改动 | 说明 |
+| --- | --- |
+| CI | `mypy` 纳入检查；master 推送构建 api / mcp-server / frontend / a2a-mock 四个镜像；E2E 在 compose、`deploy/` 或工作流文件变更时自动跑 |
+| 编排 | api 等待 mcp-server、a2a-mock 健康后再启动；frontend 等待 api 健康 |
+| 迁移 | 生产环境 Alembic 失败不再回退 `create_all`；`/health` 可读 schema 版本 |
+| 政策语料 | `scripts/ingest_policies.py` 把 `data/policies/` 切分后写入 Milvus，并自检检索模式 |
+| 办件 | 补上 Redis 依赖，修复办件落库；`.env.example` 补录新增变量 |
+
 ## 🎨 2026-09-02 — 前端视觉重构（政务企业级设计系统）
 
 基于 `ui-ux-pro-max` 设计智能 skill 对前端整体视觉重构，替代此前与浅色政务蓝主题冲突的旧设计系统（Smart Home/IoT + Dark OLED 分类错误）与 emoji 泛滥问题。
@@ -1742,8 +1767,9 @@ prometheus 12411 │ grafana 12421 │ alertmanager 12431
 
 ### 当前状态
 
-- PLAN.md 全部任务 ✅ 完成
-- 搁置项：政务领域 LLM/embedding 微调（无真实数据）、k8s 生产部署（无集群）
+以下是 2026-08-13 打里程碑时的快照。此后的变更写在本节上方的更新日志里，不改这张表。
+
+- 搁置项：k8s 生产部署（无集群）；外部委办局系统与飞书渠道未接
 - 里程碑：tag `v3.0.0` + GitHub Release（2026-08-13）
 
 ---
