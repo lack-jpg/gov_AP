@@ -160,6 +160,10 @@ class PolicyResult(BaseModel):
     answer: str = Field(description="基于政策的回答")
     evidence: list[Evidence] = Field(default_factory=list, description="证据引用列表")
     confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="回答置信度")
+    mode: str = Field(
+        default="",
+        description="结果来源: retrieval | stub | not_found | unavailable",
+    )
 
 
 class IntentResult(BaseModel):
@@ -283,8 +287,9 @@ class A2ATaskRecord(BaseModel):
     )
     source_trace_id: str = Field(
         default="",
-        description="发起任务的 LangGraph thread_id / trace_id，用于回调后恢复 checkpoint",
+        description="发起任务的 trace_id，用于追踪",
     )
+    checkpoint_thread_id: str = Field(default="", description="租户隔离的 checkpoint 标识")
     target_agent: str = Field(
         description="目标外部Agent名称: housing_agent (不动产) | fund_agent (公积金) | ...",
     )
@@ -440,6 +445,8 @@ class AgentState(TypedDict):
     # ── 请求标识 ──
     trace_id: str
     """全链路追踪ID，在API Gateway层生成，贯穿所有Agent和MCP调用"""
+    checkpoint_thread_id: str
+    """由认证租户、用户和会话生成的 checkpoint 标识"""
 
     # ── 用户身份（来自 JWT，禁止使用请求体/Header 伪造） ──
     user_id: str
@@ -585,6 +592,7 @@ def create_initial_state(
     return AgentState(
         # 请求标识
         trace_id=trace_id,
+        checkpoint_thread_id="",
         # 用户身份
         user_id=user_id,
         tenant_id=tenant_id,

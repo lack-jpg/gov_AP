@@ -100,7 +100,7 @@ def test_chat_foreign_conversation_404(monkeypatch):
 
 
 def test_create_conversation(monkeypatch):
-    async def fake_create(user_id, title=None, conversation_id=None):
+    async def fake_create(user_id, title=None, conversation_id=None, **kwargs):
         return {"conversation_id": "conv_new", "user_id": user_id}
 
     monkeypatch.setattr(

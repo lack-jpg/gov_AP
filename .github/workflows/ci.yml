@@ -33,6 +33,18 @@ jobs:
         run: pip install "ruff>=0.9.0,<1.0"
       - name: Run ruff
         run: ruff check .
+      # 安全关键路径禁止 try/except/pass：Auth/RBAC/RateLimit 等中间件以及
+      # MCP Client 初始化若静默失败，会让服务在无鉴权/假数据的状态下继续运行。
+      # 其余模块的 except/pass（多为可选依赖降级）不在本次卡口范围内。
+      - name: Guard - 安全关键路径禁止静默 except
+        run: |
+          if grep -rn -A2 "except" backend/main.py backend/api/dependencies.py \
+              | grep -qE "^[^:]+[-:][0-9]+[-:][[:space:]]+pass[[:space:]]*$"; then
+            echo "::error::安全关键路径(backend/main.py, backend/api/dependencies.py) 禁止 try/except/pass"
+            echo "::error::静默失败会导致鉴权或工具链路失效且无日志，请改为 ERROR 日志或拒绝启动"
+            exit 1
+          fi
+          echo "OK: 安全关键路径无静默 except"
 
   typecheck:
     name: Typecheck (mypy)

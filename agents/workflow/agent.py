@@ -8,6 +8,7 @@ Task: Implement Workflow Agent with MCP tool calling for case management
 """
 from __future__ import annotations
 
+import uuid
 from typing import Any, Optional
 
 
@@ -15,6 +16,10 @@ from orchestration.langgraph.state import AgentState
 from tools.logger import get_logger, log_mcp_call
 
 logger = get_logger(__name__)
+
+
+class WorkflowUnavailable(Exception):
+    """办件服务不可用。未允许 stub 时不得伪造办件号。"""
 
 
 class WorkflowAgent:
@@ -28,26 +33,37 @@ class WorkflowAgent:
       - create_case: 创建办件 (workflow_server)
       - query_status: 查询进度 (workflow_server)
 
-    当前实现: 模拟办件（MCP 待接入）
-    TODO: 接入 MCP Client 进行真实调用
+    有 MCP 客户端时只使用工具返回的 case_id。
+    无客户端时，仅当 allow_stub 或配置 MCP_ALLOW_STUB 为真才返回 mode=stub。
 
     使用方式:
-        agent = WorkflowAgent()
+        agent = WorkflowAgent(mcp_client=client)
         result = await agent.create_case(user_id="001", service="restaurant_license")
     """
 
-    def __init__(self, mcp_client: Any = None):
+    def __init__(self, mcp_client: Any = None, allow_stub: Optional[bool] = None):
         """
         Args:
-            mcp_client: MCP 客户端实例（不传则用模拟模式）
+            mcp_client: MCP 客户端实例。为空且未允许 stub 时，创建办件会失败。
+            allow_stub: 是否允许本地模拟。None 时读取 MCP_ALLOW_STUB，默认关闭。
         """
         self._mcp_client = mcp_client
+        self._allow_stub = allow_stub
+
+    def _stub_allowed(self) -> bool:
+        if self._allow_stub is not None:
+            return self._allow_stub
+        from backend.config import get_settings
+
+        return bool(get_settings().mcp_allow_stub)
 
     async def create_case(
         self,
         user_id: str,
         service: str,
         materials: Optional[list[str]] = None,
+        tenant_id: str = "",
+        trace_id: str = "",
     ) -> dict[str, Any]:
         """
         创建办件。
@@ -60,34 +76,49 @@ class WorkflowAgent:
         Returns:
             {case_id: str, status: str, service: str}
         """
+        arguments = {
+            "user_id": user_id,
+            "service": service,
+            "materials": materials or [],
+            "tenant_id": tenant_id,
+        }
         if self._mcp_client is not None:
-            # TODO: 通过 MCP 调用真实业务系统
-            # result = await self._mcp_client.call_tool(
-            #     "create_case",
-            #     {"user_id": user_id, "service": service}
-            # )
-            # log_mcp_call("workflow_server", "create_case", {...}, result, 100, "success")
-            pass
+            result = await self._mcp_client.call_tool(
+                "workflow_server",
+                "create_case",
+                arguments,
+                trace_id=trace_id,
+            )
+            case_id = (result or {}).get("case_id", "")
+            if not case_id:
+                raise WorkflowUnavailable("办件工具未返回 case_id")
+            logger.info("办件创建: case_id={} service={}", case_id, service)
+            return {
+                "case_id": case_id,
+                "status": (result or {}).get("status", "created"),
+                "service": (result or {}).get("service", service),
+            }
 
-        # 模拟模式
-        import uuid
+        if not self._stub_allowed():
+            raise WorkflowUnavailable("MCP Client 未配置，办件服务不可用")
+
         case_id = f"CASE_{uuid.uuid4().hex[:8].upper()}"
-
+        output = {
+            "case_id": case_id,
+            "status": "stub",
+            "service": service,
+            "mode": "stub",
+        }
         log_mcp_call(
             server_name="workflow_server",
             tool_name="create_case",
             input_args={"user_id": user_id, "service": service},
-            output_result={"case_id": case_id, "status": "created"},
-            latency_ms=100.0,
-            status="success",
+            output_result=output,
+            latency_ms=0.0,
+            status="stub",
         )
-
-        logger.info("办件创建: case_id={} service={}", case_id, service)
-        return {
-            "case_id": case_id,
-            "status": "created",
-            "service": service,
-        }
+        logger.warning("办件使用 stub: case_id={} service={}", case_id, service)
+        return output
 
     async def query_status(self, case_id: str) -> dict[str, Any]:
         """
@@ -100,28 +131,35 @@ class WorkflowAgent:
             {case_id: str, status: str, progress: str}
         """
         if self._mcp_client is not None:
-            # result = await self._mcp_client.call_tool("query_status", {"case_id": case_id})
-            pass
+            result = await self._mcp_client.call_tool(
+                "workflow_server",
+                "query_status",
+                {"case_id": case_id},
+            )
+            return {
+                "case_id": (result or {}).get("case_id", case_id),
+                "status": (result or {}).get("status", ""),
+                "progress": (result or {}).get("progress", ""),
+            }
 
-        # 模拟模式
-        statuses = ["created", "processing", "reviewing", "completed"]
-        import random
-        status = random.choice(statuses)
+        if not self._stub_allowed():
+            raise WorkflowUnavailable("MCP Client 未配置，无法查询办件")
 
+        output = {
+            "case_id": case_id,
+            "status": "stub",
+            "progress": "stub 模式，未查询真实办件",
+            "mode": "stub",
+        }
         log_mcp_call(
             server_name="workflow_server",
             tool_name="query_status",
             input_args={"case_id": case_id},
-            output_result={"case_id": case_id, "status": status},
-            latency_ms=50.0,
-            status="success",
+            output_result=output,
+            latency_ms=0.0,
+            status="stub",
         )
-
-        return {
-            "case_id": case_id,
-            "status": status,
-            "progress": f"当前状态: {status}",
-        }
+        return output
 
     async def process(self, state: AgentState) -> AgentState:
         """
@@ -135,17 +173,36 @@ class WorkflowAgent:
         """
         user_id = state.get("user_id", "default_user")
         intent = state.get("intent", "business_license")
+        try:
+            result = await self.create_case(
+                user_id=user_id,
+                service=intent,
+                tenant_id=state.get("tenant_id", ""),
+                trace_id=state.get("trace_id", ""),
+            )
+        except WorkflowUnavailable as exc:
+            logger.error("Workflow 失败: {}", exc)
+            return {
+                **state,
+                "case_id": "",
+                "workflow_result": {
+                    "case_id": "",
+                    "service": intent,
+                    "status": "failed",
+                    "error": str(exc),
+                },
+            }
 
-        result = await self.create_case(user_id=user_id, service=intent)
-        case_id = result.get("case_id", "CASE_UNKNOWN")
-        logger.info("Workflow 完成: case_id={}", case_id)
-
-        # 将 case_id 写回 state
+        case_id = result.get("case_id", "")
+        workflow_result = {
+            "case_id": case_id,
+            "service": intent,
+            "status": result.get("status", "created"),
+        }
+        if result.get("mode"):
+            workflow_result["mode"] = result["mode"]
         return {
             **state,
-            "workflow_result": {
-                "case_id": case_id,
-                "service": intent,
-                "status": result.get("status", "created"),
-            },
+            "case_id": case_id,
+            "workflow_result": workflow_result,
         }

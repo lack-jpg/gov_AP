@@ -166,8 +166,10 @@ async def search_policy(
     """
     logger.info(
         "search_policy called: query='{}' top_k={} trace={}",
-        query[:80], top_k, trace_id or "-",
+        query[:80] if query else "", top_k, trace_id or "-",
     )
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("search_policy 需要非空 query")
 
     # ── 1. 主链路：RAG 管线（常驻化单例） ──
     try:

@@ -41,23 +41,28 @@ def test_stream_multiturn_persists_messages(monkeypatch):
     # conversation_service 函数内懒导入 → patch 模块属性
     conv_states = {"get": 0}
 
-    async def fake_get_conversation(cid):
+    async def fake_get_conversation(cid, **identity):
+        assert identity == {"user_id": "u1", "tenant_id": "default"}
         conv_states["get"] += 1
         if conv_states["get"] == 1:
             return None  # 多轮加载阶段：会话不存在 → 触发创建
         return {"conversation_id": cid, "title": "新对话", "user_id": "u1"}
 
-    async def fake_create_conversation(user_id, title=None, conversation_id=None):
+    async def fake_create_conversation(user_id, title=None, conversation_id=None, **identity):
+        assert identity == {"tenant_id": "default"}
         calls.append(("create", conversation_id))
         return {"conversation_id": conversation_id}
 
-    async def fake_load_history(cid):
+    async def fake_load_history(cid, **identity):
+        assert identity == {"user_id": "u1", "tenant_id": "default"}
         return [{"role": "user", "content": "历史问题"}, {"role": "assistant", "content": "历史回答"}]
 
-    async def fake_add_message(cid, role, content, trace_id=None):
+    async def fake_add_message(cid, role, content, trace_id=None, **identity):
+        assert identity == {"user_id": "u1", "tenant_id": "default"}
         calls.append(("add", role, content))
 
-    async def fake_update_conversation_title(cid, title):
+    async def fake_update_conversation_title(cid, title, **identity):
+        assert identity == {"user_id": "u1", "tenant_id": "default"}
         calls.append(("title", title))
 
     monkeypatch.setattr("backend.services.conversation_service.get_conversation", fake_get_conversation)

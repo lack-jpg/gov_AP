@@ -113,6 +113,19 @@ class MCPClient:
             await self._client.aclose()
             self._client = None
 
+    async def close(self) -> None:
+        """
+        关闭底层 httpx 连接池。
+
+        与 A2AConnector.close() 对齐，供 FastAPI lifespan shutdown 调用：
+        此前长生命周期的 MCPClient 从未被释放，长期运行或热重载会累积半开连接。
+
+        幂等：可重复调用，已关闭的客户端会被置回 None。
+        """
+        if self._client:
+            await self._client.aclose()
+            self._client = None
+
     async def _ensure_client(self) -> httpx.AsyncClient:
         """惰性创建 httpx 客户端"""
         if self._client is None:

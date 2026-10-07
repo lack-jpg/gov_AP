@@ -441,7 +441,7 @@ u***@domain.com
 # 9. 自动评测体系
 
 > **最新更新（2026-08-04）**: trace_provider 已接入，支持真实 Agent 工作流执行并收集 trace 数据。
-> Intent 数据集（3500 条）评测通过率 **99.5%**，BERT 模型 `source="bert"` 确认有效。
+> 模板验证集 **99.43%**（`training_args.json`，2973 训练 / 527 验证，与训练集同分布）。手写留出集 **83.8%**（67/80，`cases/intent_holdout.json`，2026-10-07，`python scripts/eval_intent_holdout.py`）。
 
 ## 快速运行
 
@@ -1108,7 +1108,7 @@ supervisor_node 进入
 
 Intent 节点：
 
-- **BERT 模型推理**（已微调，`models/intent/bert-intent/`，10 标签 99.5% 准确率）→ 高置信度(>0.7)直接返回
+- **BERT 模型推理**（已微调，`models/intent/bert-intent/`，10 标签。模板验证集 99.43%，手写留出集 83.8%）→ 高置信度(>0.7)直接返回
 - **关键词匹配**（18条规则）→ 中置信度(0.5-0.7)，BERT 不可用时兜底
 - **LLM fallback** → 最低置信度(0.3)，最后手段
 - 生产路径：`nodes.py` 中 `IntentClassifier()` 默认启用 BERT（`auto_load=True`）
@@ -1587,7 +1587,7 @@ governance_node（末尾节点）
 
 > **最新更新（2026-08-05）**: 安全加固完成 — 护栏前置 LLM、MCP 认证+RBAC、CORS 白名单、A2A Callback HMAC、30+ 处 logger.warning、端口文档统一。
 > **上一更新（2026-08-04）**: trace_provider 已实现，`--run-real` 可运行真实 Agent 工作流收集 trace。
-> Intent 评测：3500 条用例，BERT 推理，**3484/3500 passed（99.5%）**。
+> Intent 评测：生成集 3500 条曾报 3484/3500（99.5%），该集与训练同分布。手写留出集 67/80（83.8%）。
 
 ### 第一步：评测体系 (governance/evaluation/) ✅
 
@@ -1696,7 +1696,7 @@ governance_node（末尾节点）
 | 代码规模 | 38,551 行 Python |
 | 提交数 | 54 |
 | 自动化测试 | **231** pytest + 端到端 **23/23** |
-| 意图识别准确率 | BERT 微调 **99.5%**（3500 用例） |
+| 意图识别准确率 | 模板验证集 **99.43%**（527 条）；手写留出集 **83.8%**（67/80） |
 | 性能优化 | LLM 二次请求 **18.4s → 0.26s**（缓存命中） |
 | CI/CD | ruff lint + pytest + GHCR 镜像构建推送 |
 | 可观测性 | Prometheus + Grafana + Alertmanager（4 条告警规则） |

@@ -137,6 +137,7 @@ class A2AConnector:
         *,
         callback_url: str = "",
         source_trace_id: str = "",
+        checkpoint_thread_id: str = "",
         prefer_agent: Optional[str] = None,
     ) -> dict[str, Any]:
         """
@@ -187,6 +188,7 @@ class A2AConnector:
         task_record = A2ATaskRecord(
             source_agent="workflow",
             source_trace_id=source_trace_id,
+            checkpoint_thread_id=checkpoint_thread_id,
             target_agent=target.name,
             skill=skill,
             input=input_data,

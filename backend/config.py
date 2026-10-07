@@ -449,6 +449,28 @@ class Settings(BaseSettings):
         description="LangSmith项目名",
     )
 
+    # ── MCP 降级策略（与 A2A_ALLOW_STUB 对齐）──
+    mcp_allow_stub: bool = Field(
+        default=False,
+        alias="MCP_ALLOW_STUB",
+        description=(
+            "是否允许 MCP 链路静默降级为 stub（MCP Gateway 不可达时工具调用返回本地模拟结果）。"
+            "生产必须为 False：Gateway 故障时明确失败并记录原因，禁止静默返回假结果。"
+            "本地单机开发无 Gateway 时可设为 True"
+        ),
+    )
+
+    # ── 安全中间件加载策略 ──
+    security_middleware_strict: bool = Field(
+        default=True,
+        alias="SECURITY_MIDDLEWARE_STRICT",
+        description=(
+            "安全中间件（Auth/RBAC/RateLimit/RequestSizeLimit）加载失败时是否拒绝启动。"
+            "默认 True：宁可起不来，也不能以无鉴权状态裸奔。"
+            "本地调试确需跳过时可设为 False（此时状态会通过 /health 暴露）"
+        ),
+    )
+
     # ── CORS ──
     cors_origins: str = Field(
         default="http://localhost:12345,http://localhost:12421",

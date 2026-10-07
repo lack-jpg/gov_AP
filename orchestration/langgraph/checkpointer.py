@@ -342,10 +342,10 @@ class PostgresCheckpointer(BaseCheckpointSaver):
             _cp_logger.warning("resume_from_a2a: 读取任务存储失败: {}", e)
             return None
 
-        thread_id = (record.source_trace_id if record else "") or ""
-        if not thread_id:
+        thread_id = (record.checkpoint_thread_id if record else "") or ""
+        if not thread_id.startswith("tenant-v1:"):
             _cp_logger.warning(
-                "resume_from_a2a: 任务 {task_id} 缺少 source_trace_id，无法定位 checkpoint",
+                "resume_from_a2a: 任务 {task_id} 缺少隔离后的 checkpoint 标识，拒绝恢复",
                 task_id=a2a_task_id,
             )
             return None

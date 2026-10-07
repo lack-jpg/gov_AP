@@ -46,6 +46,42 @@ from governance.monitor import get_collector, record_agent_call
 logger = get_logger(__name__)
 
 
+def _mcp_stub_allowed() -> bool:
+    """生产默认关闭。只有显式 MCP_ALLOW_STUB 才允许模板答案。"""
+    from backend.config import get_settings
+
+    return bool(get_settings().mcp_allow_stub)
+
+
+def _mark_named_task(state: AgentState, agent_name: str, status: TaskStatus) -> None:
+    """把 task_plan 里该 agent 的第一条 pending 任务标成给定状态。"""
+    updated_plan: list[dict] = []
+    for task in state.get("task_plan", []):
+        if task.get("agent") == agent_name and task.get("status") == TaskStatus.PENDING.value:
+            task = {**task, "status": status.value}
+        updated_plan.append(task)
+    state["task_plan"] = updated_plan
+
+
+def _store_policy(
+    state: AgentState,
+    *,
+    answer: str,
+    evidence: list[dict],
+    confidence: float,
+    mode: str,
+    task_status: TaskStatus,
+) -> None:
+    """写入政策结果。mode 用来区分检索、模板、未命中和不可用。"""
+    state["policy_result"] = PolicyResult(
+        answer=answer,
+        evidence=evidence,  # type: ignore[arg-type]
+        confidence=confidence,
+        mode=mode,
+    ).model_dump()
+    _mark_named_task(state, AgentName.POLICY.value, task_status)
+
+
 def _mcp_user_context(state: AgentState) -> dict:
     """从 AgentState 提取当前用户身份，供 MCPClient 按用户签发 Gateway Token。"""
     return {
@@ -233,8 +269,9 @@ async def policy_node(
     """
     Policy节点 — 政策检索。
 
-    优先通过 MCP Client 调用 policy_server/search_policy，
-    MCP 不可用时 fallback 到 stub 模板。
+    优先通过 MCP Client 调用 policy_server/search_policy。
+    MCP_ALLOW_STUB 关闭时，调用失败、离线模板和空结果都记为失败，
+    不把固定手续清单写成成功答案。
 
     Args:
         state: 当前AgentState
@@ -268,23 +305,49 @@ async def policy_node(
                         trace_id=state.get("trace_id", ""),
                         user_context=_mcp_user_context(state),
                     )
-                    docs = search_result.get("documents", [])
-                    answer = _build_answer_from_mcp(docs, intent, user_query)
+                    docs = search_result.get("documents", []) if isinstance(search_result, dict) else []
+                    result_mode = search_result.get("mode", "") if isinstance(search_result, dict) else ""
+                    stub_result = result_mode == "stub" or not docs
+                    if stub_result and not _mcp_stub_allowed():
+                        reason = "未检索到政策条文" if not docs else "政策服务返回了离线模板"
+                        _store_policy(
+                            state,
+                            answer=f"{reason}，已拒绝将其作为政策答复。",
+                            evidence=[],
+                            confidence=0.0,
+                            mode="not_found" if not docs else "unavailable",
+                            task_status=TaskStatus.FAILED,
+                        )
+                        span.record_output(f"mode={state['policy_result']['mode']} docs={len(docs)}")
+                        record_agent_call(
+                            AgentName.POLICY.value,
+                            success=False,
+                            latency_ms=(time.perf_counter() - _start) * 1000.0,
+                            trace_id=state.get("trace_id"),
+                        )
+                        return state
 
+                    answer = _build_answer_from_mcp(docs, intent, user_query)
                     evidence = []
                     for doc in docs[:3]:
+                        raw_score = doc.get("score", 0.0)
+                        try:
+                            score = float(raw_score)
+                        except (TypeError, ValueError):
+                            score = 0.0
                         evidence.append({
                             "source": doc.get("source", ""),
                             "excerpt": doc.get("content", "")[:200],
-                            "relevance_score": doc.get("score", 0.0),
+                            "relevance_score": max(0.0, min(1.0, score)),
                         })
-
-                    policy_result = PolicyResult(
+                    _store_policy(
+                        state,
                         answer=answer,
-                        evidence=evidence,  # type: ignore[arg-type]
-                        confidence=0.85 if docs else 0.0,
+                        evidence=evidence,
+                        confidence=0.4 if result_mode == "stub" else (0.85 if docs else 0.0),
+                        mode="stub" if result_mode == "stub" else "retrieval",
+                        task_status=TaskStatus.COMPLETED,
                     )
-                    state["policy_result"] = policy_result.model_dump()
 
                     mcp = MCPCallRecord(
                         trace_id=state["trace_id"],
@@ -297,18 +360,9 @@ async def policy_node(
                     )
                     state = record_mcp_call(state, mcp)
 
-                    # 标记任务完成
-                    task_plan = state.get("task_plan", [])
-                    updated_plan: list[dict] = []
-                    for t in task_plan:
-                        agent = t.get("agent", "")
-                        if agent == AgentName.POLICY.value and t.get("status") == TaskStatus.PENDING.value:
-                            t = {**t, "status": TaskStatus.COMPLETED.value}
-                        updated_plan.append(t)
-                    state["task_plan"] = updated_plan
-
                     span.record_output(
-                        f"answer_len={len(answer)} docs={len(docs)} evidence={len(evidence)}"
+                        f"answer_len={len(answer)} docs={len(docs)} evidence={len(evidence)} "
+                        f"mode={state['policy_result'].get('mode', '')}"
                     )
                     record_agent_call(
                         AgentName.POLICY.value,
@@ -319,47 +373,80 @@ async def policy_node(
                     return state
 
                 except Exception as e:
-                    logger.warning("MCP policy search failed, falling back to stub: {}", e)
+                    logger.warning("MCP policy search failed: {}", e)
+                    if not _mcp_stub_allowed():
+                        _store_policy(
+                            state,
+                            answer="政策检索失败，未返回政策条文。",
+                            evidence=[],
+                            confidence=0.0,
+                            mode="unavailable",
+                            task_status=TaskStatus.FAILED,
+                        )
+                        span.record_output("mode=unavailable")
+                        record_agent_call(
+                            AgentName.POLICY.value,
+                            success=False,
+                            latency_ms=(time.perf_counter() - _start) * 1000.0,
+                            trace_id=state.get("trace_id"),
+                        )
+                        return state
 
-            # ── Fallback: LLM Agent 或 stub 模板 ──
+            if not _mcp_stub_allowed():
+                _store_policy(
+                    state,
+                    answer="政策服务未配置，未返回政策条文。",
+                    evidence=[],
+                    confidence=0.0,
+                    mode="unavailable",
+                    task_status=TaskStatus.FAILED,
+                )
+                span.record_output("mode=unavailable")
+                record_agent_call(
+                    AgentName.POLICY.value,
+                    success=False,
+                    latency_ms=(time.perf_counter() - _start) * 1000.0,
+                    trace_id=state.get("trace_id"),
+                )
+                return state
+
+            # 显式 stub：允许模板，但必须标 mode=stub
             if llm is not None:
                 try:
                     from agents.policy.agent import PolicyAgent
 
                     agent = PolicyAgent(llm=llm)
                     result = await agent.search_with_intent(user_query, intent)
-                    policy_result = PolicyResult(
+                    _store_policy(
+                        state,
                         answer=result.answer,
                         evidence=[],
                         confidence=result.confidence,
+                        mode="stub",
+                        task_status=TaskStatus.COMPLETED,
                     )
                     logger.info("PolicyAgent LLM 生成回答完成 (confidence={:.2f})", result.confidence)
                 except Exception as e:
                     logger.warning("PolicyAgent 失败，回退 stub: {}", e)
                     stub_answer = _stub_policy_search(intent, user_query)
-                    policy_result = PolicyResult(
+                    _store_policy(
+                        state,
                         answer=stub_answer["answer"],
                         evidence=[],
-                        confidence=0.9,
+                        confidence=0.4,
+                        mode="stub",
+                        task_status=TaskStatus.COMPLETED,
                     )
             else:
                 stub_answer = _stub_policy_search(intent, user_query)
-                policy_result = PolicyResult(
+                _store_policy(
+                    state,
                     answer=stub_answer["answer"],
                     evidence=[],
-                    confidence=0.9,
+                    confidence=0.4,
+                    mode="stub",
+                    task_status=TaskStatus.COMPLETED,
                 )
-            state["policy_result"] = policy_result.model_dump()
-
-            # 标记task_plan中对应的policy任务为完成
-            task_plan = state.get("task_plan", [])
-            updated_plan = []  # 类型沿用上方 try 分支首次注解，勿重复注解（mypy no-redef）
-            for t in task_plan:
-                agent = t.get("agent", "")
-                if agent == AgentName.POLICY.value and t.get("status") == TaskStatus.PENDING.value:
-                    t = {**t, "status": TaskStatus.COMPLETED.value}
-                updated_plan.append(t)
-            state["task_plan"] = updated_plan
 
             # 注意：stub fallback 不再伪造 MCPCallRecord
             span.record_output(
@@ -946,6 +1033,7 @@ async def a2a_node(
                     skill=skill,
                     input_data=skill_input,
                     source_trace_id=state.get("trace_id", ""),
+                    checkpoint_thread_id=state.get("checkpoint_thread_id", ""),
                 )
             else:
                 # 无 Connector → 使用直接 stub 调用
@@ -962,6 +1050,7 @@ async def a2a_node(
                 task_id=result.get("task_id", ""),
                 source_agent="workflow",
                 source_trace_id=state.get("trace_id", ""),
+                checkpoint_thread_id=state.get("checkpoint_thread_id", ""),
                 target_agent=result.get("agent_name", "unknown"),
                 skill=skill,
                 input=skill_input,
@@ -977,9 +1066,8 @@ async def a2a_node(
                 # 挂起 LangGraph
                 if checkpointer is not None:
                     try:
-                        trace_id = state.get("trace_id", "")
                         await checkpointer.suspend_for_a2a(
-                            thread_id=trace_id,
+                            thread_id=state.get("checkpoint_thread_id", ""),
                             checkpoint_id=state.get("trace_id", ""),
                             a2a_task_id=result["task_id"],
                         )
@@ -1165,7 +1253,7 @@ def _build_answer_from_mcp(
     作为 MCP 结果和 PolicyResult.answer 之间的桥梁。
     """
     if not documents:
-        return _stub_policy_search(intent, user_query).get("answer", "")
+        return "未检索到与该问题对应的政策条文。"
 
     lines: list[str] = []
     for i, doc in enumerate(documents, 1):
@@ -1179,4 +1267,4 @@ def _build_answer_from_mcp(
             lines.append(f"   来源: {source}")
         lines.append("")
 
-    return "\n".join(lines) if lines else _stub_policy_search(intent, user_query).get("answer", "")
+    return "\n".join(lines) if lines else "未检索到与该问题对应的政策条文。"

@@ -213,6 +213,7 @@ class PostgresTaskStore(TaskStore):
             task_id=record.task_id,
             source_agent=record.source_agent,
             source_trace_id=record.source_trace_id,
+            checkpoint_thread_id=record.checkpoint_thread_id,
             target_agent=record.target_agent,
             skill=record.skill,
             input_json=record.input,
@@ -227,6 +228,7 @@ class PostgresTaskStore(TaskStore):
             set_={
                 "source_agent": stmt.excluded.source_agent,
                 "source_trace_id": stmt.excluded.source_trace_id,
+                "checkpoint_thread_id": stmt.excluded.checkpoint_thread_id,
                 "target_agent": stmt.excluded.target_agent,
                 "skill": stmt.excluded.skill,
                 "input_json": stmt.excluded.input_json,
@@ -256,6 +258,7 @@ class PostgresTaskStore(TaskStore):
             task_id=row.task_id,
             source_agent=row.source_agent,
             source_trace_id=row.source_trace_id,
+            checkpoint_thread_id=row.checkpoint_thread_id,
             target_agent=row.target_agent,
             skill=row.skill,
             input=row.input_json or {},

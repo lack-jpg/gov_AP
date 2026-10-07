@@ -409,6 +409,7 @@ class A2ATask(Base):
         String(128), nullable=False, default="", index=True,
         comment="发起任务的 LangGraph thread_id / trace_id，用于回调后恢复 checkpoint",
     )
+    checkpoint_thread_id: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     target_agent: Mapped[str] = mapped_column(
         String(64), nullable=False,
         comment="目标外部 Agent 名称",
@@ -459,6 +460,8 @@ class Conversation(Base):
 
     __tablename__ = "conversation"
 
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     conversation_id: Mapped[str] = mapped_column(
@@ -495,6 +498,8 @@ class ConversationMessage(Base):
     """单条对话消息（user / assistant）"""
 
     __tablename__ = "conversation_message"
+
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 

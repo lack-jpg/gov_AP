@@ -79,6 +79,7 @@ async def test_send_task_sync_completed():
     try:
         result = await conn.send_task(
             "query_property", {"owner_name": "张三"}, source_trace_id="trace_001",
+            checkpoint_thread_id="tenant-v1:scoped-session",
         )
         assert result["mode"] == "http"
         assert result["status"] == "completed"
@@ -87,7 +88,8 @@ async def test_send_task_sync_completed():
         record = store.get(result["task_id"])
         assert record is not None
         assert record.status == A2ATaskStatus.COMPLETED
-        assert record.source_trace_id == "trace_001"  # 回调后恢复 checkpoint 的依据
+        assert record.source_trace_id == "trace_001"
+        assert record.checkpoint_thread_id == "tenant-v1:scoped-session"
     finally:
         await conn.close()
 

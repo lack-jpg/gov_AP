@@ -301,3 +301,30 @@ def get_retriever() -> HybridRetriever:
             if _instance is None:
                 _instance = HybridRetriever()
     return _instance
+
+
+def close_retriever() -> None:
+    """
+    释放检索器持有的 Milvus 连接并清空单例。
+
+    供 FastAPI lifespan shutdown 调用：HybridRetriever 的 Milvus 连接此前
+    从不释放，进程重启/热重载会残留半开连接。
+
+    幂等：未初始化或已释放时安全返回。
+    """
+    global _instance
+    with _lock:
+        if _instance is None:
+            return
+        try:
+            if _instance._milvus_connected:
+                from pymilvus import connections
+
+                connections.disconnect("default")
+                logger.info("Milvus 连接已断开")
+        except Exception as e:
+            logger.warning("断开 Milvus 连接时出错: {}", e)
+        finally:
+            _instance._milvus_client = None
+            _instance._milvus_connected = False
+            _instance = None

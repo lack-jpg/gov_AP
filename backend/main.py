@@ -8,6 +8,7 @@ Task: Implement FastAPI app factory with CORS, middleware, and route registratio
 """
 from __future__ import annotations
 
+import importlib
 import os
 from contextlib import asynccontextmanager
 
@@ -22,6 +23,84 @@ from tools.logger import (
     get_logger,
     get_current_trace_id,
 )
+
+
+# ============================================================
+# 中间件注册 — 安全中间件不允许静默失效
+# ============================================================
+
+# (显示名, 模块路径, 类名, 是否安全关键)
+#
+# 顺序即 app.add_middleware 的注册顺序，不可调整：
+# Starlette 后注册的中间件位于更外层，当前顺序的实际执行链为
+#   request_size → request_logging → auth → rate_limit → rbac → tracing
+_MIDDLEWARE_SPEC: list[tuple[str, str | None, str, bool]] = [
+    ("tracing", "backend.middleware.tracing", "TracingMiddleware", False),
+    ("rbac", "backend.middleware.rbac", "RBACMiddleware", True),
+    ("rate_limit", "backend.middleware.rate_limit", "RateLimitMiddleware", True),
+    ("auth", "backend.middleware.auth", "AuthMiddleware", True),
+    # 请求日志中间件由 tools.logger 顶层导入，无独立模块路径
+    ("request_logging", None, "RequestLoggingMiddleware", False),
+    ("request_size", "backend.middleware.request_size", "RequestSizeLimitMiddleware", True),
+]
+
+# 无独立模块路径的中间件（由 tools.logger 顶层导入），按类名索引
+_MIDDLEWARE_LOCAL_CLASSES: dict[str, type] = {
+    "RequestLoggingMiddleware": RequestLoggingMiddleware,
+}
+
+
+def _register_middlewares(app: FastAPI, logger) -> dict[str, str]:
+    """
+    注册全量中间件并返回每个中间件的加载状态。
+
+    原先每个中间件各自 try/except/pass，任何导入失败都会导致鉴权体系
+    静默消失且服务照常启动。这里改为统一收集状态：
+
+    - 安全关键中间件（Auth/RBAC/RateLimit/RequestSizeLimit）失败 → ERROR 日志
+    - 若 SECURITY_MIDDLEWARE_STRICT=True（默认）→ 直接抛错拒绝启动
+    - 否则记录状态，由 /health 对外暴露，避免"裸奔而不自知"
+
+    Args:
+        app: FastAPI 应用实例
+        logger: 日志记录器
+
+    Returns:
+        {中间件名: "loaded" | "failed"}
+
+    Raises:
+        RuntimeError: 严格模式下安全中间件加载失败
+    """
+    settings = get_settings()
+    status: dict[str, str] = {}
+    failed_critical: list[str] = []
+
+    for name, module_path, class_name, critical in _MIDDLEWARE_SPEC:
+        try:
+            if module_path:
+                middleware_cls = getattr(importlib.import_module(module_path), class_name)
+            else:
+                middleware_cls = _MIDDLEWARE_LOCAL_CLASSES[class_name]
+            # type: ignore[arg-type]  # Starlette stub 将中间件类收窄为 factory
+            app.add_middleware(middleware_cls)  # type: ignore[arg-type]
+            status[name] = "loaded"
+        except Exception as e:
+            status[name] = "failed"
+            if critical:
+                failed_critical.append(name)
+                logger.error(
+                    "安全中间件 [{}] 加载失败: {} —— 缺失该防护会导致服务暴露", name, e
+                )
+            else:
+                logger.warning("中间件 [{}] 加载失败，已跳过: {}", name, e)
+
+    if failed_critical and settings.security_middleware_strict:
+        raise RuntimeError(
+            "安全中间件加载失败，拒绝启动（如需强行启动请设 "
+            f"SECURITY_MIDDLEWARE_STRICT=False）: {', '.join(failed_critical)}"
+        )
+
+    return status
 
 
 # ============================================================
@@ -120,23 +199,42 @@ async def lifespan(app: FastAPI):
 
     # ── Shutdown ──
     logger.info("正在关闭应用...")
+
+    # ── 关闭 Agent 依赖的外部连接池（MCP / A2A）──
+    # 这些实例在 backend.api.dependencies 中惰性创建，此前从未被释放，
+    # 长期运行或热重载会累积半开连接
+    try:
+        from backend.api.dependencies import close_dependencies
+        await close_dependencies()
+        logger.info("MCP / A2A 连接池已关闭")
+    except Exception as e:
+        logger.warning("关闭 MCP / A2A 连接池时出错: {}", e)
+
+    # ── 关闭 Milvus 连接 ──
+    try:
+        from rag.retriever import close_retriever
+        close_retriever()
+        logger.info("Milvus 连接已关闭")
+    except Exception as e:
+        logger.warning("关闭 Milvus 连接时出错: {}", e)
+
     if tracing_manager is not None:
         try:
             await tracing_manager.shutdown()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("关闭 Tracing 时出错: {}", e)
     try:
         from database.connection import close_db
         await close_db()
         logger.info("PostgreSQL 连接池已关闭")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("关闭 PostgreSQL 连接池时出错: {}", e)
     try:
         from database.redis import close_redis
         await close_redis()
         logger.info("Redis 连接已关闭")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("关闭 Redis 连接时出错: {}", e)
 
 
 # ============================================================
@@ -175,43 +273,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ── 链路追踪中间件（OpenTelemetry trace/span 注入） ──
-    try:
-        from backend.middleware.tracing import TracingMiddleware
-        app.add_middleware(TracingMiddleware)
-    except Exception:
-        pass
-
-    # ── 权限中间件（RBAC 角色/权限校验 — 依赖 AuthMiddleware 注入的 user_role） ──
-    try:
-        from backend.middleware.rbac import RBACMiddleware
-        app.add_middleware(RBACMiddleware)  # type: ignore[arg-type]  # Starlette stub 将中间件类收窄为 factory
-    except Exception:
-        pass
-
-    # ── 限流中间件（按用户 ID/IP 限流，在 Auth 之后执行以获取用户身份） ──
-    try:
-        from backend.middleware.rate_limit import RateLimitMiddleware
-        app.add_middleware(RateLimitMiddleware)  # type: ignore[arg-type]  # Starlette stub 将中间件类收窄为 factory
-    except Exception:
-        pass
-
-    # ── 认证中间件（JWT Bearer Token → request.state 注入 — 必须在 RBAC 之前执行） ──
-    try:
-        from backend.middleware.auth import AuthMiddleware
-        app.add_middleware(AuthMiddleware)  # type: ignore[arg-type]  # Starlette stub 将中间件类收窄为 factory
-    except Exception:
-        pass
-
-    # ── 请求日志中间件（trace_id注入 + 请求/响应日志） ──
-    app.add_middleware(RequestLoggingMiddleware)
-
-    # ── 请求体大小限制中间件（最外层，任何业务处理前生效） ──
-    try:
-        from backend.middleware.request_size import RequestSizeLimitMiddleware
-        app.add_middleware(RequestSizeLimitMiddleware)
-    except Exception:
-        pass
+    # ── 中间件注册 ──
+    # 顺序由 _MIDDLEWARE_SPEC 固定；安全中间件加载失败时按 SECURITY_MIDDLEWARE_STRICT
+    # 决定是否拒绝启动，状态写入 app.state 供 /health 暴露
+    logger = get_logger(__name__)
+    middleware_status = _register_middlewares(app, logger)
+    app.state.middleware_status = middleware_status
+    logger.info("中间件注册完成: {}", middleware_status)
 
     # ── 全局异常处理（不拦截 HTTPException — 由 Starlette 原样返回） ──
     @app.exception_handler(Exception)
@@ -259,11 +327,19 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health_check():
         """健康检查端点"""
+        # 中间件加载状态：任一安全中间件缺失时此处显示 failed，
+        # 便于运维/前端对接方一眼看出服务是否处于无鉴权状态
+        middleware_status = getattr(app.state, "middleware_status", {})
+        degraded = any(
+            name in ("auth", "rbac", "rate_limit", "request_size") and state == "failed"
+            for name, state in middleware_status.items()
+        )
         health = {
-            "status": "healthy",
+            "status": "degraded" if degraded else "healthy",
             "app": settings.app_name,
             "version": settings.app_version,
             "log_level": settings.log_level,
+            "middleware": middleware_status,
         }
         # P4-7：schema 版本可查（alembic_version 表）。DB 不可达时非致命，保持 /health 语义纯净。
         try:
@@ -272,8 +348,9 @@ def create_app() -> FastAPI:
             ver = await get_schema_version()
             if ver:
                 health["db_schema_version"] = ver["version_num"]
-        except Exception:
-            pass
+        except Exception as e:
+            # DB 不可达时保持 /health 语义纯净（仍healthy），但留 debug 痕迹便于排查
+            get_logger(__name__).debug("获取 DB schema 版本失败: {}", e)
         return health
 
     # ── Prometheus 指标（供 Prometheus 抓取，无需认证） ──

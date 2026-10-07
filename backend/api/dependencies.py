@@ -16,6 +16,37 @@ from langgraph.graph.state import CompiledStateGraph
 
 from backend.config import Settings, get_settings
 from orchestration.langgraph.state import AgentState
+from orchestration.langgraph.identity import checkpoint_thread_id
+from tools.logger import get_logger
+
+
+def check_input_safety(user_query: str, trace_id: str, prior_messages: list[dict] | None = None):
+    """Fail closed if either input validation or PII masking is unavailable."""
+    from tools.logger import get_logger
+
+    try:
+        from governance.guardrail import GuardrailRunner
+        from governance.pii import detect_pii
+
+        result = GuardrailRunner().run_input(user_query)
+        pii = detect_pii(user_query)
+        pii_types = [match.pii_type.value for match in pii.matches]
+        safe_messages = []
+        for message in prior_messages or []:
+            masked = detect_pii(message.get("content", ""))
+            pii_types.extend(match.pii_type.value for match in masked.matches)
+            safe_messages.append({**message, "content": masked.masked_text})
+        return result, sorted(set(pii_types)), pii.masked_text, safe_messages
+    except Exception as error:
+        # Exception messages may themselves contain the original sensitive input.
+        get_logger(__name__).error(
+            "Input safety check unavailable; request rejected (trace={}, type={})",
+            trace_id, type(error).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="安全检查暂时不可用，请稍后重试。",
+        ) from None
 
 
 # ============================================================
@@ -42,7 +73,7 @@ async def get_user_id(
         HTTPException: 未认证时返回401
     """
     user_id = getattr(request.state, "user_id", None)
-    if not user_id:
+    if not isinstance(user_id, str) or not user_id.strip():
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="请提供认证凭证 (Authorization: Bearer <token>)",
@@ -68,7 +99,9 @@ async def get_current_identity(request: Request) -> dict[str, str]:
         HTTPException: 未认证时返回401
     """
     user_id = getattr(request.state, "user_id", None)
-    if not user_id:
+    tenant_id = getattr(request.state, "user_tenant", "default")
+    if (not isinstance(user_id, str) or not user_id.strip()
+            or not isinstance(tenant_id, str) or not tenant_id.strip()):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="请提供认证凭证 (Authorization: Bearer <token>)",
@@ -76,7 +109,7 @@ async def get_current_identity(request: Request) -> dict[str, str]:
     return {
         "user_id": user_id,
         "role": getattr(request.state, "user_role", "user"),
-        "tenant_id": getattr(request.state, "user_tenant", "default"),
+        "tenant_id": tenant_id,
     }
 
 
@@ -159,8 +192,12 @@ async def get_a2a_connector():
         if hasattr(store, "hydrate"):
             try:
                 await store.hydrate()
-            except Exception:
-                pass  # DB 不可用时静默降级为内存
+            except Exception as e:
+                # DB 不可用时降级为内存存储，但必须留痕：静默会导致重启后
+                # A2A 回调定位不到原任务，表现为"回调来了却查无此任务"
+                get_logger(__name__).warning(
+                    "A2A 任务存储恢复失败，降级为内存存储（重启后回调可能丢失）: {}", e
+                )
 
         _a2a_connector = A2AConnector(
             task_store=store,
@@ -178,6 +215,9 @@ async def get_a2a_connector():
 # ============================================================
 
 _agent_graph: Optional[CompiledStateGraph] = None
+
+# MCP Client 单例句柄：单独持有以便 lifespan shutdown 释放其 httpx 连接池
+_mcp_client = None
 
 
 async def _is_db_available() -> bool:
@@ -223,7 +263,7 @@ async def get_agent_graph(
     Returns:
         编译好的LangGraph StateGraph
     """
-    global _agent_graph
+    global _agent_graph, _mcp_client
 
     if _agent_graph is not None:
         return _agent_graph
@@ -258,10 +298,19 @@ async def get_agent_graph(
         try:
             from orchestration.langgraph.checkpointer import PostgresCheckpointer
             checkpointer = PostgresCheckpointer()
-        except Exception:
-            pass
+        except Exception as e:
+            # 缺失 checkpointer 会让长流程与 A2A 挂起任务无法断点恢复，
+            # 且表现为"重启后任务凭空消失"，必须留痕而非静默
+            get_logger(__name__).warning(
+                "PostgresCheckpointer 初始化失败，长流程/A2A 挂起恢复将不可用: {}", e
+            )
 
     # MCP Client（激活整条 MCP 工具调用链路；带 admin JWT 通过 Gateway 认证/RBAC）
+    #
+    # 降级策略与 A2A 侧对齐：MCP_ALLOW_STUB=False（默认）时初始化失败不再静默
+    # 降级为 stub，而是记录 ERROR 并向上抛出。原先 except: pass 会让整条工具
+    # 调用链路悄悄退回本地模拟结果，且日志中不留痕迹。
+    global _mcp_client
     mcp_client = None
     try:
         from backend.middleware.auth import create_access_token
@@ -272,15 +321,19 @@ async def get_agent_graph(
             gateway_url=settings.mcp_gateway_url,
             auth_token=mcp_token,
         )
-        logger = None
-        try:
-            from tools.logger import get_logger as _get_logger
-            logger = _get_logger(__name__)
-            logger.info("MCP Client 已初始化: {}", settings.mcp_gateway_url)
-        except Exception:
-            pass
-    except Exception:
-        pass
+        _mcp_client = mcp_client
+        get_logger(__name__).info("MCP Client 已初始化: {}", settings.mcp_gateway_url)
+    except Exception as e:
+        if settings.mcp_allow_stub:
+            get_logger(__name__).warning(
+                "MCP Client 初始化失败，以 stub 模式继续（MCP_ALLOW_STUB=True）: {}", e
+            )
+        else:
+            get_logger(__name__).error(
+                "MCP Client 初始化失败，拒绝静默降级为 stub。"
+                "本地单机无 Gateway 时请设 MCP_ALLOW_STUB=True: {}", e
+            )
+            raise
 
     _agent_graph = build_graph(
         llm=llm,
@@ -289,6 +342,40 @@ async def get_agent_graph(
         checkpointer=checkpointer,
     )
     return _agent_graph
+
+
+async def close_dependencies() -> None:
+    """
+    释放 Agent 运行时持有的外部连接池（MCP Client / A2A Connector）。
+
+    由 backend.main 的 lifespan shutdown 调用。此前这两个实例的 httpx 连接池
+    从未被释放（A2AConnector.close 只有示例代码调用过，MCPClient 甚至没有
+    close 方法），长期运行或热重载会累积半开连接与 ResourceWarning。
+
+    幂等：可重复调用；已释放的实例会被置回 None，下次请求重新惰性创建。
+    """
+    global _mcp_client, _a2a_connector, _agent_graph
+
+    logger = get_logger(__name__)
+
+    if _mcp_client is not None:
+        try:
+            await _mcp_client.close()
+        except Exception as e:
+            logger.warning("关闭 MCP Client 时出错: {}", e)
+        finally:
+            _mcp_client = None
+
+    if _a2a_connector is not None:
+        try:
+            await _a2a_connector.close()
+        except Exception as e:
+            logger.warning("关闭 A2A Connector 时出错: {}", e)
+        finally:
+            _a2a_connector = None
+
+    # 图实例持有上述客户端引用，一并释放以便下次完整重建
+    _agent_graph = None
 
 
 # ============================================================
@@ -338,6 +425,10 @@ async def execute_agent(
         RuntimeLoopDetectedError,
     )
 
+    input_check, entry_pii, safe_query, prior_messages = check_input_safety(
+        user_query, trace_id, prior_messages,
+    )
+
     # 多轮历史 → 文本上下文（供规划/汇总 LLM 参考）
     conversation_history = ""
     if prior_messages:
@@ -348,24 +439,6 @@ async def execute_agent(
             conversation_history = ""
 
     # ── 输入护栏：在 LLM 调用前检查用户输入（P1-8：脱敏后进入 LLM） ──
-    try:
-        from governance.guardrail import GuardrailRunner
-        from governance.pii import detect_pii
-
-        guardrail = GuardrailRunner()
-        input_check = guardrail.run_input(user_query)
-        # P1-8：入口 PII 检测——记录命中类型（供 governance 审计），并用 mask_pii
-        #       结果替换 user_query，确保 trace / 日志 / LLM prompt / MCP 参数均为脱敏值
-        pii_info = detect_pii(user_query)
-        entry_pii = [m.pii_type.value for m in pii_info.matches]
-        safe_query = pii_info.masked_text
-    except Exception as _guardrail_err:
-        from tools.logger import get_logger as _get_logger
-        _logger = _get_logger(__name__)
-        _logger.warning("护栏检查异常，放行请求 (trace={}): {}", trace_id, _guardrail_err)
-        input_check = None
-        entry_pii = []
-        safe_query = user_query
 
     # 创建初始State（携带脱敏后的 user_query 与多轮消息/历史文本）
     initial_state = create_initial_state(
@@ -387,11 +460,13 @@ async def execute_agent(
     # 运行时安全护栏（多轮时 thread_id 用 conversation_id，保持 LangGraph 会话上下文）
     config = {
         "configurable": {
-            "thread_id": conversation_id or trace_id,
+            "thread_id": checkpoint_thread_id(tenant_id, user_id, conversation_id or trace_id),
             "user_id": user_id,
+            "tenant_id": tenant_id,
         },
     }
 
+    initial_state["checkpoint_thread_id"] = config["configurable"]["thread_id"]
     try:
         if input_check is not None and input_check.blocked:
             from tools.logger import get_logger as _get_logger
@@ -433,8 +508,11 @@ async def execute_agent(
             # P2-1：请求结束后批量落库；DB 不可用时 span 保留内存供状态查询降级
             try:
                 await flush_trace_to_db(trace_id)
-            except Exception:
-                pass
+            except Exception as e:
+                # trace 落库失败 = 审计数据丢失，与 AgentOps 可观测目标直接冲突
+                get_logger(__name__).warning(
+                    "trace 落库失败（trace_id={}），审计数据可能丢失: {}", trace_id, e
+                )
         return result
     except RuntimeExceededError as e:
         from tools.logger import get_logger as _get_logger
@@ -510,6 +588,10 @@ async def stream_agent(
     """
     from orchestration.langgraph.state import create_initial_state
 
+    input_check, entry_pii, safe_query, prior_messages = check_input_safety(
+        user_query, trace_id, prior_messages,
+    )
+
     # 多轮历史 → 文本上下文（供规划/汇总 LLM 参考），与 execute_agent 一致
     conversation_history = ""
     if prior_messages:
@@ -520,18 +602,6 @@ async def stream_agent(
             conversation_history = ""
 
     # ── 输入护栏：在 LLM 调用前检查（P1-8：脱敏后进入 LLM） ──
-    try:
-        from governance.guardrail import GuardrailRunner
-        from governance.pii import detect_pii
-
-        input_check = GuardrailRunner().run_input(user_query)
-        pii_info = detect_pii(user_query)
-        entry_pii = [m.pii_type.value for m in pii_info.matches]
-        safe_query = pii_info.masked_text
-    except Exception:
-        input_check = None
-        entry_pii = []
-        safe_query = user_query
 
     initial_state = create_initial_state(
         user_query=safe_query,
@@ -548,11 +618,13 @@ async def stream_agent(
     graph = await get_agent_graph(settings)
     config = {
         "configurable": {
-            "thread_id": conversation_id or trace_id,
+            "thread_id": checkpoint_thread_id(tenant_id, user_id, conversation_id or trace_id),
             "user_id": user_id,
+            "tenant_id": tenant_id,
         },
     }
 
+    initial_state["checkpoint_thread_id"] = config["configurable"]["thread_id"]
     if input_check is not None and input_check.blocked:
         yield ("final", {
             **initial_state,
@@ -587,6 +659,8 @@ async def stream_agent(
     # P2-1：流结束前批量落库（final 事件消费时已完成所有 span 记录）
     try:
         await flush_trace_to_db(trace_id)
-    except Exception:
-        pass
+    except Exception as e:
+        get_logger(__name__).warning(
+            "流式 trace 落库失败（trace_id={}），审计数据可能丢失: {}", trace_id, e
+        )
     yield ("final", final_state if final_state is not None else initial_state)

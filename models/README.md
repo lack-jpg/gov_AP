@@ -79,17 +79,8 @@ snapshot_download("BAAI/bge-reranker-v2-m3", local_dir="models/reranker/bge-rera
 
 ## 3. 微调模型
 
-`fine_tuned/` 下的模型为项目自行训练/微调的产物：
-
-- **intent-v1/v2**：基于 `bert-base-chinese` 在政务语料上 fine-tune 的意图分类模型
-- **ner**：命名实体识别模型，用于 Material Agent 的实体抽取（Phase 2）
-
-微调脚本位于（待实现）：
-```
-scripts/
-├── train_intent.py       # 意图分类微调
-└── train_ner.py          # NER 微调
-```
+- **bert-intent**：`scripts/train_intent_bert.py` 用 `bert-base-chinese` 微调，权重在 `models/intent/bert-intent/`（不进 git）。模板验证集见该目录 `training_args.json`。手写留出集用 `python scripts/eval_intent_holdout.py`。
+- **ner**：使用已发布的中文 NER 模型，不是本仓库自己训练的。`models/README` 旧版写的 `scripts/train_ner.py` 不存在。
 
 ---
 

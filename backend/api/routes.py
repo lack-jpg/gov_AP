@@ -169,7 +169,7 @@ async def chat(
                 load_history,
             )
 
-            existing = await get_conversation(conversation_id)
+            existing = await get_conversation(conversation_id, user_id=user_id, tenant_id=identity["tenant_id"])
             if existing is not None and existing.get("user_id") != user_id:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -178,12 +178,13 @@ async def chat(
             if existing is None:
                 await create_conversation(
                     user_id, title=request.user_query[:50], conversation_id=conversation_id,
+                        tenant_id=identity["tenant_id"],
                 )
-            prior_messages = await load_history(conversation_id)
+            prior_messages = await load_history(conversation_id, user_id=user_id, tenant_id=identity["tenant_id"])
         except HTTPException:
             raise
         except Exception:
-            prior_messages = []
+            raise HTTPException(503, "会话存储暂时不可用，请稍后重试。") from None
 
     try:
         # 执行Agent工作流
@@ -197,6 +198,8 @@ async def chat(
             tenant_id=identity["tenant_id"],
             user_role=identity["role"],
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"[{effective_trace_id}] Agent execution failed: {e}", exc_info=True)
         elapsed = (time.perf_counter() - start) * 1000
@@ -235,14 +238,14 @@ async def chat(
                 update_conversation_title,
             )
 
-            await add_message(conversation_id, "user", request.user_query)
+            await add_message(conversation_id, "user", request.user_query, user_id=user_id, tenant_id=identity["tenant_id"])
             answer_text = result.get("final_answer", "")
             if answer_text:
-                await add_message(conversation_id, "assistant", answer_text, trace_id=effective_trace_id)
+                await add_message(conversation_id, "assistant", answer_text, trace_id=effective_trace_id, user_id=user_id, tenant_id=identity["tenant_id"])
             # 标题默认取首条用户问题
-            conv = await get_conversation(conversation_id)
+            conv = await get_conversation(conversation_id, user_id=user_id, tenant_id=identity["tenant_id"])
             if conv and conv.get("title", "新对话") == "新对话":
-                await update_conversation_title(conversation_id, request.user_query[:50])
+                await update_conversation_title(conversation_id, request.user_query[:50], user_id=user_id, tenant_id=identity["tenant_id"])
         except Exception as e:
             logger.warning("对话消息持久化失败: {}", e)
 
@@ -313,17 +316,22 @@ async def chat_stream(
                     load_history,
                 )
 
-                existing = await get_conversation(conversation_id)
+                existing = await get_conversation(conversation_id, user_id=user_id, tenant_id=identity["tenant_id"])
                 if existing is not None and existing.get("user_id") != user_id:
                     yield f"data: {json.dumps({'event': 'error', 'message': '会话不存在或无权访问'}, ensure_ascii=False)}\n\n"
                     return
                 if existing is None:
                     await create_conversation(
                         user_id, title=request.user_query[:50], conversation_id=conversation_id,
+                        tenant_id=identity["tenant_id"],
                     )
-                prior_messages = await load_history(conversation_id)
+                prior_messages = await load_history(conversation_id, user_id=user_id, tenant_id=identity["tenant_id"])
+            except HTTPException as error:
+                yield f"data: {json.dumps({'event': 'error', 'message': error.detail}, ensure_ascii=False)}\n\n"
+                return
             except Exception:
-                prior_messages = []
+                yield f"data: {json.dumps({'event': 'error', 'message': '会话存储暂时不可用，请稍后重试。'}, ensure_ascii=False)}\n\n"
+                return
 
         try:
             async for kind, payload in stream_agent(
@@ -364,23 +372,25 @@ async def chat_stream(
                                 update_conversation_title,
                             )
 
-                            await add_message(conversation_id, "user", request.user_query)
+                            await add_message(conversation_id, "user", request.user_query, user_id=user_id, tenant_id=identity["tenant_id"])
                             answer_text = payload.get("final_answer", "")
                             if answer_text:
                                 await add_message(
                                     conversation_id, "assistant", answer_text,
-                                    trace_id=effective_trace_id,
+                                    trace_id=effective_trace_id, user_id=user_id, tenant_id=identity["tenant_id"],
                                 )
-                            conv = await get_conversation(conversation_id)
+                            conv = await get_conversation(conversation_id, user_id=user_id, tenant_id=identity["tenant_id"])
                             if conv and conv.get("title", "新对话") == "新对话":
-                                await update_conversation_title(conversation_id, request.user_query[:50])
+                                await update_conversation_title(conversation_id, request.user_query[:50], user_id=user_id, tenant_id=identity["tenant_id"])
                         except Exception as e:
                             logger.warning("SSE 对话消息持久化失败: {}", e)
                 elif kind == "error":
                     yield f"data: {json.dumps({'event': 'error', 'message': str(payload)}, ensure_ascii=False)}\n\n"
+        except HTTPException as error:
+            yield f"data: {json.dumps({'event': 'error', 'message': error.detail}, ensure_ascii=False)}\n\n"
         except Exception as e:
-            logger.error("SSE 流式对话异常: {}", e)
-            yield f"data: {json.dumps({'event': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+            logger.error("SSE 流式对话异常 (type={})", type(e).__name__)
+            yield f"data: {json.dumps({'event': 'error', 'message': '对话执行失败，请稍后重试。'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -400,11 +410,11 @@ async def chat_stream(
     description="创建一个多轮对话会话，返回 conversation_id 供后续 /api/chat 关联",
 )
 async def create_conversation_endpoint(
-    user_id: str = Depends(get_user_id),
+    identity: dict = Depends(get_current_identity),
 ) -> dict:
     from backend.services.conversation_service import create_conversation
 
-    return await create_conversation(user_id)
+    return await create_conversation(identity["user_id"], tenant_id=identity["tenant_id"])
 
 
 @router.get(
@@ -413,11 +423,11 @@ async def create_conversation_endpoint(
     description="列出当前用户的多轮对话会话（按更新时间倒序）",
 )
 async def list_conversations_endpoint(
-    user_id: str = Depends(get_user_id),
+    identity: dict = Depends(get_current_identity),
 ) -> dict:
     from backend.services.conversation_service import list_conversations
 
-    items = await list_conversations(user_id)
+    items = await list_conversations(identity["user_id"], tenant_id=identity["tenant_id"])
     return {"items": items, "total": len(items)}
 
 
@@ -428,17 +438,18 @@ async def list_conversations_endpoint(
 )
 async def get_conversation_messages(
     conversation_id: str,
-    user_id: str = Depends(get_user_id),
+    identity: dict = Depends(get_current_identity),
 ) -> dict:
     from backend.services.conversation_service import get_conversation, list_messages
 
-    conv = await get_conversation(conversation_id, user_id=user_id)
+    user_id = identity["user_id"]
+    conv = await get_conversation(conversation_id, user_id=user_id, tenant_id=identity["tenant_id"])
     if conv is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="会话不存在或无权访问",
         )
-    messages = await list_messages(conversation_id, user_id=user_id)
+    messages = await list_messages(conversation_id, user_id=user_id, tenant_id=identity["tenant_id"])
     return {"conversation_id": conversation_id, "messages": messages}
 
 
@@ -455,7 +466,7 @@ async def get_conversation_messages(
 )
 async def get_agent_status(
     trace_id: str,
-    user_id: str = Depends(get_user_id),
+    identity: dict = Depends(get_current_identity),
     settings: Settings = Depends(get_config),
 ) -> AgentStatusResponse:
     """
@@ -474,7 +485,9 @@ async def get_agent_status(
     Returns:
         AgentStatusResponse
     """
-    # ── 1. 从数据库 trace 表查询（按 user_id 过滤，防止越权读取） ──
+    user_id = identity["user_id"]
+    tenant_id = identity["tenant_id"]
+    # ── 1. 按认证租户和用户过滤执行记录 ──
     try:
         from database.connection import get_session_factory
         from database.models import Trace
@@ -486,6 +499,7 @@ async def get_agent_status(
                 select(Trace)
                 .where(Trace.trace_id == trace_id)
                 .where(Trace.user_id == user_id)
+                .where(Trace.tenant_id == tenant_id)
                 .order_by(Trace.created_at.asc())
             )
             result = await session.execute(stmt)
@@ -522,7 +536,7 @@ async def get_agent_status(
         if spans:
             owned_spans = [
                 s for s in spans
-                if not s.user_id or s.user_id == user_id
+                if s.user_id == user_id and s.tenant_id == tenant_id
             ]
             if not owned_spans:
                 raise HTTPException(
