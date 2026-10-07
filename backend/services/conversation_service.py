@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
@@ -82,12 +82,18 @@ async def list_conversations(
                 select(Conversation, count.label("message_count"))
                 .where(*scope).order_by(Conversation.updated_at.desc()).limit(limit)
             )).all()
-            return [
-                {**_serialize(row), "message_count": total or 0,
-                 "created_at": row.created_at.isoformat(),
-                 "updated_at": row.updated_at.isoformat()}
-                for row, total in rows
-            ]
+            serialized: list[dict[str, Any]] = []
+            for raw_row, raw_total in rows:
+                # select() 的 Row 在无 sqlalchemy mypy 插件时被推成 object
+                conversation = cast(Conversation, raw_row)
+                total = cast(int | None, raw_total)
+                serialized.append({
+                    **_serialize(conversation),
+                    "message_count": total or 0,
+                    "created_at": conversation.created_at.isoformat(),
+                    "updated_at": conversation.updated_at.isoformat(),
+                })
+            return serialized
     except (SQLAlchemyError, OSError) as error:
         raise _storage_error(error) from None
 

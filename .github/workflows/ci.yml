@@ -134,8 +134,8 @@ jobs:
 
   e2e:
     name: E2E (full stack)
-    # 手动 workflow_dispatch 恒跑；master push 仅在编排/docker 相关文件变更时触发
-    # （path filter：docker-compose.yml、deploy/、ci.yml），避免每次 push 都拉全栈
+    # 手动 workflow_dispatch 恒跑；master push 仅在编排、镜像依赖或 CI 本身变更时触发
+    # （path filter：docker-compose.yml、deploy/、requirements/、ci.yml），避免每次 push 都拉全栈
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     env:
@@ -159,7 +159,7 @@ jobs:
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             echo "run_e2e=true" >> "$GITHUB_OUTPUT"
           elif git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" \
-            | grep -Eq '^(docker-compose\.yml|deploy/|\.github/workflows/ci\.yml)'; then
+            | grep -Eq '^(docker-compose\.yml|deploy/|requirements/|\.github/workflows/ci\.yml)'; then
             echo "run_e2e=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_e2e=false" >> "$GITHUB_OUTPUT"
