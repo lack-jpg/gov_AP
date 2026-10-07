@@ -52,6 +52,42 @@ def section(title: str) -> None:
     print(f"\n{'─' * 60}\n  {title}\n{'─' * 60}")
 
 
+def seed_evaluation_fixture() -> None:
+    """把 v1 样例报告写到仓库 evaluation_results/。
+
+    该目录被 gitignore。全新克隆没有评测文件时，
+    GET /api/evaluation/report/v1 会按设计返回 404。
+    容器通过 bind mount 读这份文件，所以必须在 compose up 之前写好。
+    """
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    dest_dir = os.path.join(root, "evaluation_results")
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, "e2e_v1.json")
+    payload = {
+        "version": "v1",
+        "created_at": "2026-10-07T00:00:00Z",
+        "datasets": {
+            "e2e": {
+                "passed_cases": 1,
+                "agent": {
+                    "task_success_rate": 1.0,
+                    "tool_accuracy": 1.0,
+                    "avg_latency_ms": 1.0,
+                    "avg_step_count": 1.0,
+                    "total_cases": 1,
+                },
+                "rag": {
+                    "faithfulness": 1.0,
+                    "answer_relevance": 1.0,
+                    "context_recall": 1.0,
+                },
+            }
+        },
+    }
+    with open(dest, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False)
+
+
 async def main() -> int:
     async with httpx.AsyncClient(timeout=180) as client:
         # 1. 健康检查
@@ -161,16 +197,23 @@ async def main() -> int:
         if final:
             check("final 有回答", len(final[0].get("answer", "")) > 20)
 
-        # 9. 评测报告
+        # 9. 评测报告（样例文件需在 compose up 前写入 evaluation_results/）
         section("9. 评测报告")
+        try:
+            seed_evaluation_fixture()
+        except OSError as error:
+            print(f"  评测样例未写入，沿用已挂载文件: {error}")
         r = await client.get(f"{API}/api/evaluation/report/v1", headers=HEADERS)
-        rep = r.json()
-        check("GET report 200", r.status_code == 200)
-        check("含 task_success_rate", "task_success_rate" in rep)
+        rep = r.json() if "json" in r.headers.get("content-type", "") else {}
+        check("GET report 200", r.status_code == 200, f"status={r.status_code} body={r.text[:300]}")
+        check("含 task_success_rate", "task_success_rate" in rep, str(list(rep)[:8]))
 
     print(f"\n{'═' * 60}\n  端到端集成测试: {passed} 通过, {failed} 失败\n{'═' * 60}")
     return 0 if failed == 0 else 1
 
 
 if __name__ == "__main__":
+    if "--seed-only" in sys.argv:
+        seed_evaluation_fixture()
+        sys.exit(0)
     sys.exit(__import__("asyncio").run(main()))

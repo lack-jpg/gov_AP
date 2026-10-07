@@ -167,6 +167,11 @@ jobs:
       - name: Install test deps
         if: steps.decide.outputs.run_e2e == 'true'
         run: pip install httpx
+      - name: Seed evaluation report fixture
+        # evaluation_results/ 被 gitignore。目录若不存在，compose 会建成 root 所有，
+        # 之后测试进程写不进去，报告接口只能 404。
+        if: steps.decide.outputs.run_e2e == 'true'
+        run: python scripts/e2e_integration_test.py --seed-only
       - name: Start docker stack
         if: steps.decide.outputs.run_e2e == 'true'
         run: docker compose up -d --build
